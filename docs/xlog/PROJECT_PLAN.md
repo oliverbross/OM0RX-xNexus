@@ -151,7 +151,8 @@ device lease to Nexus. This decision gates decoder and TX work.
   SourceForge, website, remote service, billing or signing infrastructure.
 - Each installed candidate gets a unique version and a receipt of exact clean
   source SHA, upstream SHA, toolchains, dependencies, build command, binary hashes,
-  license/model inputs and acceptance evidence. No candidate is packaged here yet.
+  license/model inputs and acceptance evidence. Current artifact and acceptance
+  evidence is recorded in [the qualification checkpoint](QUALIFICATION_2026-11-14.md).
 - Keep xLog's canonical-checkout/release policy. No parallel edits to files owned
   by “xlog work”; never reset or absorb its changes.
 

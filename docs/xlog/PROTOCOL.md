@@ -1,18 +1,20 @@
 # xLog companion protocol draft 1
 
-Status: client/reference contract only; not yet implemented by released xLog.
-The Rust client in integrations/xlog is executable contract evidence, not proof
-that a live xLog endpoint exists. Both sides must agree before freezing v1.
+Status: implemented by the native client and xLog's opt-in companion bridge.
+The owner integration is included in installed xLog 1.6.26. Actual HTTP/client
+and SQLite-owner tests are recorded separately from paired desktop acceptance,
+which remains pending. See [the qualification checkpoint](QUALIFICATION_2026-11-14.md)
+for exact source and remaining connection-identity findings before live control.
 
 Native HTTP/1.1 at an explicitly paired `http://127.0.0.1:<port>` address.
 No redirects, proxies, cookies, browser origins, network hostnames or generic RPC.
 Every request has Authorization: Bearer <pairing token>. Pairing/revocation is
-xLog-owned and not in this prototype. Tokens are not passed on the CLI or logged.
-The reference client receives the token as a constructor argument; its read-only
-probe reads it from an explicitly supplied local file.
+xLog-owned. Tokens are not passed on the CLI, logged or supplied to WebView code.
+The native desktop reads a pairing file created by xLog; the reference client's
+read-only probe likewise uses an explicitly supplied local file.
 
 GET /xlog/v1/hello returns protocol_version=1, server_instance, workspace_id,
-capabilities (initially snapshot.read), application="OM0RX-xLog". Unsupported
+capabilities (including snapshot.read), application="OM0RX-xLog". Unsupported
 major or missing capability fails closed. New server/workspace requires re-pairing
 or explicit reconnection; it is never silently mixed with prior observations.
 
@@ -110,6 +112,21 @@ directory sync on Unix, or non-replacing MoveFileExW with WRITE_THROUGH on
 Windows. Tests cover process interruption and injected persistence failures;
 storage-device power-loss behavior is not claimed as empirically qualified.
 
-Client tests use synthetic owners; actual availability requires an xLog build
-advertising the durable contract. Audio and TX remain separate ungranted
-capabilities; no receive/control or logbook capability implies them.
+Client tests use synthetic owners, with additional actual xLog transport and
+SQLite-owner tests. Availability still requires an xLog build advertising the
+durable contract. No receive/control or logbook capability implies audio or TX.
+
+## Receive audio extension
+
+Windows xLog can separately advertise `audio.rx`. An explicit FLEX receiver/DAX
+association and stable Windows input endpoint are required before bounded PCM
+is available through the authenticated audio route. Device ownership and capture
+remain in xLog; xNexus performs native resampling, slot assembly and FT8/FT4
+decoding. Stop, connection/epoch changes and missing route authority invalidate
+queued audio. Raw PCM and pairing credentials do not enter WebView code.
+
+See [AUDIO_DECODER_DESIGN.md](AUDIO_DECODER_DESIGN.md),
+[RX_CLIENT_VERIFICATION.md](RX_CLIENT_VERIFICATION.md) and
+[RX_DESKTOP.md](RX_DESKTOP.md) for exact bounds and evidence. The current owner
+reports unknown UTC synchronization accuracy and RF-path delay. Synthetic decode
+tests do not qualify physical DAX reception. No TX capability is implemented.
