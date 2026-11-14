@@ -5,10 +5,13 @@ integrated with OM0RX-xLog as the authority for logbook, needs, radio, rotator a
 cluster. Upstream history and attribution are preserved; this is not an upstream
 Nexus release.
 
-**Development bootstrap, not an integrated release.** See the [project plan](docs/xlog/PROJECT_PLAN.md),
-[execution ledger](docs/xlog/STATUS.md), and [draft bridge contract](docs/xlog/PROTOCOL.md).
-The copied upstream desktop is not yet isolated for xLog-connected operation.
-Do not run it against a live station as xNexus. No installer has been produced.
+**Integrated source in development; qualification is in progress.** See the
+[project plan](docs/xlog/PROJECT_PLAN.md), [execution ledger](docs/xlog/STATUS.md),
+and [bridge contract](docs/xlog/PROTOCOL.md). The default launch is an isolated
+xLog companion: native pairing, owner snapshots, explicit tuning and rotator
+commands. It does not start Nexus's own station, logbook or cluster services.
+An xLog version containing the companion bridge is required. No qualified
+installer or on-air transmission support is claimed.
 
 The dependency-light native client lives in `integrations/xlog`; its synthetic
 tests do not require Nexus DSP, a radio, or a production xLog profile.

@@ -46,7 +46,11 @@ impl QsoDraft {
             || !optional_text(&self.rst_sent, 16)
             || !optional_text(&self.rst_received, 16)
             || !optional_text(&self.grid, 12)
-            || !optional_text(&self.comment, 4096)
+            || self.comment.len() > 4096
+            || self
+                .comment
+                .chars()
+                .any(|v| v.is_control() && !matches!(v, '\r' | '\n' | '\t'))
         {
             return Err(OutboxError::Invalid);
         }
@@ -544,6 +548,25 @@ mod tests {
         }
     }
     struct Fixture(PathBuf);
+    #[test]
+    fn multiline_history_comments_survive_edit_queue_without_normalization() {
+        let f = Fixture::new();
+        let mut mutation = draft();
+        let LogbookMutation::Create { ref mut qso } = mutation else {
+            unreachable!()
+        };
+        qso.comment = "First line\r\nSecond\tcolumn".into();
+        let mut queue = Outbox::open(&f.0).unwrap();
+        queue.enqueue("workspace", ID, mutation.clone()).unwrap();
+        drop(queue);
+        let queue = Outbox::open(&f.0).unwrap();
+        assert_eq!(queue.entries()[0].queued.mutation, mutation);
+        let LogbookMutation::Create { ref mut qso } = mutation else {
+            unreachable!()
+        };
+        qso.comment.push('\0');
+        assert_eq!(qso.validate(), Err(OutboxError::Invalid));
+    }
     impl Fixture {
         fn new() -> Self {
             let path = std::env::temp_dir().join(format!(
