@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 """Prepare/execute source-pinned Linux checks. Default is a read-only plan."""
 import argparse
+import ctypes
 import hashlib
 import json
 from pathlib import Path
 import re
 import subprocess
 import sys
+import threading
 import time
 
 TOOLS = Path(__file__).resolve().parent
@@ -16,13 +18,15 @@ def capture(args):
     return subprocess.check_output(args, text=True).strip()
 
 
-def run_args(image, phase, job, volume):
+def run_args(image, phase, job, volume, cidfile=None):
     if not re.fullmatch(r"sha256:[0-9a-f]{64}", image):
         raise ValueError("Use the immutable image ID from the image phase receipt")
     if phase not in ("fetch", "contract", "desktop"):
         raise ValueError("Unknown validation phase")
-    return ["docker", "run", "--rm", "--platform", "linux/amd64", "--pull", "never",
+    cid_args = ["--cidfile", str(cidfile)] if cidfile else []
+    return ["docker", "run", "--rm", *cid_args, "--platform", "linux/amd64", "--pull", "never",
             "--cpus", "2", "--memory", "6g", "--memory-swap", "6g", "--pids-limit", "256",
+            "--env", "NODE_OPTIONS=--max-old-space-size=4096",
             "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
             "--network", "bridge" if phase == "fetch" else "none",
             "--mount", f"type=volume,src={volume},dst=/work",
@@ -30,6 +34,62 @@ def run_args(image, phase, job, volume):
             "--mount", f"type=bind,src={job / 'evidence'},dst=/evidence",
             "--mount", f"type=bind,src={TOOLS},dst=/tools,readonly",
             image, "bash", "/tools/validate.sh", phase]
+
+
+def available_memory():
+    """Physical host headroom, not the Docker container's memory limit."""
+    if sys.platform == "win32":
+        class MemoryStatus(ctypes.Structure):
+            _fields_ = [("length", ctypes.c_uint32), ("load", ctypes.c_uint32)] + [
+                (name, ctypes.c_uint64) for name in (
+                    "total_physical", "available_physical", "total_pagefile",
+                    "available_pagefile", "total_virtual", "available_virtual", "extended")]
+        status = MemoryStatus()
+        status.length = ctypes.sizeof(status)
+        if not ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(status)):
+            raise OSError("Cannot read host memory headroom")
+        return status.available_physical
+    for line in Path("/proc/meminfo").read_text().splitlines():
+        if line.startswith("MemAvailable:"):
+            return int(line.split()[1]) * 1024
+    raise OSError("No supported host memory headroom source")
+
+
+def owns_container(details, cid, image, phase, volume):
+    return (details.get("Id") == cid
+            and details.get("Config", {}).get("Image") == image
+            and details.get("Config", {}).get("Cmd") == ["bash", "/tools/validate.sh", phase]
+            and any(m.get("Type") == "volume" and m.get("Name") == volume
+                    and m.get("Destination") == "/work" for m in details.get("Mounts", [])))
+
+
+def memory_guard(done, cidfile, image, phase, volume, receipt,
+                 read_memory=available_memory, read_json=None, stop=None):
+    """Stop only our proven container if host available RAM falls below 2 GiB."""
+    read_json = read_json or (lambda cid: json.loads(capture(["docker", "inspect", cid]))[0])
+    stop = stop or (lambda cid: subprocess.run(["docker", "stop", "--time", "10", cid],
+                                             capture_output=True, text=True, timeout=30).returncode)
+    while not done.is_set():
+        try:
+            free = read_memory()
+            receipt["minimum_observed_host_free_bytes"] = min(
+                free, receipt.get("minimum_observed_host_free_bytes", free))
+            if free < 2 * 1024 ** 3 and cidfile.exists():
+                cid = cidfile.read_text().strip()
+                if not re.fullmatch(r"[0-9a-f]{64}", cid):
+                    raise ValueError("Invalid owned-container receipt")
+                if not owns_container(read_json(cid), cid, image, phase, volume):
+                    raise ValueError("Container identity mismatch; refused to stop it")
+                receipt["interruption"] = {"reason": "host_memory_below_2_gib",
+                                           "available_bytes": free, "container_id": cid}
+                print("Stopping owned Linux validation container: host RAM below 2 GiB.", flush=True)
+                receipt["interruption"]["stop_exit_code"] = stop(cid)
+                return
+        except Exception as error:
+            receipt["memory_guard_error"] = str(error)
+            print(f"Host memory guard: {error}", flush=True)
+            return
+        done.wait(10)
 
 
 def main():
@@ -57,6 +117,10 @@ def main():
     print(json.dumps(plan, indent=2), flush=True)
     if not args.execute:
         return 0
+    if args.phase in ("contract", "desktop"):
+        headroom = available_memory()
+        if headroom < 10 * 1024 ** 3:
+            parser.error(f"Validation held: host has {headroom / 1024**3:.2f} GiB free; require 10 GiB before start")
     job.mkdir(parents=True, exist_ok=True)
     (job / "input").mkdir(exist_ok=True)
     (job / "evidence").mkdir(exist_ok=True)
@@ -83,17 +147,27 @@ def main():
         receipt["archive_sha256"] = hashlib.sha256(archive.read_bytes()).hexdigest()
         receipt["image"] = image
         receipt["image_inspect"] = json.loads(capture(["docker", "image", "inspect", image]))
-        cmd = run_args(image, args.phase, job, volume)
+        cidfile = job / "evidence" / f"{stamp}-{args.phase}.cid"
+        cmd = run_args(image, args.phase, job, volume, cidfile)
     receipt["command"] = cmd
     receipt_path = job / "evidence" / f"{stamp}-{args.phase}.json"
     receipt_path.write_text(json.dumps(receipt, indent=2) + "\n")
     with (job / "evidence" / f"{stamp}-{args.phase}.log").open("w", encoding="utf-8") as log:
         process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, errors="replace")
+        done = threading.Event()
+        guard = None
+        if args.phase in ("contract", "desktop"):
+            guard = threading.Thread(target=memory_guard,
+                args=(done, cidfile, image, args.phase, volume, receipt), daemon=True)
+            guard.start()
         for line in process.stdout:
             print(line, end="", flush=True)
             log.write(line)
             log.flush()
         receipt["exit_code"] = process.wait()
+        done.set()
+        if guard:
+            guard.join(timeout=35)
     if args.phase == "image" and receipt["exit_code"] == 0:
         receipt["image"] = (job / "image.id").read_text().strip()
     receipt_path.write_text(json.dumps(receipt, indent=2) + "\n")

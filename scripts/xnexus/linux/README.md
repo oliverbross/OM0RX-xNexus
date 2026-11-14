@@ -67,6 +67,18 @@ daemon changes. It runs apt/rustup provisioning, not application compilation.
 it has ordinary container networking but no ports, devices, credentials or
 profile mounts. `contract` and `desktop` run with `--network none`, two CPUs,
 6 GB RAM/no extra swap, 256 PIDs, no Linux capabilities and no privilege gain.
+The runner requires at least 10 GiB host available RAM before starting either
+check phase. Every 10 seconds it checks host memory; below 2 GiB, it verifies
+the exact owned container ID, image, command and cache volume before requesting
+ordinary Docker stop. Such a run is recorded as interrupted, not a source
+failure or pass. It never pauses a container to address memory pressure, because
+pausing retains its memory. No unrelated container is stopped.
+
+`NODE_OPTIONS=--max-old-space-size=4096` gives TypeScript a 4 GiB V8 heap inside
+the unchanged 6 GiB container budget. The initial default-heap run passed all
+58 SDK and eight policy tests, then exhausted Node's approximately 2 GiB heap
+during `tsc -b`. Preserve that failed receipt; raising the per-process heap
+within the existing container bound does not change source or test thresholds.
 Only loopback within the container is available. The UI's dependency rebuild
 runs offline. A missing native download fails; do not reconnect the test phase
 to the network to conceal it. Add a separately pinned fetch if necessary.

@@ -1,8 +1,19 @@
 # Linux preparation receipt — 14 November 2026
 
-Image provisioning and locked dependency fetch both exited **0**. No contract
-test, desktop compile, application launch or package is claimed by this record.
-The contract phase was held for the coordinated xLog performance measurement.
+Image provisioning and locked dependency fetch both exited **0**. The first
+offline contract run passed **58 SDK tests and eight fork-policy tests**, then
+aborted during the full UI TypeScript check when Node's default approximately
+2 GiB V8 heap was exhausted. That run is not a completed contract pass, and
+reported no TypeScript source diagnostic before the heap failure. UI tests and
+desktop compilation remain unexecuted. No application launch or package is
+claimed. The original failed log/receipt is retained without alteration.
+
+A tooling follow-up sets the V8 heap to 4 GiB inside the unchanged 6 GiB container
+limit. It requires 10 GiB free host RAM to start and checks host headroom every
+10 seconds, stopping only the positively identified owned container below
+2 GiB. Six mocked isolation/memory-guard tests pass, including positive refusal
+controls for unrelated IDs, images, commands and volumes. This follow-up changes
+neither runtime source nor test thresholds; its scoped retry awaits headroom.
 
 | Input/result | Recorded value |
 |---|---|
@@ -42,6 +53,9 @@ Raw local evidence is retained under
   Docker identity, exit status and immutable image ID.
 - `1794666327544973900-fetch.json` and `.log`: exact source/archive hash, image
   inspection, container constraints, dependency fetch and exit status.
+- `1794666848972691600-contract.json` and `.log`: original default-heap attempt,
+  exit 134 after SDK/policy passes and V8 heap exhaustion. The actual container
+  network/resource settings are retained in `contract-host-config.json`.
 - `packages.tsv` and `toolchain.txt`: actual installed environment inventory.
 
 No source archive or package/cache data is committed. Preserve these local
