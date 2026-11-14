@@ -3,11 +3,22 @@ param(
     [Parameter(Mandatory=$true)][string]$SdkCommit,
     [Parameter(Mandatory=$true)][string]$OwnerRoot,
     [Parameter(Mandatory=$true)][string]$OwnerCommit,
-    [Parameter(Mandatory=$true)][string]$CoreEvidence
+    [Parameter(Mandatory=$true)][string]$CoreEvidence,
+    [string]$WorkerSource,
+    [string]$WorkerSha256,
+    [switch]$WorkerOnly
 )
 $ErrorActionPreference='Stop'
 $repo=(Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $evidence=Join-Path $repo 'target\xnexus-rx-owner-chain'
+if($WorkerSource) { $evidence=Join-Path $repo 'target\xnexus-rx-worker-chain' }
+if(($WorkerOnly -or $WorkerSha256) -and !$WorkerSource) { throw 'Worker options require WorkerSource.' }
+if($WorkerSource) {
+    $WorkerSource=(Resolve-Path -LiteralPath $WorkerSource).Path
+    if(!$WorkerSha256 -or (Get-FileHash $WorkerSource -Algorithm SHA256).Hash -ne $WorkerSha256) {
+        throw 'Require the exact reviewed worker source SHA256.'
+    }
+}
 New-Item -ItemType Directory -Force -Path $evidence | Out-Null
 $core=Get-Content (Join-Path $CoreEvidence 'receipt.json') -Raw | ConvertFrom-Json
 if($core.status -ne 'passed' -or $core.toolchain -ne '1.93.1-x86_64-pc-windows-gnu') {
@@ -44,6 +55,10 @@ $bridgePath=(Join-Path $OwnerRoot $ownerFiles[0]) | ConvertTo-Json -Compress
 $bufferPath=(Join-Path $OwnerRoot $ownerFiles[1]) | ConvertTo-Json -Compress
 @("#[path = $bridgePath] mod companion_bridge;", "#[path = $bufferPath] mod companion_rx_buffer;") |
     Set-Content -LiteralPath $ownerModules -Encoding utf8
+if($WorkerSource) {
+    $workerPath=$WorkerSource | ConvertTo-Json -Compress
+    "#[path = $workerPath] mod xlog_rx_worker;" | Add-Content -LiteralPath $ownerModules -Encoding utf8
+}
 $env:XNEXUS_RX_OWNER_MODULES=$ownerModules
 $sources=@((Join-Path $repo 'integrations/xlog-rx/src/lib.rs'),
     (Join-Path $repo 'src-tauri/src/xlog_decode.rs'),
@@ -51,6 +66,8 @@ $sources=@((Join-Path $repo 'integrations/xlog-rx/src/lib.rs'),
     (Join-Path $SdkRoot 'integrations/xlog/src/lib.rs')) +
     @(Get-ChildItem (Join-Path $SdkRoot 'integrations/xlog/src') -Recurse -Filter '*.rs' | ForEach-Object { $_.FullName }) +
     @($ownerFiles | ForEach-Object { Join-Path $OwnerRoot $_ })
+if($WorkerSource) { $sources += $WorkerSource }
+$sources += $PSCommandPath
 $hashes=@($sources | Sort-Object -Unique | ForEach-Object { @{path=$_; sha256=(Get-FileHash $_ -Algorithm SHA256).Hash} })
 $receipt=[ordered]@{
     sourceBase=(git -C $repo rev-parse HEAD).Trim(); sdkSource=$SdkCommit; ownerSource=$OwnerCommit
@@ -60,6 +77,14 @@ $receipt=[ordered]@{
     toolchain=$toolchain; actualOwnerBuffer=$true; actualOwnerHttp=$true; actualSdk=$true
     pacedCapture=$true; hardwareUsed=$false; applicationLaunched=$false
     status='building'; expectedTests=2; modes=@('FT8','FT4'); sampleRate=48000
+}
+if($WorkerSource) {
+    $workerDir=Split-Path $WorkerSource -Parent
+    $receipt.worker=@{path=$WorkerSource; sha256=$WorkerSha256; base=(git -C $workerDir rev-parse HEAD).Trim(); dirty=[bool](git -C $workerDir status --porcelain); workerOnly=[bool]$WorkerOnly}
+    if(!$WorkerOnly) { $receipt.expectedTests=4 }
+    if($WorkerOnly) {
+        $receipt.pacedCapture=$false; $receipt.actualOwnerBuffer=$false; $receipt.actualOwnerHttp=$false
+    }
 }
 $receiptPath=Join-Path $evidence 'receipt.json'
 function Save { $receipt | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $receiptPath -Encoding utf8 }
@@ -84,16 +109,24 @@ try {
     if($LASTEXITCODE -ne 0) { throw 'Focused owner-chain compilation failed; see compile-chain.log.' }
     $receipt.executableSha256=(Get-FileHash $exe -Algorithm SHA256).Hash
     $filters=@('complete_ft8_owner_http_chain','complete_ft4_owner_http_chain')
-    & $exe @filters --list *> (Join-Path $evidence 'selected-tests.log')
-    if($LASTEXITCODE -ne 0 -or @(Get-Content (Join-Path $evidence 'selected-tests.log') | Where-Object { $_ -match ': test$' }).Count -ne 2) {
-        throw 'Expected exactly the two whole-chain tests.'
+    if($WorkerSource) {
+        if($WorkerOnly) { $filters=@() }
+        $filters+=@('xlog_rx_worker::tests::changing_epoch_or_stopping_rejects_late_decoder_results',
+            'xlog_rx_worker::tests::revoked_owner_authority_discards_rows_and_partial_context')
     }
+    & $exe @filters --list *> (Join-Path $evidence 'selected-tests.log')
+    $selected=@(Get-Content (Join-Path $evidence 'selected-tests.log') | Where-Object { $_ -match ': test$' })
+    if($LASTEXITCODE -ne 0 -or $selected.Count -ne $receipt.expectedTests) {
+        throw 'Expected exactly the requested whole-chain/worker tests.'
+    }
+    foreach($filter in $filters) { if(!($selected | Where-Object { $_ -eq "${filter}: test" })) { throw "Missing exact test: $filter" } }
+    $receipt.selectedTests=$selected
     $receipt.status='running'; Save
     & $exe @filters --test-threads=1 --nocapture *> (Join-Path $evidence 'tests.log')
     $receipt.exitCode=$LASTEXITCODE
     if($LASTEXITCODE -ne 0) { throw 'Whole-chain tests failed; see tests.log.' }
-    if(!(Select-String -Path (Join-Path $evidence 'tests.log') -Pattern '^test result: ok\. 2 passed; 0 failed; 0 ignored;')) {
-        throw 'Whole-chain summary did not prove both tests passed.'
+    if(!(Select-String -Path (Join-Path $evidence 'tests.log') -Pattern "^test result: ok\. $($receipt.expectedTests) passed; 0 failed; 0 ignored;")) {
+        throw 'Summary did not prove all selected tests passed.'
     }
     foreach($source in $hashes) {
         if((Get-FileHash $source.path -Algorithm SHA256).Hash -ne $source.sha256) { throw "Source changed: $($source.path)" }

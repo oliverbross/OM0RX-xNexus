@@ -3,7 +3,7 @@
 //! Compiled by test-rx-owner-chain.ps1 with pinned recorded dependency artifacts.
 include!(env!("XNEXUS_RX_OWNER_MODULES"));
 #[path = "../../../src-tauri/src/xlog_decode.rs"]
-mod decode;
+mod xlog_decode;
 
 use companion_bridge::Bridge;
 use companion_rx_buffer::{Binding, Buffer, Route};
@@ -229,8 +229,8 @@ fn run_chain(mode: RxMode) {
         std::thread::sleep(Duration::from_millis(20));
     }
     let target = target.expect("complete target period before bounded deadline");
-    let result = decode::Decoder::default()
-        .decode(decode::CompleteFrame::from_period(target).unwrap())
+    let result = xlog_decode::Decoder::default()
+        .decode(xlog_decode::CompleteFrame::from_period(target).unwrap())
         .unwrap();
     assert!(
         result.rows.iter().any(|row| row.message.contains("K1ABC")),

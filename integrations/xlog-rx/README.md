@@ -64,3 +64,13 @@ client freshness and future-timestamp bounds remain enabled. Unknown UTC sync
 accuracy and RF latency survive to the decoded result. This covers synthetic
 capture through the production buffer, authenticated HTTP, client, assembler
 and modem, while actual endpoint capture and desktop IPC remain separate gates.
+
+Optional `-WorkerSource <file> -WorkerSha256 <exact hash> -WorkerOnly` compiles
+the desktop worker source as well and selects its two authority tests. The
+receipt preserves its source hash, worktree base and whether the worktree was
+dirty, allowing a tested precommit file to be tied to the later identical commit.
+These tests passed with a real loopback SDK response: current authority accepts
+results; old epochs, reset and Stop reject them; revocation clears rows and route.
+They typecheck the entire worker but do not execute `Worker::start` or qualify
+its thread/mailbox lifecycle. The original owner chain tests remain separately
+recorded and are not claimed by a worker-only run.
