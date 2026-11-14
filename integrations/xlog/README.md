@@ -74,3 +74,12 @@ The probe prints aggregate counts only. The library does not persist snapshots.
 
 Tests use only ephemeral loopback servers and synthetic data. A passing test is
 not evidence of a real bridge, paired desktop, or hardware qualification.
+
+Actual synthetic Swift exports can be checked explicitly with
+`tests/replay-owner.ps1 -EvidenceRoot PATH -ExpectedManifestSha256 SHA256
+-ExpectedCases COUNT`, inside the approved bounded build runner. This invocation
+fails on missing/mismatched evidence and requires exactly one ignored replay test.
+It preserves and verifies the original request/reply bytes and provenance, adds
+only a labeled synthetic HTTP identity wrapper, validates the public payload at
+its original generated time, then requires current-clock expiry rejection. This
+is historical cross-language DTO evidence, not live HTTP or installed UI evidence.
