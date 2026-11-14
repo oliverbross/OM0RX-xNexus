@@ -87,6 +87,7 @@ export function App({ api = bridge }: { api?: Bridge }) {
   async function connection(kind: 'import' | 'connect' | 'disconnect' | 'forget') {
     const epoch = ++generation.current
     setBusy(true); setError(''); setAction('')
+    select(null)
     setView(old => ({ ...old, connected: false, snapshot: null }))
     if (kind === 'import' || kind === 'connect') { setStopTarget(null); setStopAllowed(false) }
     try {
@@ -156,6 +157,7 @@ export function App({ api = bridge }: { api?: Bridge }) {
           {selected ? <><p className="xn-mono">{frequency(selected.frequency_hz)} MHz · {selected.mode}</p><p>{selected.need.reasons.join(' · ') || 'Need status unknown'}</p><button disabled={!allows('station.tune') || !snapshot?.station.connected || !snapshot.station.radio_id || snapshot.station.transmitting !== false} onClick={() => tune(selected)}>Tune through xLog</button></> : <p>Choose a callsign to inspect xLog’s evidence and request a tune.</p>}
           {fresh && snapshot?.station.transmitting !== false && <p className="xn-hint">{snapshot?.station.transmitting === true ? 'xLog reports transmission in progress. Tuning is held.' : 'Transmit state is unknown. Wait for xLog to confirm receive before tuning.'}</p>}
           {!view.hello?.capabilities.includes('station.tune') && <p className="xn-hint">Radio tuning is unavailable until xLog grants that capability.</p>}
+          {selected && <p className="xn-hint">Tunes frequency and mode in simplex. Configure split operation in xLog.</p>}
           {selected && <p className="xn-hint">{selected.country ?? 'Country unavailable'}{selected.adif ? ` · DXCC ${selected.adif}` : ''}<br />Call: {selected.call_status ?? 'unknown'} · DXCC: {selected.dxcc_status ?? 'unknown'} (from xLog)</p>}
           <hr /><h3>Point the antenna</h3><label>Azimuth in degrees<input type="number" min="0" max="359.9" step="0.1" value={heading} onChange={e => setHeading(e.target.value)} /></label><button disabled={!allows('rotor.point') || !snapshot?.rotor.connected || !snapshot.rotor.rotor_id || heading.trim() === '' || !Number.isFinite(azimuth) || azimuth < 0 || azimuth >= 360} onClick={() => snapshot?.rotor.rotor_id && void command({ kind: 'rotor.point', rotor_id: snapshot.rotor.rotor_id, azimuth_deg: azimuth })}>Point through xLog</button>
           <p className="xn-hint">xLog validates the target and travel limits. Stop rotator remains in the connection bar.</p>

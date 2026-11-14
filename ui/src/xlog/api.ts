@@ -97,7 +97,7 @@ export const bridge = {
   disconnect: (forget = false) => invoke<View>('xlog_disconnect', { forget }),
   command: (command: Command, requestId = crypto.randomUUID()) => invoke<Receipt>('xlog_command', { command, requestId }),
   outbox: () => invoke<OutboxEntry[]>('xlog_outbox_list'),
-  enqueue: (mutation: LogbookMutation, requestId: string) => invoke<OutboxEntry[]>('xlog_outbox_enqueue', { mutation, requestId }),
+  enqueue: (mutation: LogbookMutation, requestId: string, expectedWorkspaceId: string) => invoke<OutboxEntry[]>('xlog_outbox_enqueue', { mutation, requestId, expectedWorkspaceId }),
   deliver: (requestId: string, action: DeliveryAction) => invoke<Receipt>('xlog_outbox_deliver', { requestId, action }),
   history: (callsign: string) => invoke<History>('xlog_history', { callsign }),
 }

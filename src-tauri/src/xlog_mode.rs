@@ -113,6 +113,7 @@ async fn xlog_outbox_enqueue(
     queue: State<'_, Queue>,
     request_id: String,
     mutation: LogbookMutation,
+    expected_workspace_id: String,
 ) -> Result<Vec<OutboxEntry>, String> {
     let shared = Arc::clone(&state);
     let queue = Arc::clone(&queue);
@@ -121,6 +122,9 @@ async fn xlog_outbox_enqueue(
         let client = lock(&connection.client)?;
         if lock(&shared)?.generation != generation {
             return Err("Connection changed".into());
+        }
+        if connection.hello.workspace_id != expected_workspace_id {
+            return Err("The draft belongs to another xLog workspace".into());
         }
         client.snapshot().map_err(|error| error.to_string())?;
         if !connection
@@ -427,8 +431,45 @@ pub(crate) fn requested() -> bool {
         .any(|arg| arg == "--independent-mode")
 }
 
+fn startup_failure(reason: &str) -> ! {
+    eprintln!("OM0RX-xNexus could not start: {reason}");
+    #[cfg(windows)]
+    {
+        extern "system" {
+            fn MessageBoxW(
+                hwnd: *mut std::ffi::c_void,
+                text: *const u16,
+                caption: *const u16,
+                utype: u32,
+            ) -> i32;
+        }
+        let wide = |value: &str| {
+            value
+                .encode_utf16()
+                .chain(std::iter::once(0))
+                .collect::<Vec<u16>>()
+        };
+        let body = wide(&format!("OM0RX-xNexus could not open its companion profile.\n\n{reason}\n\nNo station or fallback profile was opened. Resolve the existing instance or storage issue, then launch again."));
+        let title = wide("OM0RX-xNexus — companion startup failed");
+        unsafe {
+            MessageBoxW(
+                std::ptr::null_mut(),
+                body.as_ptr(),
+                title.as_ptr(),
+                0x0001_0010,
+            );
+        }
+    }
+    std::process::exit(1)
+}
+
 pub(crate) fn run() {
-    let root = data_root().expect("Invalid companion data root; refusing to launch");
+    let root = data_root().unwrap_or_else(|error| startup_failure(&error));
+    // Acquire ownership BEFORE opening the WebView: its persistent draft and the
+    // native queue must have one writer. A second instance fails, never falls back.
+    let outbox = Outbox::open(root.join("xlog-outbox"))
+        .unwrap_or_else(|error| startup_failure(&error.to_string()));
+    let queue: Queue = Arc::new(Mutex::new(Some(outbox)));
     let mut context = tauri::generate_context!();
     context
         .config_mut()
@@ -446,7 +487,7 @@ pub(crate) fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .manage(Shared::default())
-        .manage(Queue::default())
+        .manage(queue)
         .invoke_handler(tauri::generate_handler![
             xlog_status,
             xlog_import_pairing,
