@@ -60,9 +60,6 @@ mod chains;
 /// Client mode: this computer's Nexus driving a paired station's over this network, with its own
 /// station off. Every command its screens make goes where its class says, and fails closed.
 mod client_mode;
-// Dormant until xLog supplies explicitly mapped and clock-qualified PCM.
-#[allow(dead_code)]
-mod xlog_decode;
 /// This station's club key for Field Day club sync (kept beside settings.json, never logged or
 /// shown), and the SHA-256 a club host pins position keys by.
 mod club_key;
@@ -169,8 +166,10 @@ mod tci_spots;
 /// Test builds only: no test reads or writes the operator's own Nexus folders.
 #[cfg(test)]
 mod test_dirs;
-/// Windows: the installer an automatic update leaves in Temp, removed at the next start.
 mod window_state;
+/// Dormant until xLog supplies explicitly mapped and clock-qualified PCM.
+#[allow(dead_code)]
+mod xlog_decode;
 
 use chains::{panel_key, panel_label, Instance};
 #[cfg(test)]
@@ -50149,17 +50148,8 @@ fn update_route() -> UpdateRoute {
     }
 }
 
-/// Blocking GET of a text/JSON URL — mirrors the propagation crate's reqwest usage (rustls, short
-/// timeout, a UA). Returns the raw body; call it via `spawn_blocking` from the command.
-fn fetch_text(url: &str) -> Result<String, String> {
-    fetch_text_limited(url, UPDATE_FEED_BYTES)
-}
-
-/// The most an update feed is read to. GitHub's list of the last 20 releases was the largest,
-/// 1.0 MB on 2026-11-03; our own version.json 26 KB, SourceForge's best_release.json 3 KB.
-const UPDATE_FEED_BYTES: u64 = 16 * 1024 * 1024;
-
-/// [`fetch_text`] with its byte ceiling supplied.
+// Keep the upstream bounded-response regression fixture out of shipped fork code.
+#[cfg(test)]
 fn fetch_text_limited(url: &str, limit: u64) -> Result<String, String> {
     let resp = reqwest::blocking::Client::builder()
         .timeout(std::time::Duration::from_secs(15))
@@ -50178,10 +50168,7 @@ fn fetch_text_limited(url: &str, limit: u64) -> Result<String, String> {
     propagation::live::body::read_capped(resp, limit, "Update check")
 }
 
-/// Resolve the latest released version: try our own endpoint first (authoritative `latest`), then
-/// fall back to SourceForge's best_release.json. `Ok(None)` = a feed was reachable but carried no
-/// usable version; `Err` = BOTH feeds failed to fetch (treated as offline → the frontend stays
-/// silent). Runs blocking HTTP, so call via `spawn_blocking`.
+/// The fork has no automatic release feed until its own channel is qualified.
 fn fetch_latest_version() -> Result<Option<String>, String> {
     // A successful check cannot authorize replacement by an upstream binary.
     // Keep the command shape for merge compatibility; no upstream feed is queried.
