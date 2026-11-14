@@ -70,8 +70,8 @@ the current companion API actually exports.
 |---|---|---|
 | Portable and special calls | `CountryFactsTests.portableCorpus`, `CTYResolverTests.portableOperatingPrefixPrecedence`, `CountryIntegrationTests.sharedHostSnapshot`, `LiveClusterHistoryTests.portableCallHistory` | Cluster indexes literal calls; history merges selected aliases. `/MM` and `/AM` have explicit no-entity facts. A companion comparison fixture remains needed; do not unify these policies. |
 | Stored DXCC and corrections | `LiveClusterHistoryTests.pjStoredEntityOverride`, `effectiveCountryOverride`, `CTYCorrectionPreviewTests.isolatedPreview`, `CountryIntegrationTests.atomicConflicts` | Storage/correction evidence does not prove a DXCC-changing edit updates both old/new entity needs through the companion path. |
-| Band/mode priorities | `ClusterClassificationTests.testNF3RPatternPreservesBandModeAndConfirmationRules`, `testEntityConfirmationPrefixAndExactCombinationPriority`, plus the executed publication matrix above | Actual New Band, New Mode and New Band+Mode exports need a focused extension to the present matrix. |
-| Confirmation sources | `ClusterClassificationTests.testConfirmationFlagsAndEqslOnlyExclusion`; `OperatingGoalTests.history`; `LocalAwardProgressTests.globalCandidatesAndPositiveWAC` | Paper/LoTW, eQSL and award-specific card evidence are distinct. Paper-Y/LoTW-Y/eQSL-only companion fixtures are pending; X/V remains an explicit owner-policy difference. |
+| Band/mode priorities | `ClusterClassificationTests.testNF3RPatternPreservesBandModeAndConfirmationRules`, `testEntityConfirmationPrefixAndExactCombinationPriority`, plus the executed matrices here | Actual New Band, New Mode and New Band+Mode worker exports and production projection now pass the extension below. |
+| Confirmation sources | `ClusterClassificationTests.testConfirmationFlagsAndEqslOnlyExclusion`; `OperatingGoalTests.history`; `LocalAwardProgressTests.globalCandidatesAndPositiveWAC` | Paper-Y/LoTW-Y/eQSL-only worker exports and projection now pass. Award-specific evidence and X/V remain distinct owner policies. |
 | Workspace replacement | Executed `PostCommitContactRefreshTests.workspaceFence`, `rejectedRestore`, `shutdownFence`; `CompanionContactTests.ownerHistoryAndReceiptUseWorkspaceIdentityAndUnixMilliseconds` | The 23 exports do not include replacement. Actual replacement export and native host cache-retirement evidence are separate remaining checks. |
 | Satellite contacts | `LogbookTests.satelliteFieldsParticipateInSyncBaseline`; award-specific POTA and QRP DXCC tests | Current cluster classification and companion need keys have no satellite dimension; companion QSO/history DTOs omit satellite fields. Satellite-specific needs are unsupported by this contract. |
 | Contest needs | Python duplicate/statistics and append-scoring tests; `PythonContestLaneTests.testCWOPSOpenOriginalPluginSerialDupeAndScoreThroughNativeBridge` | Current companion rows have no contest session, duplicate or multiplier fields. Normal-log need status must not be presented as contest qualification. |
@@ -82,3 +82,31 @@ design, source/age/station identity and tests before UI claims are expanded.
 They are incomplete integration scope, not failures to be hidden by synthesizing
 an independent xNexus award engine. Normal worked/confirmed facts must remain
 separate from sponsor eligibility and credit.
+
+## Executed band/mode and confirmation extension
+
+xLog test source `4cf9b8b47c8e85420a463cf1a8602acf7a2df624` adds six
+independent private-workspace cases. Actual worker saves and fresh cluster ingress
+produce New Band, New Mode, New Band+Mode, paper-Y, LoTW-Y and eQSL-only results.
+The last case remains Worked, not Confirmed. No owner policy or runtime changed.
+
+The first combined invocation exceeded its 60-second limit after five successive
+workspace setups. That failed/partial evidence is retained. Six serialized
+parameterized invocations preserve the same per-case deadline and passed with
+all **42 tests in 30.737 seconds**, under the unchanged 2 GiB process-tree cap.
+The six-case export directory is separate from both original and fresh 23-case
+publication evidence. Native log SHA-256:
+`0213f64d2c8108126e88e3b02718e9312f53dbaa2791911a264307299b5f1775`.
+
+Checker source `9411c38c2f645b738bd2702c3dc1101e1672df57` passed all six
+unchanged worker exports through the production Rust projector, asserting exact
+row ID/count, call, band, mode, frequency, ADIF, status, score and need against an
+independent matrix. All 23 fresh publication exports also passed, plus 11
+production/harness tests. All 29 owner-original and copied hashes match before
+and after replay. This is serialized boundary evidence, not native UI acceptance.
+
+Retained receipt: xLog `.build/classification-projection-20261114/receipt.json`.
+Six-case output SHA-256:
+`adb7893f11ccd614e3e16e21f225a94af22c76a3bcef9b0b918db12b4d736a86`.
+Publication regression output SHA-256:
+`8166bfdd02461789623d9280995a053d3619210c11d6e97f8a0b3a261f803e23`.
