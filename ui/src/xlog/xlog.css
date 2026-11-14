@@ -62,3 +62,6 @@
 .xn-queue small { display: block; opacity: .7; }
 .xn-band-map { margin-top: var(--space-5); }
 .xn-band-map-canvas { display: flex; height: 460px; max-height: calc(.75 * var(--vh-eff)); border: 1px solid var(--border); border-radius: var(--radius-sm); }
+.xn-history { padding-bottom: var(--space-4); margin-bottom: var(--space-4); border-bottom: 1px solid var(--border); }
+.xn-history-matrix { display: flex; gap: var(--space-3); flex-wrap: wrap; }
+.xn-qso-form textarea { min-height: 60px; resize: vertical; }

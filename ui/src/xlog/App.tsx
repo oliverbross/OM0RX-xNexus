@@ -153,7 +153,7 @@ export function App({ api = bridge }: { api?: Bridge }) {
         </aside>
       </section>
       {fresh && snapshot && <StationBandMap spots={snapshot.spots} dialHz={snapshot.station.frequency_hz} select={spot => select(spot.id)} />}
-      <QsoPanel api={api} enabled={allows('logbook.write')} connected={view.connected} workspace={view.hello?.workspace_id ?? null} selected={fresh ? selected : undefined} />
+      <QsoPanel api={api} enabled={allows('logbook.write')} readEnabled={allows('logbook.read')} connected={view.connected} workspace={view.hello?.workspace_id ?? null} selected={fresh ? selected : undefined} />
       <footer className="xn-footer"><span>{view.endpoint ?? 'No pairing loaded'}</span><span>{view.hello ? `Workspace ${view.hello.workspace_id} · protocol ${view.hello.protocol_version}` : 'Nexus-derived companion · station owned by OM0RX-xLog'}</span><span>Audio and digital transmission are not enabled in this view.</span></footer>
     </main>
   </div>

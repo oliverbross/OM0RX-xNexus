@@ -73,6 +73,16 @@ export interface OutboxEntry {
   state: 'Pending' | 'NeedsReceipt' | { Settled: Receipt }
 }
 export type DeliveryAction = 'submit' | 'reconcile' | 'retry_missing'
+export interface HistoryContact extends QsoDraft { contact_revision: number | null }
+export interface History {
+  protocol_version: number
+  server_instance: string
+  workspace_id: string
+  callsign: string
+  generated_at_unix_ms: number
+  contacts: HistoryContact[]
+  matrix: { band: string; mode: string; worked: boolean; confirmed: boolean }[]
+}
 type Native = { core: { invoke: <T>(name: string, args?: Record<string, unknown>) => Promise<T> } }
 function invoke<T>(name: string, args?: Record<string, unknown>): Promise<T> {
   const native = (window as unknown as { __TAURI__?: Native }).__TAURI__
@@ -89,6 +99,7 @@ export const bridge = {
   outbox: () => invoke<OutboxEntry[]>('xlog_outbox_list'),
   enqueue: (mutation: LogbookMutation, requestId: string) => invoke<OutboxEntry[]>('xlog_outbox_enqueue', { mutation, requestId }),
   deliver: (requestId: string, action: DeliveryAction) => invoke<Receipt>('xlog_outbox_deliver', { requestId, action }),
+  history: (callsign: string) => invoke<History>('xlog_history', { callsign }),
 }
 export type Bridge = typeof bridge
 export const disconnected: View = { paired: false, connected: false, endpoint: null, hello: null, snapshot: null }
