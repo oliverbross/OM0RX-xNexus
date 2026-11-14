@@ -1,8 +1,9 @@
 # Isolated Linux qualification
 
 This is a **scoped validation harness**. Image provisioning, dependency fetch and
-the exact c2 and d206 SDK/UI contract phases have passed; native desktop
-compilation has not yet started (the first d206 admission was held for RAM). See
+the exact c2 and d206 SDK/UI contract phases have passed. Exact d206 `.3`
+native desktop all-targets compilation also passed with the reviewed reduced
+resource profile. See
 [the retained preparation record](PROVISIONING.md). It does not package, install or launch xNexus.
 Keep the fork's canonical package guards and inherited publishing restrictions.
 
@@ -118,8 +119,9 @@ The scripts were checked with Python unit tests, a dry plan, Bash syntax
 validation and the fork policy tests. Image provisioning and locked dependency
 fetch subsequently passed. The later exact c2 contract passed SDK/policy tests,
 the TypeScript/Vite build and 40 xLog UI tests with before/after source integrity
-verification. Native desktop compilation, GUI, package and physical-radio
-validation remain unexecuted until their own receipts establish otherwise.
+verification. Exact d206 subsequently passed those checks and the native Linux
+`--features radio --all-targets` compile check. GUI, package and physical-radio
+validation remain unexecuted by this harness.
 
 Provenance-hardening verification used the existing immutable image
 `sha256:1b047bd836fc8bae9c97bd0a6973630561b1a98604550a1921ef3be0322853aa`

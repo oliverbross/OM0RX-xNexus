@@ -167,3 +167,48 @@ before the successful complete test run. No desktop compiler was launched by
 these stub-based tooling tests. Output: `desktop-reduced-tooling-tests.log` in
 the d206 evidence directory. Actual desktop execution awaits profile review
 and release of the other owner's short focused test window.
+
+
+## Exact d206 `.3` native desktop pass
+
+The same exact `d206b880216543af2142e600ea6b8e5ac6bdd1b2` candidate and fresh
+candidate cache subsequently passed:
+
+```text
+cargo check --locked --offline --manifest-path src-tauri/Cargo.toml --features radio --all-targets
+```
+
+The reviewed clean harness was
+`3cee2ba5da518acc12cb7be37e934f0d5b5426af`. Invocation selected
+`--phase desktop --resource-profile desktop-reduced --execute` with the existing
+d206 job directory. The single-job dev-profile check finished in **19m 36s**.
+All **5,472 archive entries** passed verification before and after the phase.
+The exact source-matched frontend assets came from the preceding d206 contract
+phase; no source/archive/cache substitution occurred. The expected build warning
+states that AI CW model weights are absent. There was no missing-model override.
+
+Actual Docker inspection confirmed network-none, two CPUs maximum, **4 GiB RAM
+and the same RAM-plus-swap limit**, 256 PIDs, all capabilities dropped and
+no-new-privileges. The explicit desktop-reduced environment selects one
+Cargo/CMake job. Admission measured 10,991,316,992 bytes physical free and
+8,089,931,776 bytes available Windows commit. Running minima were respectively
+7,170,748,416 bytes and 5,177,794,560 bytes, both above the 2 GiB floors.
+No memory-guard error or interruption occurred; process and effective exits
+were zero with result `passed`.
+
+Retained d206 evidence:
+
+- `1794679901010293000-desktop.json`, SHA256
+  `2bc258e797d298c1552b7b259ea045c3a142cbe0df7bfc72cc645862fdafffac`.
+- `1794679901010293000-desktop.log`, SHA256
+  `70ff67ea70a94684accb79abc34c7e756dcace46ccab5bdb11634805960b5122`.
+- `1794679901010293000-desktop-host-config.json`: actual running container ID,
+  image, command, profile environment, limits, network and mounts.
+
+The validation container exited; Docker's remaining running-container inventory
+contained only the pre-existing healthy `om0rx-postgres` positive control. Host
+C: had 79.71 GiB free at completion. This establishes a Linux native compile
+check in addition to the scoped SDK/UI contract. It does **not** establish a
+Linux package, GUI/runtime acceptance, complete upstream test matrix or any
+physical-radio behavior. No application/device was launched and no unrelated
+container, VM configuration or production xLog process was changed.
