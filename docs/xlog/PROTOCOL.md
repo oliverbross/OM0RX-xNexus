@@ -65,6 +65,22 @@ The desktop keeps it outside the ordinary poll mutex; Stop neither waits for a
 fresh poll nor takes its queue slot. Revocation/workspace changes still refuse
 the action at the host. Desktop disconnect drops this handle.
 
+## Explicit selected-call history
+
+`logbook.read` grants `GET /xlog/v1/history?callsign=CALL`. Calls are uppercase
+ASCII callsigns; portable `/` is URL-encoded. No browser-side token is involved.
+The identity-bound response carries protocol_version, server_instance,
+workspace_id, callsign, generated_at_unix_ms, at most 25 contacts and at most
+256 band/mode cells. Contacts contain the QSO draft fields plus nullable
+contact_revision. Matrix cells contain band, mode, worked and confirmed booleans
+from xLog. Missing revision makes an existing contact read-only. Confirmation
+is never inferred from worked status. This read is explicit and separate from
+the fast station polling path; it is not a full logbook export.
+
+Optional spot metadata preserves country, numeric ADIF entity, latitude,
+longitude, band, call_status and dxcc_status. Missing metadata is null; no
+coordinates or entity facts are invented locally.
+
 ## Durable logbook operations
 
 `logbook.write` explicitly grants `logbook.create {qso}` and

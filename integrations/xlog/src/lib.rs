@@ -142,7 +142,9 @@ pub struct Snapshot {
 
 mod commands;
 pub use commands::{Command, CommandReceipt, CommandStatus, StopClient};
+mod history;
 pub mod outbox;
+pub use history::{History, HistoryCell, HistoryContact};
 
 fn bounded(text: &str, max: usize) -> bool {
     !text.trim().is_empty() && text.len() <= max && !text.chars().any(char::is_control)
