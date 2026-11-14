@@ -36,9 +36,12 @@ bridge-client or emergency rotator Stop mutex while polling or decoding.
 Development validation: full UI TypeScript and Vite builds passed; 40 distinct
 companion UI tests passed, including four receive lifecycle cases. The isolated
 synthetic browser probe passed 14 viewport/theme cases plus receive controls,
-route and rows at 1366×768 and 1024×768/175%. Two focused worker tests compiled
+route and rows at 1366×768 and 1024×768/175%. Three focused worker tests compiled
 the exact worker with the real SDK, assembler and decoder, proving current
-authority acceptance, stale epoch rejection and revoke/Stop clearing. These do
-not execute the full Tauri IPC or threaded `Worker::start` loop. Full desktop
-compilation, native worker-loop acceptance and physical DAX reception remain
-required before a new RX candidate is packaged.
+authority acceptance, stale epoch rejection and revoke/Stop clearing. A paced
+48 kHz generated FT4 fixture then passed through the real owner HTTP endpoint,
+threaded `Worker::start` polling/assembly/mailbox and native decoder. Stop cleared
+the route/rows, the worker lease released, and restart exposed no old result.
+The three tests passed in 14.44 seconds. Full desktop compilation, Tauri IPC,
+native GUI and physical DAX reception remain required before a new RX candidate
+is packaged. Generated fixture reception does not qualify the physical station.
