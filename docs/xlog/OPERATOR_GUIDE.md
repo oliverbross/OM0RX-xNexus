@@ -62,6 +62,13 @@ the draft locally; it does not yet save it in xLog. Choose **Submit to xLog**
 on the retained entry to send it. Only an applied/observed receipt naming the
 contact and its revision establishes the owner write.
 
+The unfinished draft is saved in this companion profile and restored after an
+ordinary close. Its operation ID, original workspace and edit revision are
+retained. Reconnecting to a different log does not redirect it there. **Clear
+draft** deliberately starts a new operation; loading an edit from history also
+requires an empty draft. A storage error keeps the current values visible and
+blocks submission until they can be saved.
+
 If a reply is lost or either process stops, the entry says **Receipt required**.
 Use **Check receipt**. **Retry only if receipt missing** first checks the owner
 again and reuses the same immutable operation ID; it never invents another
@@ -73,6 +80,10 @@ revision. The owner rejects a conflict if another edit has changed the contact.
 Callsign, band and mode changes require xLog's editor, which owns the retained
 entity and confirmation evidence. The companion preserves other fields and
 never performs a separate online-log upload; xLog owns upload policy.
+
+The queue currently retains up to 10,000 operations, including terminal receipts.
+It has no automatic deletion or archival UI. Do not delete queue files to recover
+an uncertain write; resolve its owner receipt first.
 
 ## Current boundaries
 

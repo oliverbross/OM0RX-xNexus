@@ -1,49 +1,56 @@
 # Execution ledger — 14 November 2026
 
-The full plan is being executed with separate desktop, xLog-owner and release
-worktrees. This ledger distinguishes committed source from release acceptance.
+The full plan is being executed in separate desktop, xLog-owner and release
+worktrees. This ledger distinguishes implemented source from release acceptance.
 
 | Milestone | Current evidence | Remaining acceptance |
 |---|---|---|
-| M0 | Complete: full upstream history, private origin, fetch-only upstream, nine issues/milestones | Maintain patch inventory on updates |
-| M1 | Native client at `76a24d508`: 39 tests, Clippy and formatting pass. Real xLog bridge source implemented in isolated owner branch. Actual client/bridge TCP test passes with synthetic owners. | Owner branch compilation and canonical integration after xLog 1.6.21 acceptance; paired application test |
-| M2 | Desktop `62f102f60` integrated: separate entry, native pairing, restricted invoke handler, no normal station startup. Queue UI `7049ffc19` adds four tests, bringing focused UI total to 12. Browser probe 14 viewport/theme cases reported passed. | Native build, final queue UI integration and isolated installed-app acceptance |
-| M3 | xLog classifications/scores/reasons and optional country/entity/coordinates carried through native contract; unknown remains unknown | Owner projection regression tests, edited/imported/confirmed history correctness, complete paired views |
-| M4 | Explicit tune/point/Stop client and owner adapters; identity/revision admission; independent Stop transport | Owner generation/concurrency tests and observed fake-hardware/application acceptance |
-| M5 | Durable outbox `2f62d569b`; synced attempt before send, receipt reconciliation after crash, explicit same-ID retry, workspace fence | Owner durable transaction tests and paired create/update/conflict acceptance |
-| M6 | Decoder-only source seam identified; no hardware or empty local log engine needed | Authoritative xLog PCM mapping and timestamp calibration; RX validation; separate TX lease/watchdog and supervised qualification |
-| M7 | Distinct app/binary/profile identity, inherited updater removed, pinned Windows GNU/native dependencies prepared | Full canonical build, unique candidate provenance, isolated GUI and installer acceptance |
-| M8 | Reviewed three-platform CI workflow committed | Hosted jobs blocked by account billing/spending limit; actual platform builds and signing qualification |
+| M0 | Complete: full upstream history, private origin, fetch-only upstream, nine issues/milestones | Keep patch inventory and upstream review process current |
+| M1 | 49 native client tests, Clippy/format pass; owner bridge compiles; actual HTTP/client and separate actual SQLite-owner restart test pass | Canonical xLog integration after its startup release; paired application acceptance |
+| M2 | Separate default companion entry, native pairing and private data root; no local Engine, hardware, log or feeds; native all-targets check passed | Final native execution, packaging and isolated GUI acceptance |
+| M3 | Authoritative owner needs, geography, band/world maps and selected-call history; shared Rust/TypeScript contract | Final owner projection lifecycle fixes, paired classification changes and full correctness matrix |
+| M4 | Owner-mediated tune/point/independent Stop; identity/revision fences; saturation tests | Final native fake-owner UI and physical receive/control qualification |
+| M5 | Durable outbox plus atomic SQLite write/receipt, restart reconciliation, edit-conflict test; recoverable workspace-bound draft | Final paired native GUI acceptance and operational queue archival design |
+| M6 | Dormant FT8/FT4 decoder adapter and generated-message tests in source | Actual native decoder execution, mapped/calibrated xLog PCM, RX qualification, TX lease/watchdog and supervised qualification |
+| M7 | Distinct app/profile/update identity, pinned native assets, exact-source packaging/provenance tooling | Final Windows native tests, unique-version package and isolated installer/application acceptance |
+| M8 | Reviewed platform validation workflow; connected Mac build work started | Actual macOS/Linux results, signing and distribution qualification |
 
-Canonical xNexus `180fae465` integrates release isolation, the native client/outbox
-and the first desktop slice. Completed commits are pushed immediately.
+Canonical xNexus `d5cf11014` includes private draft recovery and workspace-bound
+native enqueue. Final UI/client fixes and acceptance tooling are pushed on their
+isolated branches for integration after the current native test build.
 The first candidate version is reserved as `1.24.1-xlog.1`; no packaged candidate
-is claimed here. See RELEASE_READINESS.md for the build gate.
+is claimed here. See [VERIFICATION.md](VERIFICATION.md) for exact check boundaries.
 
-## Coordination and constraints
+## Coordination
 
-The existing “xlog work” chat owns canonical xLog's startup corrections and
-1.6.21 installation acceptance. Its dirty source and tests are preserved.
-Bridge changes remain isolated until that owner reports the release boundary.
-At approximately 10:43 UTC it requested a twenty-minute pause on new heavy
-builds for timing measurements; existing builds could finish.
+The “xlog work” chat retains canonical xLog for startup corrections. Its 1.6.21
+candidate failed live acceptance and was not installed; 1.6.22 is reserved for its
+next startup candidate, not the companion bridge. Its unrelated changes remain
+untouched. Bridge source stays in `codex/xnexus-bridge` until that owner reports a
+clean successful installation boundary. Existing isolated owner tests do not
+justify installing an unqualified production xLog build.
 
 GitHub Actions was initially disabled with operator approval. Following audit,
 the operator approved the validation workflow. Actions is enabled; inherited
-release/deployment workflows are individually disabled and their source jobs
-also require exact `kd9taw/Nexus` identity. No billing settings were changed.
+release/deployment workflows remain individually disabled and guarded by exact
+upstream repository identity. No billing setting changed.
+[Run 43586230218](https://github.com/oliverbross/OM0RX-xNexus/actions/runs/43586230218)
+was blocked before execution by payment/spending restrictions. Local Windows
+verification continues; the connected Mac provides an alternative for macOS.
 
-[Validation run 43586230218](https://github.com/oliverbross/OM0RX-xNexus/actions/runs/43586230218)
-failed before any job steps: GitHub reported account payment/spending-limit
-restrictions. This is neither a test pass nor a source compilation failure.
-Local Windows verification continues. macOS/Linux are unverified.
+The upstream helper completed a real isolated merge rehearsal from pin
+`c88740a94` to available upstream `3885df0fe`, preserving a separate review
+worktree and leaving main unchanged. That pending merge is not a qualified
+upstream upgrade; the shipped source pin remains unchanged.
 
-## Audio finding
+## Audio and operational boundaries
 
-xLog's existing recorder consumes native PCM, but its configuration identifies
-a device and channel roles, not an authoritative radio/receiver association.
-Its callback-time archive anchor does not certify sample-zero UTC accuracy for
-digital-mode timing. No `audio.rx` capability is advertised from this source.
-The missing work is explicit owner mapping, capture-clock calibration, bounded
-timestamped PCM export and continuous normal-logging ownership. The application
-must not guess that the selected radio owns an arbitrary headphone mix.
+xLog's existing recorder has neither authoritative radio/receiver mapping nor a
+calibrated sample-zero UTC bound. No `audio.rx` capability is advertised. The
+remaining work is explicit owner mapping, capture-clock calibration, bounded
+PCM export and continuous normal-logging ownership. Transmission is unavailable
+in companion mode. No on-air acceptance is implied by synthetic tests.
+
+The native outbox retains up to 10,000 operations. It deliberately does not delete
+terminal receipts automatically. An operator archive/export flow is a remaining
+long-term operational item; keep this limit visible in the beta guide.
