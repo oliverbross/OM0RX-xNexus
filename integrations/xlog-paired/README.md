@@ -40,8 +40,28 @@ creates a private marked TEMP directory and verifies the exact live process path
 PID and argument before returning. It opens no application or station device.
 Pairing credentials stay in its private `pairing.json`; do not print them.
 The fixture provides a synthetic W1AW spot, in-memory contacts and synthetic
-radio/rotor actions, recording commands in `events.jsonl`. It exports no audio.
+radio/rotor actions, recording commands in `events.jsonl`. By default it exports
+no audio. For receive lifecycle checks, compile with `--features owner-audio`
+and pass `-SyntheticAudio` to the launcher. This explicit marked fixture feeds
+48 kHz mono silence through the actual owner buffer and HTTP endpoint at real
+wall-clock pace. It opens no audio device and cannot produce a decoded message.
+The route is deliberately labelled synthetic; DAX 2 is test data, not a station
+default. Creating `STOP_AUDIO` stops sharing without stopping the owner; a
+synthetic QSY also stops its stream. Neither action automatically restarts it.
+If the producer misses a deadline by more than 250 ms, it stops instead of
+publishing a stale catch-up burst. Use a fresh fixture for another capture.
 Create its `STOP` file and verify normal process exit when finished; preserve the
 fixture evidence. Launch the actual candidate separately with its explicit
 private data root and verify that process before any GUI binding. This fixture
 cannot establish actual xLog database or physical station acceptance.
+
+The synthetic-audio extension passed a local Windows smoke check against owner
+`5efffc1a23af68157e3c564eb2aa345256bea90a`: authenticated capability, DIGU route,
+128 contiguous zero-PCM chunks, unknown UTC/RF bounds, sharing Stop, owner
+survival after sharing Stop, and normal owner exit. Executable SHA-256 was
+`4cab1b4e6e0d3a2ae9b2321a0299a40d872524087fd21197e174025f563b2d9b`.
+Evidence remains in fixture `xnexus-ui-2b262104-bd6d-47ec-a4e2-d11ec625bbe5`.
+An earlier fixture used an unsupported radio identifier and exited before
+starting its bridge. Its evidence is preserved separately; the corrected fixture
+uses the owner's allowed `radio1` value with explicitly synthetic endpoint and
+receiver labels. No application GUI was bound during either sequence.
