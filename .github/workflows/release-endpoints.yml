@@ -46,6 +46,7 @@ permissions:
 
 jobs:
   drift:
+    if: github.repository == 'kd9taw/Nexus'
     name: Update feeds match the latest release
     runs-on: ubuntu-latest
     steps:

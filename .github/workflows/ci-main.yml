@@ -21,6 +21,7 @@ permissions:
 
 jobs:
   dispatch:
+    if: github.repository == 'kd9taw/Nexus'
     name: Run CI unless this commit already passed
     runs-on: ubuntu-24.04
     timeout-minutes: 5

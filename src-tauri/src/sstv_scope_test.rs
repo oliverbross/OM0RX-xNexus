@@ -3,7 +3,7 @@
 //! files, and nothing connected them.
 //!
 //! They drifted, and the operator found it: the gallery moved from `<local data>/Nexus/
-//! sstv-gallery` to `<Pictures>/Nexus SSTV` (so received pictures land somewhere a person can
+//! sstv-gallery` to `<Pictures>/OM0RX-xNexus SSTV` (so received pictures land somewhere a person can
 //! actually find them), `tauri.conf.json` was not updated, and every preview became a blank box.
 //! Nothing errored — a blocked asset URL just yields no image. The pictures were on disk and
 //! correct the whole time.
@@ -14,10 +14,10 @@
 /// `$PICTURE` is tauri 2.x's own spelling (`BaseDirectory::Picture`, tauri-2.11.2
 /// `src/path/mod.rs:190`) — NOT `$PICTURES`. A wrong variable name parses fine and grants
 /// nothing, which fails exactly like the bug this test exists for.
-const PICTURE_SCOPE: &str = "$PICTURE/Nexus SSTV/**";
+const PICTURE_SCOPE: &str = "$PICTURE/OM0RX-xNexus SSTV/**";
 /// Still needed: `sstv_gallery_dir()` falls back here when `picture_dir()` cannot be resolved,
 /// and `migrate_sstv_gallery()` reads it to bring an existing gallery forward.
-const LEGACY_SCOPE: &str = "$LOCALDATA/Nexus/sstv-gallery/**";
+const LEGACY_SCOPE: &str = "$LOCALDATA/OM0RX-xNexus/sstv-gallery/**";
 
 fn conf() -> String {
     // CARGO_MANIFEST_DIR is src-tauri/, where tauri.conf.json lives.
@@ -37,7 +37,7 @@ fn the_asset_scope_covers_where_sstv_images_are_actually_written() {
 
     assert!(
         entries.contains(&PICTURE_SCOPE),
-        "the gallery writes to <Pictures>/Nexus SSTV (lib.rs `sstv_gallery_dir`), but the webview \
+        "the gallery writes to <Pictures>/OM0RX-xNexus SSTV (lib.rs `sstv_gallery_dir`), but the webview \
          is not granted it — every preview renders as a blank box with no error. scope = {entries:?}"
     );
     assert!(
@@ -55,8 +55,8 @@ fn the_scope_still_names_the_directory_the_code_builds() {
     let lib = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/lib.rs"))
         .expect("lib.rs must be readable");
     assert!(
-        lib.contains(r#"join("Nexus SSTV")"#),
-        "sstv_gallery_dir() no longer joins \"Nexus SSTV\" — update PICTURE_SCOPE in this test \
+        lib.contains(r#"join("OM0RX-xNexus SSTV")"#),
+        "sstv_gallery_dir() no longer joins \"OM0RX-xNexus SSTV\" — update PICTURE_SCOPE in this test \
          and the scope in tauri.conf.json together, or previews go blank"
     );
     assert!(

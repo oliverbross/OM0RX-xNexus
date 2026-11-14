@@ -1,0 +1,105 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// A separate native-only bridge. Never falls back to browser HTTP or Nexus API.
+export type NeedStatus = 'needed' | 'worked' | 'unknown'
+export interface Spot {
+  id: string
+  callsign: string
+  frequency_hz: number
+  mode: string
+  observed_at_unix_ms: number
+  source: string
+  country?: string | null
+  adif?: number | null
+  latitude?: number | null
+  longitude?: number | null
+  band?: string | null
+  call_status?: string | null
+  dxcc_status?: string | null
+  need: { status: NeedStatus; score: number; reasons: string[] }
+}
+export interface Snapshot {
+  protocol_version: number
+  server_instance: string
+  workspace_id: string
+  revision: number
+  generated_at_unix_ms: number
+  max_age_ms: number
+  station: { connected: boolean; radio_id: string | null; frequency_hz: number | null; mode: string | null; transmitting: boolean | null }
+  rotor: { connected: boolean; rotor_id: string | null; azimuth_deg: number | null; moving: boolean | null }
+  spots: Spot[]
+}
+export interface Hello {
+  application: string
+  protocol_version: number
+  server_instance: string
+  workspace_id: string
+  capabilities: string[]
+}
+export interface View {
+  paired: boolean
+  connected: boolean
+  endpoint: string | null
+  hello: Hello | null
+  snapshot: Snapshot | null
+}
+export type Command =
+  | { kind: 'station.tune'; radio_id: string; frequency_hz: number; mode: string }
+  | { kind: 'rotor.point'; rotor_id: string; azimuth_deg: number }
+  | { kind: 'rotor.stop'; rotor_id: string }
+export interface Receipt {
+  request_id: string
+  server_instance: string
+  workspace_id: string
+  status: 'accepted' | 'applied' | 'observed' | 'rejected' | 'uncertain'
+  message: string | null
+  contact_id?: string | null
+  contact_revision?: number | null
+}
+export interface QsoDraft {
+  contact_id: string
+  callsign: string
+  band: string
+  mode: string
+  started_at_unix_ms: number
+  frequency_hz: number | null
+  rst_sent: string
+  rst_received: string
+  grid: string
+  comment: string
+}
+export type LogbookMutation = { kind: 'logbook.create'; qso: QsoDraft } | { kind: 'logbook.update'; qso: QsoDraft; expected_contact_revision: number }
+export interface OutboxEntry {
+  queued: { version: number; request_id: string; workspace_id: string; mutation: LogbookMutation }
+  state: 'Pending' | 'NeedsReceipt' | { Settled: Receipt }
+}
+export type DeliveryAction = 'submit' | 'reconcile' | 'retry_missing'
+export interface HistoryContact extends QsoDraft { contact_revision: number | null }
+export interface History {
+  protocol_version: number
+  server_instance: string
+  workspace_id: string
+  callsign: string
+  generated_at_unix_ms: number
+  contacts: HistoryContact[]
+  matrix: { band: string; mode: string; worked: boolean; confirmed: boolean }[]
+}
+type Native = { core: { invoke: <T>(name: string, args?: Record<string, unknown>) => Promise<T> } }
+function invoke<T>(name: string, args?: Record<string, unknown>): Promise<T> {
+  const native = (window as unknown as { __TAURI__?: Native }).__TAURI__
+  if (!native) return Promise.reject(new Error('Open the OM0RX-xNexus desktop to connect to xLog.'))
+  return native.core.invoke<T>(name, args)
+}
+export const bridge = {
+  status: () => invoke<View>('xlog_status'),
+  importPairing: () => invoke<View | null>('xlog_import_pairing'),
+  connect: () => invoke<View>('xlog_connect'),
+  poll: () => invoke<View>('xlog_poll'),
+  disconnect: (forget = false) => invoke<View>('xlog_disconnect', { forget }),
+  command: (command: Command, requestId = crypto.randomUUID()) => invoke<Receipt>('xlog_command', { command, requestId }),
+  outbox: () => invoke<OutboxEntry[]>('xlog_outbox_list'),
+  enqueue: (mutation: LogbookMutation, requestId: string) => invoke<OutboxEntry[]>('xlog_outbox_enqueue', { mutation, requestId }),
+  deliver: (requestId: string, action: DeliveryAction) => invoke<Receipt>('xlog_outbox_deliver', { requestId, action }),
+  history: (callsign: string) => invoke<History>('xlog_history', { callsign }),
+}
+export type Bridge = typeof bridge
+export const disconnected: View = { paired: false, connected: false, endpoint: null, hello: null, snapshot: null }

@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useRef, useState } from 'react'
-import { useCallMenu } from './useCallMenu'
+import { useCallMenu, type CallMenu } from './useCallMenu'
 import type { SpotRow, NeedTag, AppSnapshot, FieldDayStatus } from '../types'
 import type { FreqMarker } from '../api'
 import { markerMhz } from '../features/freqMarkers'
@@ -29,7 +29,7 @@ interface Props {
   /** Current dial frequency (MHz) — the "you are here" marker. */
   dialMhz: number
   /** Whether the current dial+mode is inside the operator's privileges (colors the marker). */
-  txAllowed: boolean
+  txAllowed?: boolean
   /** Operator's licensed phone sub-band [lo, hi) MHz — shaded. Absent = no shade. */
   phoneSegLo?: number | null
   phoneSegHi?: number | null
@@ -42,7 +42,11 @@ interface Props {
    *  change the section and arm; without this a program's spot does nothing when clicked. */
   onTciSpot?: (s: SpotRow) => void
   /** Which spot mode to plot — 'Phone' (SSB, default) or 'CW'. */
-  spotMode?: 'Phone' | 'CW'
+  spotMode?: 'Phone' | 'CW' | 'Digital'
+  /** An external station owner may disable Nexus's native call actions with null. */
+  callMenu?: CallMenu | null
+  /** An external owner can describe selection accurately without promising a local QSY. */
+  spotTitle?: (spot: SpotRow) => string
   /** Work a spotted station — QSY to its exact freq + prefill the log. */
   onWorkSpot: (s: SpotRow) => void
   /** Top need tag per call (UPPERCASE-keyed, mode-gated) — colors a marker like the roster. */
@@ -150,6 +154,8 @@ export function BandMap({
   onMarkerQsy,
   onMarkerDelete,
   onMarkHere,
+  callMenu: suppliedCallMenu,
+  spotTitle,
 }: Props) {
   const marker = useContestSpotMarker(fieldDay)
   // PER-SURFACE (matching BandStrip, which writes the same key): a wide second-monitor
@@ -164,7 +170,7 @@ export function BandMap({
     })
   }
   const range = bandRangeForLabel(band)
-  const modeLabel = spotMode === 'CW' ? 'CW' : 'SSB'
+  const modeLabel = spotMode === 'Phone' ? 'SSB' : spotMode
 
   // Measure the track so label de-collision works at any window height (it flex-fills a resizable
   // pop-out window, so a fixed height would be wrong). A CALLBACK ref (not useRef+effect) so the
@@ -256,7 +262,8 @@ export function BandMap({
   // A right-click on a spot's label: the call menu every list shares (Best times first). Its handler
   // stops the event, so the track's own right-click (mark a frequency) never sees it; on the track,
   // between labels, that right-click is unchanged.
-  const callMenu = useCallMenu()
+  const nativeCallMenu = useCallMenu()
+  const callMenu = suppliedCallMenu === undefined ? nativeCallMenu : suppliedCallMenu
   const onTrackClick = useCallback(
     (e: React.MouseEvent<HTMLDivElement>) => {
       if (tuneEnabled !== true || !win) return
@@ -464,13 +471,13 @@ export function BandMap({
                 type="button"
                 className={`bandmap-spot${needCls}${dimCls}${tciCls}${worked ? ' worked' : ''}${mark?.dupe ? ' contest-dupe' : ''}`}
                 style={{ top: `${labelY}%`, opacity }}
-                title={tip}
+                title={spotTitle?.(s) ?? tip}
                 aria-label={mark ? [s.call, ...markWords].join(' · ') : undefined}
                 // ⛔ A program's spot only tunes: never the Work, whatever it names.
                 onClick={() => (program != null ? onTciSpot?.(s) : onWorkSpot(s))}
-                {...callMenu.on(`${program ?? ''}-${s.call}-${s.freqMhz}-${i}`, s.call)}
+                {...callMenu?.on(`${program ?? ''}-${s.call}-${s.freqMhz}-${i}`, s.call)}
               >
-                {callMenu.at(`${program ?? ''}-${s.call}-${s.freqMhz}-${i}`)}
+                {callMenu?.at(`${program ?? ''}-${s.call}-${s.freqMhz}-${i}`)}
                 {program != null && <span className="spot-type-badge type-tci">{tciSource(program)}</span>}
                 {beacon && <span className={`spot-type-badge ${beacon.cls}`}>{beacon.ch}</span>}
                 {badge && <span className={`spot-type-badge ${badge.cls}`}>{badge.ch}</span>}
@@ -491,10 +498,10 @@ export function BandMap({
         })}
         {dialIn && (
           <div
-            className={`bandmap-dial${txAllowed ? '' : ' blocked'}`}
+            className={`bandmap-dial${txAllowed === false ? ' blocked' : ''}`}
             style={{ top: `${yOf(dialMhz)}%` }}
             title={
-              txAllowed
+              txAllowed !== false
                 ? t('bandMap.dial.title', { freq: dialMhz.toFixed(3) })
                 : t('bandMap.dial.title.blocked', { freq: dialMhz.toFixed(3) })
             }

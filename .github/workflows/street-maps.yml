@@ -44,6 +44,7 @@ concurrency:
 
 jobs:
   plan:
+    if: github.repository == 'kd9taw/Nexus'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     outputs:
@@ -94,7 +95,7 @@ jobs:
 
   bucket:
     needs: plan
-    if: needs.plan.outputs.action == 'copy' || needs.plan.outputs.action == 'retire'
+    if: ${{ github.repository == 'kd9taw/Nexus' && (needs.plan.outputs.action == 'copy' || needs.plan.outputs.action == 'retire') }}
     runs-on: ubuntu-latest
     # Copying and reading back 139 GB takes hours; stop cleanly inside the 6 h limit.
     timeout-minutes: 330

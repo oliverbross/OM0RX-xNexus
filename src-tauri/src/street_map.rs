@@ -36,13 +36,13 @@ pub struct StreetMapState {
     maps: OnceLock<Arc<StreetMaps>>,
 }
 
-/// `$LOCALDATA/Nexus/maps`.
+/// `$LOCALDATA/OM0RX-xNexus/maps`.
 fn maps_folder(app: &AppHandle) -> Result<std::path::PathBuf, StreetError> {
     Ok(app
         .path()
         .local_data_dir()
         .map_err(|e| StreetError::new(ErrorKind::Io, format!("no local data folder: {e}")))?
-        .join("Nexus")
+        .join("OM0RX-xNexus")
         .join("maps"))
 }
 

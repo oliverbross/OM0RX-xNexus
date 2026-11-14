@@ -438,4 +438,6 @@ fn read_response<T: for<'de> Deserialize<'de>>(
 }
 
 #[cfg(test)]
+mod desktop_contract_tests;
+#[cfg(test)]
 mod tests;
