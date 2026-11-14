@@ -74,7 +74,7 @@ jobs:
         with:
           msystem: UCRT64
           update: true
-          install: make tar curl mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-gcc-fortran mingw-w64-ucrt-x86_64-fftw mingw-w64-ucrt-x86_64-boost mingw-w64-ucrt-x86_64-cmake mingw-w64-ucrt-x86_64-ninja mingw-w64-ucrt-x86_64-pkgconf mingw-w64-ucrt-x86_64-nasm
+          install: make tar curl unzip mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-gcc-fortran mingw-w64-ucrt-x86_64-fftw mingw-w64-ucrt-x86_64-boost mingw-w64-ucrt-x86_64-cmake mingw-w64-ucrt-x86_64-ninja mingw-w64-ucrt-x86_64-pkgconf mingw-w64-ucrt-x86_64-nasm
       - shell: msys2 {0}
         run: |
           bash scripts/xnexus/prepare-windows-deps.sh

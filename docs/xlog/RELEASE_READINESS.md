@@ -26,7 +26,7 @@ reuse upstream updater manifests or signing configuration.
 
 The native DSP still compiles into the desktop binary even when the connected
 mode does not initialize it. Required tools are MSYS2 UCRT64 GCC/GFortran, FFTW,
-Boost, CMake, Ninja, pkg-config, make, tar, curl, nasm, Node, Rust
+Boost, CMake, Ninja, pkg-config, make, tar, curl, unzip, nasm, Node, Rust
 `1.93.1-x86_64-pc-windows-gnu`, and Tauri CLI `2.11.5`. Use explicit toolchain
 arguments; do not change the user's default MSVC Rust toolchain.
 
