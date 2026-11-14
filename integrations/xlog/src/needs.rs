@@ -456,6 +456,23 @@ impl BridgeClient {
     }
 }
 impl NeedsClient {
+    /// Remaining observed authority budget; use to defer work, never to renew it.
+    pub fn remaining_authority_ms(&self) -> u64 {
+        if !self.connected || !self.session.load(Ordering::Acquire) {
+            return 0;
+        }
+        let Ok(state) = self.authority.lock() else {
+            return 0;
+        };
+        let Ok(lease) = state.lease() else {
+            return 0;
+        };
+        lease
+            .expires
+            .saturating_duration_since(Instant::now())
+            .as_millis()
+            .min(2000) as u64
+    }
     pub fn disconnect(&mut self) {
         self.connected = false;
         self.facts.store(false, Ordering::Release);

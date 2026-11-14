@@ -696,3 +696,101 @@ fn remaining_lifetime_is_floored_bounded_and_never_renews_from_observation() {
     bridge.invalidate_needs();
     assert_eq!(batch.remaining_valid_ms(), 0);
 }
+
+#[test]
+fn optional_metadata_changes_do_not_redefine_or_renew_the_same_base_revision() {
+    for change in ["missing", "null", "expired", "backwards", "authority"] {
+        let now = now_ms().unwrap();
+        let mut h = crate::tests::hello();
+        h["capabilities"] = json!(["snapshot.read", "logbook.classify", "audio.rx"]);
+        let mut first = crate::tests::snapshot();
+        first["needs"] = serde_json::to_value(metadata(Readiness::Ready, now)).unwrap();
+        let mut next = first.clone();
+        match change {
+            "missing" => {
+                next.as_object_mut().unwrap().remove("needs");
+            }
+            "null" => next["needs"] = Value::Null,
+            "expired" => next["needs"]["generated_at_unix_ms"] = json!(now - 2001),
+            "backwards" => next["needs"]["generated_at_unix_ms"] = json!(now - 1),
+            _ => {
+                next["needs"]["generated_at_unix_ms"] = json!(now + 1);
+                next["needs"]["authority"]["logbook_revision"] = json!(1);
+            }
+        }
+        let (mut bridge, server) = crate::tests::server(vec![
+            crate::tests::json_response(h),
+            crate::tests::json_response(first),
+            crate::tests::json_response(wire(Readiness::Ready, now)),
+            crate::tests::json_response(next),
+            crate::tests::json_response(crate::audio::tests::fixture(now)),
+        ]);
+        bridge.connect().unwrap();
+        bridge.poll().unwrap();
+        let before = bridge.observation.as_ref().unwrap();
+        let original_deadline = before.received + before.remaining;
+        let mut client = bridge.needs_handle().unwrap();
+        let mut audio = bridge.audio_handle().unwrap();
+        let batch = client.query(&queries()).unwrap();
+        bridge.poll().unwrap();
+        let after = bridge.observation.as_ref().unwrap();
+        assert!(after.received + after.remaining <= original_deadline);
+        assert!(!batch.is_fresh(), "{change}");
+        assert!(bridge.hello().is_some());
+        assert!(audio.poll().unwrap().is_fresh());
+        assert_eq!(server.join().unwrap().len(), 5);
+    }
+}
+
+#[test]
+fn optional_metadata_exclusion_never_masks_a_same_revision_base_mutation() {
+    for field in ["station", "generated", "max_age", "score"] {
+        let now = now_ms().unwrap();
+        let mut h = crate::tests::hello();
+        h["capabilities"] = json!(["snapshot.read", "logbook.classify", "audio.rx"]);
+        let mut first = crate::tests::snapshot();
+        first["needs"] = serde_json::to_value(metadata(Readiness::Ready, now)).unwrap();
+        let mut next = first.clone();
+        next.as_object_mut().unwrap().remove("needs");
+        match field {
+            "station" => next["station"]["frequency_hz"] = json!(7_074_000),
+            "generated" => {
+                next["generated_at_unix_ms"] =
+                    json!(first["generated_at_unix_ms"].as_u64().unwrap() + 1)
+            }
+            "max_age" => next["max_age_ms"] = json!(9999),
+            _ => next["spots"][0]["need"]["score"] = json!(101),
+        }
+        let (mut bridge, server) = crate::tests::server(vec![
+            crate::tests::json_response(h),
+            crate::tests::json_response(first),
+            crate::tests::json_response(next),
+        ]);
+        bridge.connect().unwrap();
+        bridge.poll().unwrap();
+        let mut audio = bridge.audio_handle().unwrap();
+        assert!(matches!(bridge.poll(), Err(Error::Revision)), "{field}");
+        assert!(bridge.hello().is_none());
+        assert!(matches!(audio.poll(), Err(Error::Disconnected)));
+        assert_eq!(server.join().unwrap().len(), 3);
+    }
+}
+
+#[test]
+fn authority_budget_allows_deferral_without_renewal_or_network() {
+    let (bridge, client) = paired(Readiness::Ready);
+    assert!((1100..=2000).contains(&client.remaining_authority_ms()));
+    bridge
+        .needs_authority
+        .lock()
+        .unwrap()
+        .current
+        .as_mut()
+        .unwrap()
+        .expires = Instant::now() + Duration::from_millis(1099);
+    let remaining = client.remaining_authority_ms();
+    assert!((1..1100).contains(&remaining));
+    assert!(client.remaining_authority_ms() <= remaining);
+    bridge.invalidate_needs();
+    assert_eq!(client.remaining_authority_ms(), 0);
+}
