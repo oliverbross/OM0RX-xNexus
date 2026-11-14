@@ -21,8 +21,18 @@ if(GitChecked status --porcelain){throw 'Preserve and commit your own work befor
 if((GitChecked branch --show-current) -ne 'main'){throw 'Prepare the update from main'}
 GitChecked fetch origin main
 if((GitChecked rev-parse HEAD) -ne (GitChecked rev-parse origin/main)){throw 'Local main differs from origin/main; reconcile explicitly'}
+$head=(GitChecked rev-parse HEAD).Trim()
+if ($upstream -eq $pin.commit) { Write-Output 'The recorded upstream pin is current; no review checkout needed.'; exit 0 }
 $branch='codex/upstream-'+$upstream.Substring(0,12)
-GitChecked switch -c $branch
-Write-Output ('Pre-merge fork SHA: '+(GitChecked rev-parse HEAD))
-GitChecked merge --no-ff --no-commit $upstream
-Write-Output 'Review all changes and conflicts. Update UPSTREAM.json only after tests. No commit, push, release or installation was performed.'
+$review=Join-Path $repo ('target/upstream-review/'+$upstream.Substring(0,12))
+if (Test-Path -LiteralPath $review) { throw ('Review checkout already exists; inspect its unique work before reusing: '+$review) }
+# Keep the canonical checkout on main. Builds and the running installation must
+# never start using a half-resolved upstream merge merely because it was prepared.
+GitChecked worktree add -b $branch $review $head
+Write-Output ('Pre-merge fork SHA: '+$head)
+Write-Output ('Review checkout: '+$review)
+& git -C $review merge --no-ff --no-commit $upstream
+$mergeExit=$LASTEXITCODE
+if ((GitChecked rev-parse HEAD).Trim() -ne $head -or (GitChecked branch --show-current) -ne 'main') { throw 'Canonical checkout changed unexpectedly; inspect before proceeding.' }
+if ($mergeExit -ne 0) { throw ('Upstream merge needs review in '+$review+'. Conflicts and all evidence are preserved; no abort/reset performed.') }
+Write-Output 'Review the isolated merge and run fork/native gates there. Update UPSTREAM.json only after tests. No commit, push, release or installation was performed.'
