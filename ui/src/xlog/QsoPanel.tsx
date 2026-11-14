@@ -39,7 +39,7 @@ export function QsoPanel({ api, enabled, connected, workspace, selected, readEna
   }
   function useSelectedStation(spot: Spot) {
     const startTime = record.started ? draft.started_at_unix_ms : Date.now()
-    persist({ ...record, workspace_id: record.workspace_id ?? workspace, started: true, qso: { ...draft, callsign: spot.callsign, mode: spot.mode, band: bandLabelForMhz(spot.frequency_hz / 1e6) || draft.band, frequency_hz: spot.frequency_hz, started_at_unix_ms: startTime } })
+    persist({ ...record, workspace_id: record.workspace_id ?? workspace, started: true, qso: { ...draft, callsign: spot.callsign, mode: spot.mode, band: spot.band?.trim() || bandLabelForMhz(spot.frequency_hz / 1e6), frequency_hz: spot.frequency_hz, started_at_unix_ms: startTime } })
   }
   async function enqueue() {
     setBusy(true); setMessage('')

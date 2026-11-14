@@ -2,7 +2,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { QsoPanel } from './QsoPanel'
-import { bridge, type Bridge, type OutboxEntry } from './api'
+import { bridge, type Bridge, type OutboxEntry, type Spot } from './api'
 
 const qso = { contact_id: '10000000-0000-4000-8000-000000000001', callsign: 'OM0RX', band: '20m', mode: 'SSB', started_at_unix_ms: 1_700_000_000_000, frequency_hz: 14_200_000, rst_sent: '59', rst_received: '59', grid: '', comment: '' }
 const entry = (state: OutboxEntry['state'] = 'Pending'): OutboxEntry => ({ queued: { version: 1, request_id: '20000000-0000-4000-8000-000000000001', workspace_id: 'workspace-a', mutation: { kind: 'logbook.create', qso } }, state })
@@ -11,6 +11,27 @@ function api(entries: OutboxEntry[] = []): Bridge {
 }
 beforeEach(() => window.localStorage.clear())
 describe('durable QSO queue', () => {
+  it.each([
+    ['6mm', 47_000_000_000, '6mm'],
+    ['2190m', 136_000, '2190m'],
+    [null, 14_250_000, '20m'],
+    [null, 47_000_000_000, ''],
+  ] as const)('uses the owner band %s at %s Hz without retaining the previous band', async (band, frequency_hz, expected) => {
+    const native = api()
+    const selected: Spot = { id: 'spot', callsign: 'OM0RX', frequency_hz, mode: 'CW', band, observed_at_unix_ms: Date.now(), source: 'xLog', need: { status: 'unknown', score: 0, reasons: [] } }
+    render(<QsoPanel api={native} enabled connected workspace="workspace-a" selected={selected} />)
+    fireEvent.change(screen.getByLabelText('Band'), { target: { value: '40m' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Use selected station' }))
+    expect(screen.getByLabelText('Band')).toHaveProperty('value', expected)
+    if (expected) {
+      fireEvent.click(screen.getByRole('button', { name: 'Queue QSO' }))
+      await waitFor(() => expect(native.enqueue).toHaveBeenCalledWith(expect.objectContaining({ qso: expect.objectContaining({ band: expected, frequency_hz }) }), expect.any(String), 'workspace-a'))
+    } else {
+      expect((screen.getByLabelText('Band') as HTMLInputElement).checkValidity()).toBe(false)
+      fireEvent.click(screen.getByRole('button', { name: 'Queue QSO' }))
+      expect(native.enqueue).not.toHaveBeenCalled()
+    }
+  })
   it('queues a draft without dispatch and only clears it after durable acknowledgement', async () => {
     const native = api()
     render(<QsoPanel api={native} enabled connected workspace="workspace-a" />)
