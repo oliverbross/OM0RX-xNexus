@@ -13,12 +13,22 @@ fn main() {
     assert_eq!(source.file_name().unwrap(), "companion_bridge.rs");
     println!("cargo:rerun-if-changed={}", source.display());
     let output = std::path::PathBuf::from(std::env::var_os("OUT_DIR").unwrap());
-    std::fs::write(
-        output.join("owner_transport.rs"),
-        format!(
-            "#[path = {:?}] mod companion_bridge;\n",
-            source.to_str().unwrap()
-        ),
-    )
-    .unwrap();
+    let mut modules = format!(
+        "#[path = {:?}] mod companion_bridge;\n",
+        source.to_str().unwrap()
+    );
+    if std::env::var_os("CARGO_FEATURE_OWNER_AUDIO").is_some() {
+        let buffer = source
+            .parent()
+            .unwrap()
+            .join("companion_rx_buffer.rs")
+            .canonicalize()
+            .expect("The owner-audio feature requires the actual xLog receive buffer source");
+        println!("cargo:rerun-if-changed={}", buffer.display());
+        modules.push_str(&format!(
+            "#[path = {:?}] mod companion_rx_buffer;\n",
+            buffer.to_str().unwrap()
+        ));
+    }
+    std::fs::write(output.join("owner_transport.rs"), modules).unwrap();
 }
