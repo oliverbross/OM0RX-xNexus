@@ -33,6 +33,10 @@ The current Windows recipe uses Rust 1.93.1 GNU, Tauri CLI 2.11.5, pinned native
 and model assets, **one Cargo/CMake build job**, the unchanged release profile and
 unsigned NSIS packaging. The reviewed outer supervisor applies a 4 GiB aggregate
 Job Object limit and records admission, telemetry and confirmed process cleanup.
+The Windows helper pins and records a 2,560 MiB V8 heap allowance. The complete
+decoded-needs frontend checks passed with this setting under a 4 GiB job
+(2,585,292,800-byte peak); smaller 1,280/1,536 MiB heaps exhausted before useful
+type diagnostics. This measures the frontend, not the final native optimizer.
 This is a bounded build attempt, not evidence that final fat LTO fits that limit.
 Only clean canonical `main` may be packaged. Build receipts bind the exact source,
 upstream pin, configuration, tools, dependencies and artifacts. xLog packaging and

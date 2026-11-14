@@ -18,6 +18,9 @@ $env:CMAKE_GENERATOR = 'Ninja'
 $env:CARGO_BUILD_JOBS = $Jobs.ToString()
 $env:CMAKE_BUILD_PARALLEL_LEVEL = $Jobs.ToString()
 $env:RUSTUP_TOOLCHAIN = $toolchain
+# The complete UI typecheck exceeds smaller V8 heaps. Pin the measured frontend
+# allowance while the outer Job still bounds the entire package process tree.
+$env:NODE_OPTIONS = '--max-old-space-size=2560'
 $source = (git -C $repo rev-parse HEAD).Trim()
 $config = Get-Content -Raw (Join-Path $repo 'src-tauri\tauri.conf.json') | ConvertFrom-Json
 Run { node (Join-Path $repo 'scripts\xnexus\fork-policy.test.mjs') }
@@ -78,7 +81,7 @@ $receipt = [ordered]@{
     distribution = $distribution; distributionReceiptSha256 = (Get-FileHash -LiteralPath $distributionPath -Algorithm SHA256).Hash
     rustc = (& rustc "+$toolchain" -Vv) -join "`n"
     gfortran = (& gfortran --version | Select-Object -First 1)
-    node = (& node --version); npm = (& npm --version)
+    node = (& node --version); npm = (& npm --version); nodeOptions = $env:NODE_OPTIONS
     cargoLockSha256 = (Get-FileHash "$repo\src-tauri\Cargo.lock" -Algorithm SHA256).Hash
     libvpxArchiveSha256 = (Get-FileHash "$env:VPX_MINGW_PREFIX\lib\libvpx.a" -Algorithm SHA256).Hash
     libvpxSourceSha256 = (Get-Content -Raw "$env:VPX_MINGW_PREFIX\.xnexus-sha256").Trim()
