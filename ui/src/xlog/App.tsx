@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
-import { useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { useViewport } from '../useViewport'
 import { QsoPanel } from './QsoPanel'
 import { StationBandMap } from './StationBandMap'
@@ -8,6 +8,7 @@ import { bridge, disconnected, type Bridge, type Command, type Spot, type View }
 const frequency = (hz: number | null | undefined) => hz == null ? '—' : (hz / 1_000_000).toFixed(6)
 const errorText = (error: unknown) => error instanceof Error ? error.message : String(error)
 const ageText = (ms: number) => ms < 1000 ? 'just now' : `${Math.floor(ms / 1000)}s ago`
+const StationMap = lazy(() => import('./StationMap'))
 
 export function App({ api = bridge }: { api?: Bridge }) {
   const [view, setView] = useState<View>(disconnected)
@@ -16,6 +17,7 @@ export function App({ api = bridge }: { api?: Bridge }) {
   const [busy, setBusy] = useState(false)
   const [selectedId, select] = useState<string | null>(null)
   const [filter, setFilter] = useState<'needed' | 'all'>('needed')
+  const [layout, setLayout] = useState<'list' | 'band' | 'world'>('list')
   const [query, setQuery] = useState('')
   const [heading, setHeading] = useState('')
   const [theme, setTheme] = useState<'dark' | 'light'>('dark')
@@ -141,19 +143,20 @@ export function App({ api = bridge }: { api?: Bridge }) {
       </section>
       <section className="xn-workspace" aria-label="Station opportunities">
         <div className="xn-feed">
+          <div className="xn-feed-tools"><label>View <select aria-label="Station view" value={layout} onChange={event => setLayout(event.target.value as typeof layout)}><option value="list">Station list</option><option value="band">Nexus band map</option><option value="world">World map</option></select></label></div>
           <div className="xn-feed-tools"><h2>{filter === 'needed' ? 'Stations to work' : 'Cluster observations'}</h2><div><button aria-pressed={filter === 'needed'} onClick={() => setFilter('needed')}>Needed</button><button aria-pressed={filter === 'all'} onClick={() => setFilter('all')}>All spots</button></div><input aria-label="Filter callsigns" placeholder="Find callsign" value={query} onChange={e => setQuery(e.target.value)} /></div>
-          {!fresh ? <p className="xn-empty">Connect to xLog to see current station opportunities. Cached or unknown data never counts as needed.</p> : spots.length === 0 ? <p className="xn-empty">{filter === 'needed' ? 'No currently needed stations in this xLog snapshot.' : 'No matching cluster observations.'}</p> : <table className="xn-spots"><thead><tr><th>Station</th><th>MHz / mode</th><th>Why work it</th><th>Source / age</th></tr></thead><tbody>{spots.map(spot => <tr key={spot.id} className={selectedId === spot.id ? 'xn-selected' : ''}><td><button aria-label={`Inspect ${spot.callsign}`} onClick={() => select(spot.id)}>{spot.callsign}</button><small>{spot.need.status}</small></td><td className="xn-mono">{frequency(spot.frequency_hz)}<small>{spot.mode}</small></td><td>{spot.need.reasons.join(' · ') || 'No need evidence available'}<small>Score {spot.need.score} from xLog</small></td><td>{spot.source}<small>{ageText(Math.max(0, Date.now() - spot.observed_at_unix_ms))}</small></td></tr>)}</tbody></table>}
+          {!fresh ? <p className="xn-empty">Connect to xLog to see current station opportunities. Cached or unknown data never counts as needed.</p> : spots.length === 0 ? <p className="xn-empty">{filter === 'needed' ? 'No currently needed stations in this xLog snapshot.' : 'No matching cluster observations.'}</p> : layout === 'band' ? <StationBandMap spots={spots} dialHz={snapshot?.station.frequency_hz ?? null} select={spot => select(spot.id)} /> : layout === 'world' ? <Suspense fallback={<p>Loading offline map…</p>}><StationMap spots={spots} selectedId={selectedId} select={spot => select(spot.id)} /></Suspense> : <table className="xn-spots"><thead><tr><th>Station</th><th>MHz / mode</th><th>Why work it</th><th>Source / age</th></tr></thead><tbody>{spots.map(spot => <tr key={spot.id} className={selectedId === spot.id ? 'xn-selected' : ''}><td><button aria-label={`Inspect ${spot.callsign}`} onClick={() => select(spot.id)}>{spot.callsign}</button><small>{spot.need.status}</small></td><td className="xn-mono">{frequency(spot.frequency_hz)}<small>{spot.mode}</small></td><td>{spot.need.reasons.join(' · ') || 'No need evidence available'}<small>Score {spot.need.score} from xLog</small></td><td>{spot.source}<small>{ageText(Math.max(0, Date.now() - spot.observed_at_unix_ms))}</small></td></tr>)}</tbody></table>}
         </div>
         <aside className="xn-inspector" aria-label="Selected station">
           <p className="xn-eyebrow">WORK WITH XLOG</p><h2>{selected?.callsign ?? 'Select a station'}</h2>
           {selected ? <><p className="xn-mono">{frequency(selected.frequency_hz)} MHz · {selected.mode}</p><p>{selected.need.reasons.join(' · ') || 'Need status unknown'}</p><button disabled={!allows('station.tune') || !snapshot?.station.connected || !snapshot.station.radio_id} onClick={() => tune(selected)}>Tune through xLog</button></> : <p>Choose a callsign to inspect xLog’s evidence and request a tune.</p>}
           {!view.hello?.capabilities.includes('station.tune') && <p className="xn-hint">Radio tuning is unavailable until xLog grants that capability.</p>}
+          {selected && <p className="xn-hint">{selected.country ?? 'Country unavailable'}{selected.adif ? ` · DXCC ${selected.adif}` : ''}<br />Call: {selected.call_status ?? 'unknown'} · DXCC: {selected.dxcc_status ?? 'unknown'} (from xLog)</p>}
           <hr /><h3>Point the antenna</h3><label>Azimuth in degrees<input type="number" min="0" max="359.9" step="0.1" value={heading} onChange={e => setHeading(e.target.value)} /></label><button disabled={!allows('rotor.point') || !snapshot?.rotor.connected || !snapshot.rotor.rotor_id || heading.trim() === '' || !Number.isFinite(azimuth) || azimuth < 0 || azimuth >= 360} onClick={() => snapshot?.rotor.rotor_id && void command({ kind: 'rotor.point', rotor_id: snapshot.rotor.rotor_id, azimuth_deg: azimuth })}>Point through xLog</button>
           <p className="xn-hint">xLog validates the target and travel limits. Stop rotator remains in the connection bar.</p>
         </aside>
       </section>
-      {fresh && snapshot && <StationBandMap spots={snapshot.spots} dialHz={snapshot.station.frequency_hz} select={spot => select(spot.id)} />}
-      <QsoPanel api={api} enabled={allows('logbook.write')} connected={view.connected} workspace={view.hello?.workspace_id ?? null} selected={fresh ? selected : undefined} />
+      <QsoPanel api={api} enabled={allows('logbook.write')} readEnabled={allows('logbook.read')} connected={view.connected} workspace={view.hello?.workspace_id ?? null} selected={fresh ? selected : undefined} />
       <footer className="xn-footer"><span>{view.endpoint ?? 'No pairing loaded'}</span><span>{view.hello ? `Workspace ${view.hello.workspace_id} · protocol ${view.hello.protocol_version}` : 'Nexus-derived companion · station owned by OM0RX-xLog'}</span><span>Audio and digital transmission are not enabled in this view.</span></footer>
     </main>
   </div>

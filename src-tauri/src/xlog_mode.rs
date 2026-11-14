@@ -16,9 +16,79 @@ use std::{
 };
 use tauri::State;
 use xnexus_xlog_client::outbox::{LogbookMutation, Outbox, OutboxEntry};
-use xnexus_xlog_client::{BridgeClient, Command, CommandReceipt, Hello, Snapshot, StopClient};
+use xnexus_xlog_client::{
+    BridgeClient, Command, CommandReceipt, Hello, History, Snapshot, StopClient,
+};
+
+#[tauri::command]
+async fn xlog_history(state: State<'_, Shared>, callsign: String) -> Result<History, String> {
+    let shared = Arc::clone(&state);
+    let (generation, connection) = current(&shared)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut client = lock(&connection.client)?;
+        if lock(&shared)?.generation != generation {
+            return Err("Connection changed".into());
+        }
+        let history = client
+            .history(&callsign)
+            .map_err(|error| error.to_string())?;
+        if lock(&shared)?.generation != generation {
+            return Err("Connection changed".into());
+        }
+        Ok(history)
+    })
+    .await
+    .map_err(|_| "xLog history request failed")?
+}
 
 type Queue = Arc<Mutex<Option<Outbox>>>;
+
+/// A visible launch coordinate for isolated candidates; the same root holds the
+/// companion queue and WebView profile. A malformed explicit root never falls back.
+fn data_root_from(
+    args: &[String],
+    environment: Option<std::ffi::OsString>,
+    fallback: std::path::PathBuf,
+) -> Result<std::path::PathBuf, String> {
+    let mut explicit = None;
+    let mut args = args.iter();
+    while let Some(arg) = args.next() {
+        if arg == "--xlog-data-dir" {
+            explicit = Some(std::path::PathBuf::from(
+                args.next()
+                    .filter(|value| !value.is_empty())
+                    .ok_or("--xlog-data-dir requires an absolute path")?,
+            ));
+            break;
+        }
+        if let Some(value) = arg.strip_prefix("--xlog-data-dir=") {
+            if value.is_empty() {
+                return Err("--xlog-data-dir requires an absolute path".into());
+            }
+            explicit = Some(value.into());
+            break;
+        }
+    }
+    let root = explicit
+        .or_else(|| {
+            environment
+                .filter(|value| !value.is_empty())
+                .map(std::path::PathBuf::from)
+        })
+        .unwrap_or(fallback);
+    if !root.is_absolute() {
+        return Err("xLog companion data root must be absolute".into());
+    }
+    Ok(root)
+}
+
+fn data_root() -> Result<std::path::PathBuf, String> {
+    data_root_from(
+        &std::env::args().skip(1).collect::<Vec<_>>(),
+        std::env::var_os("XNEXUS_DATA_DIR"),
+        crate::config_dir().join("companion"),
+    )
+}
 
 fn with_queue<T>(
     queue: &Queue,
@@ -26,11 +96,7 @@ fn with_queue<T>(
 ) -> Result<T, String> {
     let mut guard = lock(queue)?;
     if guard.is_none() {
-        let root = std::env::var_os("XNEXUS_DATA_DIR")
-            .filter(|value| !value.is_empty())
-            .map(std::path::PathBuf::from)
-            .unwrap_or_else(crate::config_dir)
-            .join("xlog-outbox");
+        let root = data_root()?.join("xlog-outbox");
         *guard = Some(Outbox::open(root).map_err(|error| error.to_string())?);
     }
     f(guard.as_mut().ok_or("QSO queue unavailable")?)
@@ -184,14 +250,22 @@ fn establish(shared: &Shared, generation: u64, pairing: Pairing) -> Result<View,
     let mut client =
         BridgeClient::new(&pairing.endpoint, &pairing.token).map_err(|e| e.to_string())?;
     let hello = client.connect().map_err(|e| e.to_string())?.clone();
-    let stop = client.stop_handle().map_err(|e| e.to_string())?;
+    let stop = if hello
+        .capabilities
+        .iter()
+        .any(|capability| capability == "rotor.stop")
+    {
+        Some(client.stop_handle().map_err(|e| e.to_string())?)
+    } else {
+        None
+    };
     let snapshot = client.poll().map_err(|e| e.to_string())?.clone();
     let mut session = lock(shared)?;
     if session.generation != generation {
         return Err("Connection request cancelled".into());
     }
     session.pairing = Some(pairing);
-    session.stop = Some(stop.clone());
+    session.stop = stop;
     session.connection = Some(Arc::new(Connection {
         client: Mutex::new(client),
         hello,
@@ -353,6 +427,7 @@ pub(crate) fn requested() -> bool {
 }
 
 pub(crate) fn run() {
+    let root = data_root().expect("Invalid companion data root; refusing to launch");
     let mut context = tauri::generate_context!();
     context
         .config_mut()
@@ -365,6 +440,7 @@ pub(crate) fn run() {
         window.visible = true;
         window.min_width = Some(780.0);
         window.min_height = Some(438.0);
+        window.data_directory = Some(root.join("webview"));
     }
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
@@ -379,7 +455,8 @@ pub(crate) fn run() {
             xlog_disconnect,
             xlog_outbox_list,
             xlog_outbox_enqueue,
-            xlog_outbox_deliver
+            xlog_outbox_deliver,
+            xlog_history
         ])
         .run(context)
         .expect("xLog companion desktop failed");
@@ -388,6 +465,55 @@ pub(crate) fn run() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn explicit_private_root_is_shared_and_never_falls_back() {
+        let fallback = std::env::temp_dir().join("xnexus-fallback");
+        let explicit = std::env::temp_dir().join("xnexus-isolated");
+        let args = vec![
+            "--xlog-data-dir".into(),
+            explicit.to_string_lossy().into_owned(),
+        ];
+        assert_eq!(
+            data_root_from(&args, None, fallback.clone()).unwrap(),
+            explicit
+        );
+        assert!(
+            data_root_from(&["--xlog-data-dir=relative".into()], None, fallback.clone()).is_err()
+        );
+        assert!(data_root_from(&["--xlog-data-dir".into()], None, fallback).is_err());
+    }
+
+    #[test]
+    fn read_only_bridge_connects_without_rotator_capability() {
+        use std::io::Write;
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let endpoint = format!("http://{}", listener.local_addr().unwrap());
+        let hello = serde_json::json!({"application":"OM0RX-xLog","protocol_version":1,"server_instance":"read-only-fixture","workspace_id":"fixture-workspace","capabilities":["snapshot.read"]});
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as u64;
+        let snapshot = serde_json::json!({"protocol_version":1,"server_instance":"read-only-fixture","workspace_id":"fixture-workspace","revision":1,"generated_at_unix_ms":now,"max_age_ms":10000,"station":{"connected":false,"radio_id":null,"frequency_hz":null,"mode":null,"transmitting":null},"rotor":{"connected":false,"rotor_id":null,"azimuth_deg":null,"moving":null},"spots":[]});
+        let server = std::thread::spawn(move || {
+            for body in [hello.to_string(), snapshot.to_string()] {
+                let (mut stream, _) = listener.accept().unwrap();
+                let mut request = [0; 4096];
+                stream.read(&mut request).unwrap();
+                write!(stream,"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",body.len(),body).unwrap();
+            }
+        });
+        let shared = Shared::default();
+        let generation = begin(&shared).unwrap();
+        let pairing = Pairing {
+            protocol_version: 1,
+            application: "OM0RX-xLog".into(),
+            endpoint,
+            token: "synthetic-read-only-pairing-marker".into(),
+        };
+        assert!(establish(&shared, generation, pairing).unwrap().connected);
+        assert!(lock(&shared).unwrap().stop.is_none());
+        server.join().unwrap();
+    }
     #[test]
     fn pairing_requires_xlog_loopback_and_valid_secret() {
         let mut value = serde_json::json!({"application":"OM0RX-xLog","protocol_version":1,"endpoint":"http://127.0.0.1:49123","token":"synthetic-pairing-marker-for-tests-only"});

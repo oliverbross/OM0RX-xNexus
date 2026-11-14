@@ -6,7 +6,7 @@ import type { SpotRow } from '../types'
 import type { Spot } from './api'
 
 function modeClass(mode: string): 'CW' | 'Phone' | 'Digital' {
-  return mode === 'CW' ? 'CW' : ['SSB', 'USB', 'LSB', 'AM', 'FM'].includes(mode.toUpperCase()) ? 'Phone' : 'Digital'
+  return mode.toUpperCase() === 'CW' ? 'CW' : ['SSB', 'USB', 'LSB', 'AM', 'FM'].includes(mode.toUpperCase()) ? 'Phone' : 'Digital'
 }
 
 export function StationBandMap({ spots, dialHz, select }: { spots: Spot[]; dialHz: number | null; select: (spot: Spot) => void }) {
