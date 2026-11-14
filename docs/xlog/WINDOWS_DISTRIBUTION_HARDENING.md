@@ -207,3 +207,30 @@ alternate-hook and foreign-product negative controls. A source-only preflight
 produced the expected 11-to-12 resource map; both PowerShell scripts parse. This
 does not execute Cargo, Tauri, the product, or an installer. Actual merged-config
 bundling and subsequent static/installation acceptance remain pending.
+
+### Pinned CLI relative-path proof
+
+The generated config may live in `target/xnexus-provenance`: its location does
+not become the base for resource, template, hook or frontend paths. This was
+verified by reading the exact `tauri-cli-v2.11.5` sources, without starting a build:
+
+- [`ConfigValue`, CLI lib.rs lines 54–87](https://github.com/tauri-apps/tauri/blob/tauri-cli-v2.11.5/crates/tauri-cli/src/lib.rs#L54)
+  reads an argument file into a JSON value and retains no source directory.
+  Git blob `81b45dd31cf21513e97a6451b770489b3cfab484`.
+- [`load_config`, helpers/config.rs lines 154–216](https://github.com/tauri-apps/tauri/blob/tauri-cli-v2.11.5/crates/tauri-cli/src/helpers/config.rs#L154)
+  loads the original `tauri_dir/tauri.conf.json`, merges the supplied values,
+  and deserializes while temporarily in that original config's parent.
+  Git blob `75fb6b1ac6050755e7a6921288d07cbf26bee3e5`.
+- [`build::setup`, build.rs lines 158 and 198–204](https://github.com/tauri-apps/tauri/blob/tauri-cli-v2.11.5/crates/tauri-cli/src/build.rs#L158)
+  sets the process directory to `dirs.tauri` before resolving `frontendDist`.
+  Git blob `2819bc3fcd6d06fa46883d0451db549e34c1e686`. The standalone
+  [`bundle` command also sets that directory at line 139](https://github.com/tauri-apps/tauri/blob/tauri-cli-v2.11.5/crates/tauri-cli/src/bundle.rs#L139),
+  blob `4c128ff482f175d9ee3404b88f66d6f0ea861821`.
+- The pinned [`NSIS bundler`](https://github.com/tauri-apps/tauri/blob/tauri-cli-v2.11.5/crates/tauri-bundler/src/bundle/windows/nsis/mod.rs)
+  canonicalizes `installerHooks` at lines 397–402, reads the custom template
+  at 628–630, and joins resource paths to the current directory at 785/808.
+  Git blob `67563de153a9ca6905042a7861f65c322a5b3957`.
+
+The wrapper additionally enters the original `src-tauri` directory before the
+CLI call. Relative paths therefore preserve their original project meaning;
+rewriting them relative to the provenance directory would be incorrect.
