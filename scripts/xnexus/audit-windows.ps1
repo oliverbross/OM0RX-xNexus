@@ -110,6 +110,19 @@ try {
         throw 'Review the audit for this changed WebView2 installation mode.'
     }
     $nsisScript=Join-Path $release 'nsis\x64\installer.nsi'
+    if($build.distribution) {
+        if((Hash $nsisScript) -ne $build.generatedNsisSha256) { throw 'Generated hardened NSIS source changed after packaging.' }
+        if((Hash $build.distribution.configPath).ToLowerInvariant() -ne $build.distribution.configSha256) { throw 'Distribution config differs from the packaged receipt.' }
+        foreach($entry in $build.distribution.sourceHashes.PSObject.Properties) {
+            if((Hash (Join-Path $repo $entry.Name)).ToLowerInvariant() -ne $entry.Value) { throw "Distribution source mismatch: $($entry.Name)" }
+        }
+        $rendered=Get-Content -LiteralPath $nsisScript -Raw
+        foreach($required in @('Function XNValidateCompletePayload','Call XNInvalidateOwnershipMarker','AllowSkipFiles off','!define MUI_FINISHPAGE_RUN_NOTCHECKED')) {
+            if(!$rendered.Contains($required)) { throw "Generated installer lacks hardened policy: $required" }
+        }
+        $audit.distribution=$build.distribution
+        $audit.generatedNsisSha256=(Hash $nsisScript)
+    }
     $runtimeDefinition=[regex]::Match((Get-Content -LiteralPath $nsisScript -Raw),
         '(?m)^!define WEBVIEW2INSTALLERPATH "([^"]+)"')
     if(!$runtimeDefinition.Success) { throw 'Cannot identify the exact offline WebView2 input.' }
@@ -142,6 +155,7 @@ try {
     $expected+=@($build.hamlibHashes)
     $expected+=@{name='WebView2Loader.dll';sha256=(Hash (Join-Path $release 'WebView2Loader.dll'))}
     foreach($name in @('COPYING','NOTICE')) { $expected+=@{name=$name;sha256=(Hash (Join-Path $repo $name))} }
+    if($build.distribution) { $expected+=@{name='LICENSE-MIT.tauri';sha256=(Hash (Join-Path $repo 'scripts\xnexus\nsis\LICENSE-MIT.tauri'))} }
     $verified=@()
     foreach($item in $expected) {
         $payloadMatches=@($files | Where-Object Name -eq $item.name | Where-Object {(Hash $_.FullName) -eq $item.sha256})
