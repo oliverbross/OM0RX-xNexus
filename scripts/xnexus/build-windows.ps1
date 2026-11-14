@@ -79,9 +79,10 @@ try {
         throw 'Executable still depends on builder-only GNU runtime DLLs; reject installer.'
     }
     if ((git -C $repo rev-parse HEAD).Trim() -ne $source -or (git -C $repo status --porcelain)) { throw 'Source changed during packaging; reject the artifacts.' }
-    $artifacts = Get-ChildItem "$env:CARGO_TARGET_DIR\x86_64-pc-windows-gnu\release\bundle\nsis\*-setup.exe"
+    $artifacts = Get-ChildItem "$env:CARGO_TARGET_DIR\x86_64-pc-windows-gnu\release\bundle\nsis\*_$($config.version)_*-setup.exe"
     if (!$artifacts) { throw 'No NSIS installer produced.' }
     $receipt.status = 'packaged-unsigned-not-installed'
+    $receipt.executableSha256 = (Get-FileHash $executable -Algorithm SHA256).Hash
     $receipt.executableImports = @($imports | Select-String 'DLL Name:' | ForEach-Object { $_.Line.Trim() })
     $receipt.artifacts = @($artifacts | ForEach-Object { @{path=$_.FullName; sha256=(Get-FileHash $_.FullName -Algorithm SHA256).Hash; bytes=$_.Length} })
     $receipt | ConvertTo-Json -Depth 5 | Set-Content -Encoding utf8 $receiptPath
