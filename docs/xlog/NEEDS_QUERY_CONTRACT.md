@@ -29,7 +29,7 @@ Reply fields, all present:
 Numeric revisions are exact integers from 0 through 9,007,199,254,740,990; zero
 is permitted only with the owner's explicit ready/complete authority. ADIF is
 null or an integer from 1 through 9999. Band/country are bounded to 32/128
-characters without controls. Reasons are each bounded to 256 characters without
+UTF-8 bytes without controls. Reasons are each bounded to 256 UTF-8 bytes without
 controls. Country-reference identity is
 the owner's opaque ASCII identity, bounded to 512 bytes and compared only for
 equality. Its present form begins `xlog-country-facts-v3:` and may include entity
@@ -65,6 +65,12 @@ or `missingDate` values. `/MM` and `/AM` must never borrow a home entity or gain
 ATNO. Their valid literal call evidence may remain visible, but combined need
 is Unknown/null, DXCC status Unknown and country/ADIF null. This does not change
 underlying history aliasing or confirmation policy.
+
+For `country_ambiguous` and `country_unknown`, country/ADIF are null and DXCC
+status is Unknown; valid literal call evidence may remain visible. Resolution
+is `ambiguous` for the former, and `unknown`, `invalid` or `missingDate` for the
+latter. `unsupported_band` requires null band, while resolved country facts may
+remain visible. These combinations still have Unknown need and a null score.
 
 Existing bridge `{error: string}` errors remain: 400 malformed batch, 401/403
 authentication/authorization, 404 absent optional capability, 503 saturation or
