@@ -111,6 +111,20 @@ pub struct Spot {
     pub observed_at_unix_ms: u64,
     pub source: String,
     pub need: Need,
+    #[serde(default)]
+    pub country: Option<String>,
+    #[serde(default)]
+    pub adif: Option<u32>,
+    #[serde(default)]
+    pub latitude: Option<f64>,
+    #[serde(default)]
+    pub longitude: Option<f64>,
+    #[serde(default)]
+    pub band: Option<String>,
+    #[serde(default)]
+    pub call_status: Option<String>,
+    #[serde(default)]
+    pub dxcc_status: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
@@ -197,6 +211,16 @@ impl Snapshot {
                 || !frequency(spot.frequency_hz)
                 || !bounded(&spot.mode, 32)
                 || !bounded(&spot.source, 256)
+                || spot.country.as_ref().is_some_and(|s| !bounded(s, 128))
+                || spot.band.as_ref().is_some_and(|s| !bounded(s, 32))
+                || spot.call_status.as_ref().is_some_and(|s| !bounded(s, 64))
+                || spot.dxcc_status.as_ref().is_some_and(|s| !bounded(s, 64))
+                || spot
+                    .latitude
+                    .is_some_and(|v| !v.is_finite() || !(-90.0..=90.0).contains(&v))
+                || spot
+                    .longitude
+                    .is_some_and(|v| !v.is_finite() || !(-180.0..=180.0).contains(&v))
                 || spot.observed_at_unix_ms > self.generated_at_unix_ms.saturating_add(2000)
                 || spot.need.reasons.len() > 32
                 || spot.need.reasons.iter().any(|s| !bounded(s, 256))

@@ -612,6 +612,25 @@ fn needs_evidence_and_valid_observations() {
     assert_bad_snapshot(value, Error::Invalid);
 }
 #[test]
+fn owner_geography_is_preserved_and_invalid_coordinates_are_refused() {
+    let mut value = snapshot();
+    value["spots"][0]["country"] = json!("United States");
+    value["spots"][0]["adif"] = json!(291);
+    value["spots"][0]["latitude"] = json!(41.7);
+    value["spots"][0]["longitude"] = json!(-72.7);
+    value["spots"][0]["call_status"] = json!("worked");
+    let (mut c, s) = server(vec![json_response(hello()), json_response(value.clone())]);
+    c.connect().unwrap();
+    let spot = &c.poll().unwrap().spots[0];
+    assert_eq!(spot.adif, Some(291));
+    assert_eq!(spot.latitude, Some(41.7));
+    assert_eq!(spot.call_status.as_deref(), Some("worked"));
+    assert_eq!(spot.need.status, NeedStatus::Needed);
+    s.join().unwrap();
+    value["spots"][0]["latitude"] = json!(91);
+    assert_bad_snapshot(value, Error::Invalid);
+}
+#[test]
 fn bounded_identifiers_and_spot_count() {
     let mut h = hello();
     h["workspace_id"] = json!("x".repeat(129));
