@@ -425,6 +425,8 @@ Section Install
   ${If} ${Errors}
     Abort "Could not select the validated installation directory. No payload files have been written."
   ${EndIf}
+  ; A partial upgrade must not retain the previous complete-install marker.
+  Call XNInvalidateOwnershipMarker
 
   !ifmacrodef NSIS_HOOK_PREINSTALL
     !insertmacro NSIS_HOOK_PREINSTALL
@@ -432,20 +434,34 @@ Section Install
 
   ; xNexus refuses running instances; it never force-kills them.
 
-  ; Copy main executable
+  ; Copy main executable. Never allow Ignore to turn failed extraction into success.
+  AllowSkipFiles off
+  SetOverwrite on
+  ClearErrors
   File "${MAINBINARYSRCPATH}"
+  ${If} ${Errors}
+    Abort "Main executable extraction failed; ownership will not be recorded."
+  ${EndIf}
 
   ; Copy resources
   {{#each resources_dirs}}
     CreateDirectory "$INSTDIR\\{{this}}"
   {{/each}}
   {{#each resources}}
+    ClearErrors
     File /a "/oname={{this.[1]}}" "{{no-escape @key}}"
+    ${If} ${Errors}
+      Abort "A required resource could not be extracted; ownership will not be recorded."
+    ${EndIf}
   {{/each}}
 
   ; Copy external binaries
   {{#each binaries}}
+    ClearErrors
     File /a "/oname={{this}}" "{{no-escape @key}}"
+    ${If} ${Errors}
+      Abort "A required external binary could not be extracted; ownership will not be recorded."
+    ${EndIf}
   {{/each}}
 
   ; Create file associations
@@ -464,7 +480,11 @@ Section Install
   {{/each}}
 
   ; Create uninstaller
+  ClearErrors
   WriteUninstaller "$INSTDIR\uninstall.exe"
+  ${If} ${Errors}
+    Abort "The uninstaller could not be written; ownership will not be recorded."
+  ${EndIf}
 
   ; Save $INSTDIR in registry for future installations
   WriteRegStr SHCTX "${MANUPRODUCTKEY}" "" $INSTDIR
@@ -792,14 +812,46 @@ Function XNRequireOrdinaryClosure
   ${EndIf}
 FunctionEnd
 
-Function XNWriteOwnershipMarker
+Function XNValidateCompletePayload
   StrCpy $XNPath $INSTDIR
   Call XNPathOnly
   ${If} $XNResult <> 0
-    Abort "$XNReason"
+    Return
+  ${EndIf}
+  ; Check every enumerated destination independently. Scanning only existing
+  ; entries cannot detect a missing file after incomplete extraction.
+  StrCpy $XNEntry "$INSTDIR\${MAINBINARYNAME}.exe"
+  Call XNCheckRegular
+  StrCpy $XNEntry "$INSTDIR\uninstall.exe"
+  Call XNCheckRegular
+  {{#each resources}}
+  StrCpy $XNEntry "$INSTDIR\\{{this.[1]}}"
+  Call XNCheckRegular
+  {{/each}}
+  {{#each binaries}}
+  StrCpy $XNEntry "$INSTDIR\\{{this}}"
+  Call XNCheckRegular
+  {{/each}}
+  ${If} $XNResult <> 0
+    Return
   ${EndIf}
   Push $XNCanonical
   Call XNScanTree
+FunctionEnd
+
+Function XNInvalidateOwnershipMarker
+  ClearErrors
+  Delete "$INSTDIR\${XN_OWNER_FILE}"
+  ${If} ${Errors}
+    Abort "Could not invalidate the previous ownership marker before replacing files."
+  ${EndIf}
+  IfFileExists "$INSTDIR\${XN_OWNER_FILE}" 0 marker_invalidated
+    Abort "The previous ownership marker is still present; no payload replacement is allowed."
+  marker_invalidated:
+FunctionEnd
+
+Function XNWriteOwnershipMarker
+  Call XNValidateCompletePayload
   ${If} $XNResult <> 0
     Abort "$XNReason"
   ${EndIf}

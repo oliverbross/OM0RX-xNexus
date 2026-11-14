@@ -61,8 +61,10 @@ product files remain unless a future reviewed ownership manifest enumerates
 them safely. This avoids uninstall-then-install losing the ownership marker
 while unrelated files remain in the directory.
 
-The marker is written only after payload/uninstaller creation and a fresh path
-and content scan. A failed or partial install may require manual review; there
+The marker is written only after payload/uninstaller creation, explicit checks
+of every enumerated destination, and a fresh path/content scan. The previous
+marker is invalidated immediately before payload replacement so an interrupted
+upgrade cannot retain an old completeness claim. A failed or partial install may require manual review; there
 is no rollback or adoption of unmarked contents. Standalone uninstall validates
 ownership and ordinary closure before deletes, removes only its known payload,
 marker and fork registry entries, and uses nonrecursive directory removal.
@@ -104,7 +106,9 @@ The guard receipt is retained under
 template compile receipt under
 `target/nsis-template/e775c7cd-b84c-40eb-8076-447d8e58b886/receipt.json` in the
 isolated hardening checkout. Receipts record the precommit dirty-source context
-and exact file hashes; the committed files have these same bytes:
+and exact file hashes; commit `cdb1b84ef5b1e3d15071fd66548bfaa7ee02035c`
+has these baseline bytes (the payload-completion follow-up below supersedes the
+generated template hash):
 
 | Component | SHA-256 |
 | --- | --- |
@@ -126,7 +130,7 @@ node scripts/xnexus/test-nsis-template.mjs <preserved-Tauri-2.11.5-NSIS-support-
 
 The support directory supplies `utils.nsh`, `FileAssociation.nsh`, and
 `English.nsh`; all are hashed in the compile receipt and `utils.nsh` is pinned
-to the reviewed generated source. Only the guard probes execute. They are
+to the reviewed generated source. Only the guard and marker probes execute. They are
 silent disposable test programs, do not install a product or mutate registry
 state, and leave their fixtures/receipts intact. Cancellation tests exercise
 pre-operation admission and sentinel retention, **not native wizard Cancel**.
@@ -137,3 +141,35 @@ upgrade, cancellation and standalone uninstall qualification; running-app
 refusal; verification that profiles/queues and xLog survive every operation;
 and signing/distribution approval. No installation or hardware claim follows
 from these source tests.
+
+## Payload-completion review follow-up
+
+The [NSIS AllowSkipFiles reference](https://nsis.sourceforge.io/Reference/AllowSkipFiles)
+confirms that extraction can otherwise offer Ignore, allowing continuation with
+the error flag set. The fork now compiles payload extraction with
+`AllowSkipFiles off` and `SetOverwrite on`, checks errors immediately after each
+main/resource/external-binary extraction and `WriteUninstaller`, and aborts on
+failure. The marker writer calls `XNValidateCompletePayload`: it requires the
+main executable, uninstaller, every rendered resource and external binary to
+exist as inspectable regular singly linked files before scanning the tree and
+writing the marker. This checks presence/regularity; it is not a cryptographic
+post-install byte verification. An extraction failure cannot reach the writer.
+
+The complete template compiled again. Six additional actual NSIS tests execute
+the **exact marker functions extracted from that rendered template**, with inert
+payloads: complete positive control; missing main executable, uninstaller,
+resource and external binary; and a failed upgrade with an existing marker.
+All missing-payload cases abort with exit 91 and no marker, including the old
+upgrade marker; the complete case writes one. Queue sentinels remain byte-identical.
+No application, product installer or registry-writing section runs. Nine policy
+tests pass, including new negative controls for skippable extraction and bypassed
+payload validation. First qualification receipts above remain preserved.
+
+Follow-up receipt:
+`target/nsis-template/5b370151-149e-491f-906c-717f8f50c809/receipt.json`.
+Generated template SHA-256:
+`22ed402c99eaa283f0e5c30ab5d469852f70bfcfd1e5aabd6413970aa2836975`.
+Extracted marker harness SHA-256:
+`4547d72573706f65ae5f3c6f65a89f61a61fc1ac1ac8e1ddbfae9402506d704d`.
+The original 26 admission cases use unchanged guard bytes. Native wizard
+extraction-error, Retry/Cancel, upgrade and uninstall qualification remain pending.
