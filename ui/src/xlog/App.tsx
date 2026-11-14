@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useViewport } from '../useViewport'
 import { QsoPanel } from './QsoPanel'
+import { StationBandMap } from './StationBandMap'
 import { bridge, disconnected, type Bridge, type Command, type Spot, type View } from './api'
 
 const frequency = (hz: number | null | undefined) => hz == null ? '—' : (hz / 1_000_000).toFixed(6)
@@ -151,6 +152,7 @@ export function App({ api = bridge }: { api?: Bridge }) {
           <p className="xn-hint">xLog validates the target and travel limits. Stop rotator remains in the connection bar.</p>
         </aside>
       </section>
+      {fresh && snapshot && <StationBandMap spots={snapshot.spots} dialHz={snapshot.station.frequency_hz} select={spot => select(spot.id)} />}
       <QsoPanel api={api} enabled={allows('logbook.write')} connected={view.connected} workspace={view.hello?.workspace_id ?? null} selected={fresh ? selected : undefined} />
       <footer className="xn-footer"><span>{view.endpoint ?? 'No pairing loaded'}</span><span>{view.hello ? `Workspace ${view.hello.workspace_id} · protocol ${view.hello.protocol_version}` : 'Nexus-derived companion · station owned by OM0RX-xLog'}</span><span>Audio and digital transmission are not enabled in this view.</span></footer>
     </main>

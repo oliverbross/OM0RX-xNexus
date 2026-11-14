@@ -93,6 +93,14 @@ describe('xLog-owned desktop', () => {
     expect(native.disconnect).toHaveBeenCalledWith(true)
     expect(screen.getByRole('button', { name: 'Stop rotator' })).toHaveProperty('disabled', true)
   })
+  it('drops the prior station stop route while pairing a replacement', async () => {
+    const native = api(connected()); vi.mocked(native.importPairing).mockReturnValue(new Promise(() => {}))
+    render(<App api={native} />)
+    await screen.findByText('Connected to xLog')
+    fireEvent.click(screen.getByRole('button', { name: 'Open xLog pairing file' }))
+    expect(screen.getByRole('button', { name: 'Stop rotator' })).toHaveProperty('disabled', true)
+    expect(screen.queryByRole('button', { name: 'Inspect W1AW' })).toBeNull()
+  })
   it('refuses browser HTTP fallback when the native bridge is absent', async () => {
     const fetch = vi.spyOn(window, 'fetch')
     await expect(bridge.status()).rejects.toThrow('Open the OM0RX-xNexus desktop')

@@ -8,6 +8,13 @@ export interface Spot {
   mode: string
   observed_at_unix_ms: number
   source: string
+  country?: string | null
+  adif?: number | null
+  lat?: number | null
+  lon?: number | null
+  band?: string | null
+  call_status?: string | null
+  dxcc_status?: string | null
   need: { status: NeedStatus; score: number; reasons: string[] }
 }
 export interface Snapshot {
@@ -45,6 +52,8 @@ export interface Receipt {
   workspace_id: string
   status: 'accepted' | 'applied' | 'observed' | 'rejected' | 'uncertain'
   message: string | null
+  contact_id?: string | null
+  contact_revision?: number | null
 }
 export interface QsoDraft {
   contact_id: string

@@ -60,3 +60,5 @@
 .xn-queue li { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); padding: var(--space-3) 0; border-top: 1px solid var(--border); }
 .xn-queue li > div { flex: 1 1 280px; overflow-wrap: anywhere; }
 .xn-queue small { display: block; opacity: .7; }
+.xn-band-map { margin-top: var(--space-5); }
+.xn-band-map-canvas { display: flex; height: 460px; max-height: calc(.75 * var(--vh-eff)); border: 1px solid var(--border); border-radius: var(--radius-sm); }
