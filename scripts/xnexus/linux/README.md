@@ -33,6 +33,11 @@ Docker version, exact command, full log and exit code in the chosen job folder.
 The named cache volume is specific to both source and immutable image ID.
 Nothing is automatically pruned.
 
+An explicitly selected `seed` phase can initialize a **new source/image volume**
+from a retained qualified donor. It never reuses the donor volume as the new
+source. See the bounded procedure below; old source and qualification remain
+independent evidence.
+
 The source label is not accepted as proof: before every container phase, the
 host streams a fresh `git archive` for the exact commit and compares its SHA256
 with the retained archive. A mismatch is refused without replacing either
@@ -103,6 +108,60 @@ retry, cache dropping, Docker/WSL reconfiguration or unrelated process action.
 Receipts record the profile, admission readings, both running minima, helper
 hashes, harness commit and dirty status. Preserve actual Docker inspection too.
 The reduced profile requires separate resource-window coordination before use.
+
+## Offline cache seed and reduced contract
+
+The additional `contract-reduced` profile supports only `seed` and `contract`.
+It uses 4 GiB RAM/no additional swap, one Cargo/CMake/test job, one UI worker,
+two CPUs, a 2,560 MiB Node heap, no network, and the same 8 GiB physical/6 GiB
+commit admission plus 2 GiB running floors as `desktop-reduced`. Existing
+standard-profile behavior and retained results are unchanged. A reduced Linux
+frontend pass is not inferred from Windows heap measurements.
+
+Prepare a fresh job outside source; copy only the retained immutable `image.id`
+into it after checking the actual image ID. No image rebuild or fetch is needed
+when the required dependencies are already cached. The exact source commit and
+source archive are independently verified by the runner, as in other phases.
+
+```powershell
+$linuxRepo = 'C:/Projects/OM0RX-xLog/.build/xnexus-worktrees/linux-validation'
+$linuxSource = '0d01248b0504ae77f6f122fdada1b21e4a61806b'
+$linuxJob = 'C:/Projects/OM0RX-xLog/.build/xnexus-linux-evidence-0d01248b'
+$donorJob = 'C:/Projects/OM0RX-xLog/.build/xnexus-linux-evidence-d206'
+$donorReceipt = "$donorJob/evidence/1794679901010293000-desktop.json"
+# After coordinated release, fresh admission and reviewed image.id preparation:
+python scripts/xnexus/linux/validate.py --repo $linuxRepo --source $linuxSource --job $linuxJob --phase seed --resource-profile contract-reduced --donor-job $donorJob --donor-receipt $donorReceipt --execute
+python scripts/xnexus/linux/validate.py --repo $linuxRepo --source $linuxSource --job $linuxJob --phase contract --resource-profile contract-reduced --execute
+python scripts/xnexus/linux/validate.py --repo $linuxRepo --source $linuxSource --job $linuxJob --phase desktop --resource-profile desktop-reduced --execute
+```
+
+Run separately and inspect each receipt before continuing. The seed requires an
+exact successful guarded desktop receipt for the same immutable image. It
+verifies the donor Git archive and all four lockfiles plus application/path-crate
+manifests against the new archive; unequal inputs refuse reuse. Both archives,
+the donor receipt and dependency hashes are recorded. The donor volume and input
+archive are mounted **read-only**. No source, prior `ui/dist`, node_modules,
+TypeScript build state, credentials or qualification receipt is copied as new
+evidence. Only `cargo/registry`, optional `cargo/git`, `target` and the npm
+content cache are copied. File bytes/modes and link targets are compared before
+and after copying and retained in manifests; the old donor remains intact.
+Copying compiled dependencies saves work but does not establish new-source
+correctness. Allow disk capacity for an independent complete cache copy.
+
+The destination must be empty. A failed partial copy remains marked and unusable;
+there is no automatic overwrite, recursive cleanup or retry. Contract extracts
+fresh source and installs locked npm dependencies offline from the copied cache,
+then rebuilds/tests the new frontend. Missing cache content fails without enabling
+network. Cargo retains its ordinary dependency fingerprint checks. A seeded
+desktop check additionally records Cargo JSON and requires a successful
+`fresh: false` compiler artifact for the actual
+`/work/source/src-tauri/src/lib.rs` library; an all-fresh cache result cannot
+claim the updated app was compiled. Keep that JSON and its verification receipt,
+alongside before/after tracked-source checks and actual container inspection.
+
+This tooling change has host Python fixture coverage. The disposable Linux shell
+fixture, real seed and updated-source checks still require their own execution
+receipts; creating a seed is not a contract or desktop pass.
 
 `NODE_OPTIONS=--max-old-space-size=4096` gives TypeScript a 4 GiB V8 heap inside
 the unchanged 6 GiB container budget. The initial default-heap run passed all
