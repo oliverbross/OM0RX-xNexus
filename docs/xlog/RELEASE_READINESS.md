@@ -9,14 +9,19 @@ The previous Windows `.1` build at `5e56be94c7ede2099d5b8ed6d1a4d0d1ad12134b`
 was deliberately stopped before the application build to include completed RX
 work. It produced no Windows application or installer; its aborted receipt and
 log remain preserved. The Mac core `.1` application compiled at that original
-source; its archive is held at the native symbol audit. It is not the RX candidate. Do not reuse `.1` for changed source.
+source; its archive passed the supplemental native symbol audit and private
+draft/lifecycle checks. Its historical CLI executable path remains unproven;
+do not claim the downloaded official CLI was used. It is not the RX candidate.
+Do not reuse `.1` for changed source.
 
 The `.2` Windows recipe remains Rust 1.93.1 GNU, Tauri CLI 2.11.5, pinned native
 and model assets, two build jobs, release profile and unsigned NSIS packaging.
 Only canonical source may be packaged. The build receipt records the release
 commit, upstream pin, tool versions, dependency/model hashes and artifact hashes.
-The xLog owner is included in the separate combined 1.6.25 release owned by the
-“xlog work” chat; it is not packaged by this script.
+The xLog owner is included in installed 1.6.26, whose packaging/acceptance is
+owned by the “xlog work” chat. A subsequent retained-rotor-Stop connection fix
+still needs native integration and an accepted xLog candidate. xLog is not
+packaged by this script.
 The final source SHA must be the clean canonical checkout HEAD recorded by
 `scripts/xnexus/build-windows.ps1 -ExpectedCommit <full-sha>` when packaging.
 Changing packaged source requires a new visible version, including failed
@@ -138,7 +143,12 @@ The first local candidate may use Homebrew FFTW, Boost and GCC. Their exact
 versions, static-library architectures and hashes are recorded; that is not
 qualification for every macOS 14 machine. Rust 1.93.1's actual binaries are first
 on the child process PATH, and Tauri CLI 2.11.5 is downloaded by its pinned
-archive hash. Release debug information is retained explicitly for compatibility
+archive hash and invoked directly by its verified absolute executable path.
+Earlier helpers used Cargo subcommand lookup, which prioritizes an installed
+Cargo-home CLI over PATH. The current `.2` Mac build's actual locally installed
+Tauri 2.11.5 path/hash and install metadata are recorded in a supplemental
+provenance correction; its application compiler is verified as Rust 1.93.1.
+Release debug information is retained explicitly for compatibility
 with this Mac's linker; the receipt records this larger candidate profile.
 
 The output is an unsigned (possibly ad-hoc signed), **not notarized** `.app.tar.gz`

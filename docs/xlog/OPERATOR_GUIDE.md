@@ -39,6 +39,10 @@ history row without an exact edit revision is view-only.
 
 ## Control the station
 
+Rotator control still requires qualification of the connection-identity fix
+described in [STATUS.md](STATUS.md). Installed xLog 1.6.26 has the bridge but
+does not yet contain that follow-up; do not treat it as the qualified rotor build.
+
 **Tune through xLog** requests xLog's simplex frequency/mode operation on the
 observed radio. Split configuration and device selection remain in xLog.
 Transmit or unknown receive state disables the tune action. **Point through
@@ -106,6 +110,10 @@ the host audio endpoint clock; global UTC accuracy and radio-to-endpoint delay
 have not been measured. See [RX_DESKTOP.md](RX_DESKTOP.md) for qualification.
 
 ## Current boundaries
+
+Theme and interface scale currently reset on restart. The saved QSO draft and
+native queue use separate persistent storage; Mac private draft recovery has
+been verified.
 
 Companion mode has no automatic QSO sequence or transmit control. Physical DAX
 receive qualification is still pending. Closing xLog leaves xNexus open with
