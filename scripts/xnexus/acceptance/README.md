@@ -54,6 +54,6 @@ Validation performed without an application launch: PowerShell parser passed;
 persistent browser versus transient utility lifecycle, newly foreign live children,
 exact arguments, WebView roots, reparse paths, hashes, owner replacement/exit and STOP. A separate
 real `-ValidateOnly` invocation rejected a noncanonical executable before reading
-owner or package state. Test evidence and the preflight failure JSON remain in
-this directory. Positive native/WebView behavior remains untested until the
+owner or package state. Retained test evidence is under the ignored
+`target/xnexus-launcher-guards` directory. Positive native/WebView behavior remains untested until the
 supervising task reviews and uses the launcher with the completed package.

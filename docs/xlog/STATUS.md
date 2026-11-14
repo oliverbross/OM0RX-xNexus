@@ -16,17 +16,19 @@ Do not launch or distribute `.1`/`.2` as isolated-profile candidates. See
 | M1 | 58 client tests; actual owner HTTP and SQLite restart/receipt tests; bridge merged into canonical xLog | Paired installed-application acceptance |
 | M2 | Separate companion startup, native pairing and private profile; no local station services | Final candidate native GUI and lifecycle acceptance |
 | M3 | xLog-authoritative call/DXCC needs, band/world maps, selected-call history | Paired classification matrix; decoded-call batch lookup; richer confirmation/award policy evidence |
-| M4 | Owner-mediated tune/point and independent Stop; connection-bound Stop fix passes 95 focused tests | Fix native integration/accepted xLog build; paired UI and physical control qualification |
+| M4 | Owner-mediated tune/point and independent Stop; connection-bound Stop fix merged after 95 focused and 1,164 full native tests | Accepted xLog package containing the fix; paired UI and physical control qualification |
 | M5 | Durable outbox and atomic owner write/receipt; restart, replay and edit-conflict tests | Paired native GUI acceptance; queue archive/export design |
 | M6 | Explicit FLEX slice A/DAX mapping, bounded owner PCM, client, FIR/period assembler, threaded native FT8/FT4 decoder and receive UI | Active DAX reception and clock/route qualification; TX contract and supervised qualification |
-| M7 | Distinct app/profile/update identity, pinned assets and exact-source packaging scripts | Windows .2 package, isolated application and installer acceptance |
-| M8 | Core Mac .1 archive and private draft/lifecycle checks; exact .2 Mac all-targets check passed | Matching .2 package/paired UI, Linux desktop, signing and distribution qualification |
+| M7 | Distinct app/update identity, pinned assets and exact-source .2 Windows installer | Correct profile construction, new candidate, isolated application and installer acceptance |
+| M8 | Mac .1/.2 archives and exact .2 all-targets check; native .2 acceptance exposed shared draft storage | Corrected profile isolation and paired UI, Linux desktop, signing and distribution qualification |
 
 RX runtime integration source is `e3ae1534ade5c34dd4e2d3a81bfbe3a72be15d5c`.
 Windows candidate `1.24.1-xlog.2` adds candidate manifests and these records;
 its exact source is `c2c917b6f748366fbf6b3960876d9f98ba1854c9`. Windows and
-Mac optimized builds remain active at this checkpoint; no completed `.2` artifact
-is claimed. The earlier Windows .1
+Mac optimized builds completed. The Windows installer passed its static
+audit. The Mac archive passed its supplemental artifact
+audit, then failed native profile isolation. Neither `.2` candidate is qualified
+for use. The earlier Windows .1
 build at `5e56be94c7ede2099d5b8ed6d1a4d0d1ad12134b` was stopped before the
 application build and produced no application or installer. Its logs and aborted
 receipt are retained. The Mac .1 build remains frozen at that original source.
@@ -61,8 +63,12 @@ The isolated fix at `eacfd0c65255023d15ada3b557cb77edac2408bf` binds it to the
 observed connection and actual worker. It also cancels queued automatic turns
 before waiting for an admitted driver, without revoking a replacement route.
 Root and xLog owner source reviews passed; all 95 focused production-source
-tests passed. Full native owner validation is queued behind Windows linking.
-This fix is not yet integrated into an accepted installed xLog build.
+tests passed. Full native owner validation then passed 1,164 tests with no
+failures and two existing ignored tests. Canonical xLog integrated the source
+and acceptance record at `f155bd2d9732bf8fbb32e89a6153804f284d3891`.
+The earlier memory-capped compile failed allocation before tests and remains
+separate evidence. This fix is not yet in an accepted installed xLog build;
+installed 1.6.26 remains unchanged.
 
 The private Windows xLog setup passed host/worker identity and accessibility
 checks, but capture/input geometry failed and keyboard navigation did not move
@@ -89,8 +95,10 @@ checks; see [the upstream review](UPSTREAM_REVIEW_2026-11-14.md).
 
 Linux provisioning and the initial 58 SDK/eight policy tests passed. TypeScript
 then exhausted Node's default 2 GB heap. A 4 GB retry is prepared inside the same
-6 GB isolated container and awaits memory headroom; full desktop checking has
-not run. Eleven tooling tests now verify exact committed archive/cache bytes,
+6 GB isolated container. Exact `.2` dependency fetching passed with all 5,445
+tracked source entries verified before and after; its offline contract retry is
+now running after the memory gate passed. Full desktop checking has not run.
+Eleven tooling tests now verify exact committed archive/cache bytes,
 before/after source integrity, and failure on interrupted memory protection.
 
 ## Operational boundaries
@@ -113,13 +121,14 @@ An archive/export flow remains a long-term operational item.
 Full Windows GNU all-targets compilation passed on exact RX runtime `e3ae1534`
 with pinned Rust 1.93.1 and locked dependencies. The isolated receipt verified
 original dependency hashes and unchanged runtime source. The Mac core `.1`
-archive passed the supplemental seven-file Mach-O audit. Private native checks
+archive passed the supplemental seven-file Mach-O audit. Native checks
 verified visible identity, readable windows, four ordinary Quits and recovery
-of an unqueued synthetic draft. Theme/scale are session-only; draft persistence
-passed independently. Historical `.1` CLI path provenance remains incomplete:
+of an unqueued synthetic draft. That persistence check did not establish
+cross-profile isolation; `.2` subsequently exposed the shared default store.
+Theme/scale are session-only. Historical `.1` CLI path provenance remains incomplete:
 the downloaded official CLI is not proven to have been invoked.
 
-The running Mac `.2` build positively uses a locally cargo-installed Tauri 2.11.5
+The completed Mac `.2` build positively used a locally cargo-installed Tauri 2.11.5
 CLI, whose path/hash and installation metadata are retained, with application
 compiler Rust 1.93.1. A supplemental record corrects the original downloaded-CLI
 assumption. The future build helper now invokes the verified absolute CLI path.
