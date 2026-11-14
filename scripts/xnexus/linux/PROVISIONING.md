@@ -140,3 +140,30 @@ The first desktop invocation was refused before container creation because
 available host RAM was 9.14 GiB, below the unchanged 10 GiB admission threshold.
 This is an admission hold, not a desktop source-test failure. No native desktop
 build, package, GUI or radio acceptance is claimed by these contract receipts.
+
+
+## Reduced desktop profile preparation
+
+After the `.3` contract exited, observed physical headroom remained below
+10 GiB for more than five minutes (8.81–9.99 GiB across discrete observations,
+not continuous monitoring). The 17:56:42Z reading showed 8.81 GiB physical and
+6.06 GiB Windows available commit. Read-only inspection of the existing
+`vmmem` process found 7.92 GiB working set and 14.12 GiB private committed bytes;
+the guest reported 14.25 GiB available, including 9.93 GiB file cache. These are
+separate host/guest measurements, not proof of additional Windows capacity.
+The retained evidence includes `desktop-admission-observations.jsonl` and
+`desktop-admission-vm-state.json`; no cache/daemon/process changes were made.
+
+A separate desktop-only profile lowers the workload to a 4 GiB cgroup cap and
+one build job, instead of admitting the original 6 GiB workload with less
+headroom. It requires 8 GiB physical plus 6 GiB available Windows commit and
+monitors both against a 2 GiB running floor. Existing standard-profile evidence
+and behavior remain unchanged. All **15 tooling tests passed** in the pinned
+image with no network, one CPU and 256 MiB RAM/no extra swap, including exact
+admission boundaries, commit-pressure/foreign-container refusal, guard failure,
+actual shell one-job selection and source integrity. An initial syntax check
+caught Windows shell line endings during preparation; they were corrected
+before the successful complete test run. No desktop compiler was launched by
+these stub-based tooling tests. Output: `desktop-reduced-tooling-tests.log` in
+the d206 evidence directory. Actual desktop execution awaits profile review
+and release of the other owner's short focused test window.

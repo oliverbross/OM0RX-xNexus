@@ -33,6 +33,64 @@ class ContainerIsolationTests(unittest.TestCase):
             self.assertNotIn("--network=host", args)
             self.assertIn("NODE_OPTIONS=--max-old-space-size=4096", args)
 
+    def test_reduced_profile_is_desktop_only_with_bounded_resources(self):
+        args = validate.run_args("sha256:" + "a" * 64, "desktop", Path("job"), "test",
+                                 profile_name="desktop-reduced")
+        for flag, value in (("--memory", "4g"), ("--memory-swap", "4g"),
+                            ("--cpus", "2"), ("--network", "none")):
+            self.assertEqual(args[args.index(flag) + 1], value)
+        self.assertIn("XNEXUS_RESOURCE_PROFILE=desktop-reduced", args)
+        self.assertEqual(validate.resource_profile("desktop-reduced", "desktop")["jobs"], 1)
+        for phase in ("fetch", "contract", "image"):
+            with self.assertRaises(ValueError):
+                validate.resource_profile("desktop-reduced", phase)
+
+    def test_reduced_admission_requires_both_physical_and_windows_commit(self):
+        gib = 1024 ** 3
+        profile = validate.resource_profile("desktop-reduced", "desktop")
+        validate.check_admission(profile, 8 * gib, 6 * gib)
+        for physical, commit in ((8 * gib - 1, 6 * gib), (8 * gib, 6 * gib - 1),
+                                 (20 * gib, None)):
+            with self.assertRaises(ValueError):
+                validate.check_admission(profile, physical, commit)
+        standard = validate.resource_profile("standard", "desktop")
+        with self.assertRaises(ValueError):
+            validate.check_admission(standard, 10 * gib - 1)
+        validate.check_admission(standard, 10 * gib)
+
+    def test_commit_pressure_stops_only_owned_container_even_when_ram_is_ample(self):
+        cid, image, volume = "b" * 64, "sha256:" + "a" * 64, "xnexus-test"
+        details = {"Id": cid, "Config": {"Image": image,
+                   "Cmd": ["bash", "/tools/validate.sh", "desktop"]},
+                   "Mounts": [{"Type": "volume", "Name": volume, "Destination": "/work"}]}
+        with tempfile.TemporaryDirectory() as root:
+            cidfile = Path(root) / "owned.cid"
+            cidfile.write_text(cid)
+            for own in (True, False):
+                stopped, receipt = [], {}
+                actual = details if own else {**details, "Id": "c" * 64}
+                validate.memory_guard(threading.Event(), cidfile, image, "desktop", volume, receipt,
+                    read_memory=lambda: 12 * 1024 ** 3, read_commit=lambda: 2 * 1024 ** 3 - 1,
+                    read_json=lambda _: actual, stop=lambda item: stopped.append(item) or 0)
+                self.assertEqual(stopped, [cid] if own else [])
+                self.assertEqual(receipt["minimum_observed_host_commit_bytes"], 2 * 1024 ** 3 - 1)
+                if own:
+                    self.assertEqual(receipt["interruption"]["reason"], "host_commit_below_2_gib")
+                else:
+                    self.assertIn("memory_guard_error", receipt)
+                receipt["process_exit_code"] = 0
+                self.assertNotEqual(validate.validation_result(receipt), 0)
+
+    def test_commit_probe_failure_cannot_claim_protected_pass(self):
+        def broken():
+            raise OSError("commit unavailable")
+        receipt = {"process_exit_code": 0}
+        validate.memory_guard(threading.Event(), Path("unused"), "image", "desktop", "volume", receipt,
+            read_memory=lambda: 12 * 1024 ** 3, read_commit=broken,
+            stop=lambda _: self.fail("Unknown memory must not stop an unproven owner"))
+        self.assertIn("memory_guard_error", receipt)
+        self.assertNotEqual(validate.validation_result(receipt), 0)
+
     def test_only_fetch_phase_has_download_network(self):
         args = self.args("fetch")
         self.assertEqual(args[args.index("--network") + 1], "bridge")
@@ -190,6 +248,7 @@ class PhaseProvenanceTests(unittest.TestCase):
             stubs.mkdir()
             script = ("#!/bin/bash\n"
                       "echo invoked >> /evidence/stub-invocations\n"
+                      "echo $CARGO_BUILD_JOBS,$CMAKE_BUILD_PARALLEL_LEVEL >> /evidence/stub-jobs\n"
                       "if [[ $0 == */npm && $* == '--prefix ui run build' ]]; then\n"
                       "  if [[ $FIXTURE_CHANGE == tracked ]]; then\n"
                       "    printf 'edited bytes\\n' > /work/source/src/tracked.txt\n"
@@ -207,6 +266,17 @@ class PhaseProvenanceTests(unittest.TestCase):
             self.assertEqual(valid.returncode, 0, valid.stderr)
             self.assertIn("contract passed", valid.stdout)
             self.assertTrue(Path("/work/source/target/generated.bin").exists())
+            self.assertEqual(set(Path("/evidence/stub-jobs").read_text().splitlines()), {"2,2"})
+            Path("/evidence/stub-jobs").write_text("")
+            reduced = subprocess.run(["bash", "/tools/validate.sh", "desktop"],
+                env={**env, "XNEXUS_RESOURCE_PROFILE": "desktop-reduced"},
+                capture_output=True, text=True, timeout=15)
+            self.assertEqual(reduced.returncode, 0, reduced.stderr)
+            self.assertEqual(set(Path("/evidence/stub-jobs").read_text().splitlines()), {"1,1"})
+            rejected = subprocess.run(["bash", "/tools/validate.sh", "contract"],
+                env={**env, "XNEXUS_RESOURCE_PROFILE": "desktop-reduced"},
+                capture_output=True, text=True, timeout=15)
+            self.assertNotEqual(rejected.returncode, 0)
             env["FIXTURE_CHANGE"] = "tracked"
             mutated = phase()
             self.assertNotEqual(mutated.returncode, 0)
