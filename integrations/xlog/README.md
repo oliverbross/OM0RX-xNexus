@@ -28,6 +28,27 @@ RF/DAX latency remain explicitly unknown. This receive-only extension grants no
 transmission authority. Native worker/decoder/UI wiring and physical DAX receive
 qualification are separate from these protocol tests.
 
+The optional `needs_handle()` requires `logbook.classify`. Move this owned native
+handle to a dedicated bounded lookup worker, independently of PCM and emergency
+Stop. `query()` sends 1–32 explicit literal calls, dial frequencies and FT8/FT4
+modes, with a one-second total deadline and no retry. xLog supplies every status,
+score, country fact and reason; this client neither scores nor exports contacts.
+Unknown scores remain null. A timeout or unavailable optional endpoint clears
+needs facts without interrupting audio; authentication or identity failure retires
+the shared connection. Missing, null, expired or backwards optional snapshot
+metadata clears needs authority while preserving otherwise valid observations.
+
+Keep returned `NeedsBatch` values behind their revocable lease. Call `results()`
+and `metadata()` only while fresh, and recheck before attaching facts to a receive
+row. `remaining_valid_ms()` floors the shorter original response/authority lease;
+it never renews from polling and returns zero after revocation. A UI should capture
+its monotonic clock before requesting native status and add this remaining duration
+to that earlier time, so IPC latency cannot extend the lease. Local pending or
+uncertain logbook operations must call `invalidate_needs()` immediately and keep
+their own write fence until settled; the SDK also invalidates before submitting a
+logbook mutation. Native receive-context matching and paired owner/UI acceptance
+remain separate integration gates.
+
 Run synthetic tests from the repository root:
 
 ```

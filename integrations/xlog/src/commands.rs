@@ -230,6 +230,12 @@ impl BridgeClient {
         }
         let revision = snapshot.revision;
         let hello = self.hello.as_ref().ok_or(Error::Disconnected)?;
+        if matches!(
+            command,
+            Command::LogbookCreate { .. } | Command::LogbookUpdate { .. }
+        ) {
+            self.invalidate_needs();
+        }
         let result = send(
             &self.http,
             &self.endpoint,
@@ -250,7 +256,7 @@ impl BridgeClient {
             return Err(Error::Invalid);
         }
         let result = (|| {
-            let hello = self.hello.as_ref().ok_or(Error::Disconnected)?;
+            let hello = self.hello().ok_or(Error::Disconnected)?;
             let receipt: CommandReceipt =
                 match self.get(&format!("/xlog/v1/receipt/{request_id}"), 65536) {
                     Ok(receipt) => receipt,
@@ -258,6 +264,7 @@ impl BridgeClient {
                     Err(error) => return Err(error),
                 };
             receipt.validate(hello, request_id)?;
+            self.hello().ok_or(Error::Disconnected)?;
             Ok(Some(receipt))
         })();
         if matches!(result, Err(Error::IdentityChanged | Error::Http(401 | 403))) {
