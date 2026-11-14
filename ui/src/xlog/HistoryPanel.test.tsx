@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { HistoryPanel } from './HistoryPanel'
 import { QsoPanel } from './QsoPanel'
 import { bridge, type History, type Spot } from './api'
@@ -8,6 +8,7 @@ import { bridge, type History, type Spot } from './api'
 const contact = { contact_id: '10000000-0000-4000-8000-000000000001', callsign: 'OM0RX', band: '20m', mode: 'CW', started_at_unix_ms: 1_700_000_000_123, frequency_hz: 14_025_000, rst_sent: '599', rst_received: '599', grid: 'JN98', comment: 'Original\ncomment', contact_revision: 12 }
 const history = (): History => ({ protocol_version: 1, server_instance: 'server-a', workspace_id: 'workspace-a', callsign: 'OM0RX', generated_at_unix_ms: Date.now(), contacts: [contact], matrix: [{ band: '20m', mode: 'CW', worked: true, confirmed: true }] })
 const selected: Spot = { id: 'spot-a', callsign: 'OM0RX', frequency_hz: 14_025_000, mode: 'CW', source: 'xLog', observed_at_unix_ms: Date.now(), need: { status: 'worked', score: 0, reasons: [] } }
+beforeEach(() => window.localStorage.clear())
 describe('owner logbook history', () => {
   it('loads on demand and requires a specific revision to offer editing', async () => {
     const value = history(); value.contacts[0] = { ...contact, contact_revision: null }
@@ -37,6 +38,6 @@ describe('owner logbook history', () => {
     fireEvent.change(screen.getByLabelText('RST received'), { target: { value: '579' } })
     fireEvent.click(screen.getByRole('button', { name: 'Queue QSO correction' }))
     const { contact_revision: _, ...qso } = contact
-    await waitFor(() => expect(api.enqueue).toHaveBeenCalledWith({ kind: 'logbook.update', qso: { ...qso, rst_received: '579' }, expected_contact_revision: 12 }, expect.any(String)))
+    await waitFor(() => expect(api.enqueue).toHaveBeenCalledWith({ kind: 'logbook.update', qso: { ...qso, rst_received: '579' }, expected_contact_revision: 12 }, expect.any(String), 'workspace-a'))
   })
 })

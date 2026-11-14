@@ -44,7 +44,9 @@ try {
   await new Promise((ok, fail) => { ws.addEventListener('open', ok, { once:true }); ws.addEventListener('error', fail, { once:true }) })
   let sequence = 0
   const pending = new Map()
+  const browserErrors = []
   ws.addEventListener('message', event => { const message = JSON.parse(event.data); const entry = pending.get(message.id); if (entry) { pending.delete(message.id); message.error ? entry.reject(Error(message.error.message)) : entry.resolve(message.result) } })
+  ws.addEventListener('message', event => { const message = JSON.parse(event.data); if (message.method === 'Runtime.exceptionThrown') browserErrors.push(message.params.exceptionDetails.exception?.description ?? message.params.exceptionDetails.text); if (message.method === 'Runtime.consoleAPICalled' && message.params.type === 'error') browserErrors.push(message.params.args.map(arg=>arg.value ?? arg.description ?? '').join(' ')) })
   const call = (method, params = {}, sessionId) => new Promise((resolve, reject) => { const id = ++sequence; const timeout = setTimeout(() => { pending.delete(id); reject(Error(`CDP timed out: ${method}`)) }, 30000); pending.set(id, { resolve: value => { clearTimeout(timeout); resolve(value) }, reject: error => { clearTimeout(timeout); reject(error) } }); ws.send(JSON.stringify({ id, method, params, sessionId })) })
   server = await createServer({ root: ui, configFile: join(ui, 'vite.config.ts'), optimizeDeps: { entries: ['xlog.html'] }, logLevel: 'warn', server: { host: '127.0.0.1', port: 0, strictPort: false } })
   await server.listen()
@@ -84,7 +86,10 @@ try {
     const selector = view === 'band' ? '.bandmap-track' : '.xn-world svg'
     let ready=false
     for(let n=0;n<240;n++){if(await evaluate(`!!document.querySelector('${selector}')`)){ready=true;break}await sleep(250)}
-    if(!ready)throw Error(`${view} view did not render`)
+    if(!ready) {
+      const shot=await page('Page.captureScreenshot',{format:'png'});await writeFile(join(artifacts,`${view}-failure.png`),Buffer.from(shot.data,'base64'))
+      throw Error(`${view} view did not render; console: ${browserErrors.join(' | ')}; body: ${await evaluate('document.body.innerText')}`)
+    }
     await evaluate(`document.querySelector('.xn-content').scrollTop=150`)
     await sleep(300)
     if(await evaluate(`document.documentElement.scrollWidth>innerWidth+1`))throw Error(`${view} overflowed the window`)
@@ -101,6 +106,7 @@ try {
   await sleep(100)
   if(!await evaluate(`window.probeCalls.some(call=>call.name==='xlog_outbox_enqueue'&&call.args.mutation.kind==='logbook.update'&&call.args.mutation.expected_contact_revision===12)`))throw Error('Correction lost its owner revision')
   if(!await evaluate(`window.probeCalls.every(call=>call.name.startsWith('xlog_'))`))throw Error('Unexpected ordinary Nexus command')
+  if(browserErrors.length)throw Error(`Browser console errors: ${browserErrors.join(' | ')}`)
   await evaluate(`[...document.querySelectorAll('button')].find(x=>x.textContent==='Stop rotator').click()`)
   await sleep(100)
   if(!await evaluate(`window.probeCalls.some(x=>x.name==='xlog_command'&&x.args.command.kind==='rotor.stop'&&x.args.command.rotor_id==='synthetic-rotor')`))throw Error('Stop did not use observed xLog target')
