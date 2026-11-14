@@ -118,7 +118,7 @@ jobs:
     # to. A workflow_dispatch dry-run builds and verifies without publishing, so it has
     # nothing to gate; `publish` skips on that path for the same reason and this skips with
     # it, which is what keeps the two in step.
-    if: github.event_name == 'push'
+    if: ${{ github.repository == 'kd9taw/Nexus' && (github.event_name == 'push') }}
     runs-on: ubuntu-latest
     # A job-level block REPLACES the workflow-level one, so `contents: read` is repeated.
     # `actions: read` is the addition: reading another workflow's run history needs it, and
@@ -162,6 +162,7 @@ jobs:
   # Linux x86_64 — .deb + AppImage via the same scripts/build-linux.sh developers use.
   # ---------------------------------------------------------------------------------------
   linux-x86:
+    if: github.repository == 'kd9taw/Nexus'
     name: Linux x86_64 (.deb + AppImage)
     # BUILT IN A PINNED CONTAINER, not on the runner. The build host's glibc IS the floor of every
     # published x86_64 artifact, so the image below decides who can run Nexus: ubuntu:22.04 is
@@ -477,6 +478,7 @@ jobs:
   # Windows — cross-compiled NSIS installer (offline WebView2 + Hamlib bundled).
   # ---------------------------------------------------------------------------------------
   windows:
+    if: github.repository == 'kd9taw/Nexus'
     name: Windows (NSIS installer)
     runs-on: ubuntu-latest
     steps:
@@ -638,6 +640,7 @@ jobs:
   # could have replaced the binary that is then handed the key.
   # ---------------------------------------------------------------------------------------
   updater-signer:
+    if: github.repository == 'kd9taw/Nexus'
     name: Build the updater signer (tauri-cli, no secret)
     runs-on: ubuntu-latest
     steps:
@@ -663,6 +666,7 @@ jobs:
           if-no-files-found: error
 
   sign-updaters:
+    if: github.repository == 'kd9taw/Nexus'
     name: Sign the Windows and Linux installers for self-update
     needs: [updater-signer, linux-x86, windows]
     runs-on: ubuntu-latest
@@ -794,6 +798,7 @@ jobs:
   # sat in the keychain could have signed with it, whatever that step's own env said.
   # ---------------------------------------------------------------------------------------
   macos:
+    if: github.repository == 'kd9taw/Nexus'
     name: macOS (${{ matrix.label }} .dmg)
     runs-on: ${{ matrix.runner }}
     # `tsc -b` needs about 2.5 GB of JavaScript heap since the Chinese catalogs (2,048 MB, Node's
@@ -1269,6 +1274,7 @@ jobs:
 
   # Each leg's DMG on a clean runner of its own architecture.
   smoke-macos:
+    if: github.repository == 'kd9taw/Nexus'
     name: Smoke — mount + launch the macOS artifact (${{ matrix.label }})
     needs: macos
     runs-on: ${{ matrix.runner }}
@@ -1404,6 +1410,7 @@ jobs:
   # (Same job as ci.yml's pi-deb; duplicated here so a tag builds everything in one run.)
   # ---------------------------------------------------------------------------------------
   pi:
+    if: github.repository == 'kd9taw/Nexus'
     name: Raspberry Pi .deb (${{ matrix.base }})
     runs-on: ubuntu-24.04-arm
     strategy:
@@ -1508,6 +1515,7 @@ jobs:
   # BOTH the tag path and the dispatch dry-run, so a broken artifact is caught in rehearsal.
   # ---------------------------------------------------------------------------------------
   smoke-windows:
+    if: github.repository == 'kd9taw/Nexus'
     name: Smoke — install + launch the Windows artifact
     needs: windows
     runs-on: windows-latest
@@ -1552,6 +1560,7 @@ jobs:
   # publish job attaches to the Release, where the site's download buttons point
   # (releases/latest/download/Nexus-Manual.pdf / .epub — stable names, version on the cover).
   manual:
+    if: github.repository == 'kd9taw/Nexus'
     name: Manual (PDF + EPUB)
     runs-on: ubuntu-24.04
     steps:
@@ -1622,7 +1631,7 @@ jobs:
     # a pattern download from a job this one does not wait for can find nothing and still
     # succeed: latest.json would then drop both platforms without a word.
     needs: [ci-evidence, linux-x86, windows, smoke-windows, sign-updaters, macos, smoke-macos, manual]
-    if: github.event_name == 'push'
+    if: ${{ github.repository == 'kd9taw/Nexus' && (github.event_name == 'push') }}
     runs-on: ubuntu-latest
     # `actions: write` is for the downstream hand-off at the end of this job. Job-level
     # permissions REPLACE the workflow-level block rather than adding to it, so `contents:
@@ -1846,7 +1855,7 @@ jobs:
       contents: write
     name: Attach Raspberry Pi .debs
     needs: [publish, pi]
-    if: github.event_name == 'push'
+    if: ${{ github.repository == 'kd9taw/Nexus' && (github.event_name == 'push') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4

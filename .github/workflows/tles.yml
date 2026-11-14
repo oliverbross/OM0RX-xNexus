@@ -37,6 +37,7 @@ concurrency:
 
 jobs:
   build:
+    if: github.repository == 'kd9taw/Nexus'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7

@@ -67,6 +67,7 @@ jobs:
   # you move a step between these jobs.
 
   test:
+    if: github.repository == 'kd9taw/Nexus'
     name: Rust tests + clippy
     runs-on: ubuntu-24.04
     steps:
@@ -233,6 +234,7 @@ jobs:
   # test, not a hang.
 
   test-features:
+    if: github.repository == 'kd9taw/Nexus'
     name: Rust feature-gated crates (tempo-audio, propagation)
     runs-on: ubuntu-24.04
     steps:
@@ -371,6 +373,7 @@ jobs:
   # their own job changes nothing about what is covered.
 
   test-tauri:
+    if: github.repository == 'kd9taw/Nexus'
     name: Rust src-tauri + native Remote
     runs-on: ubuntu-24.04
     steps:
@@ -538,6 +541,7 @@ jobs:
   # The hosted page is the stream page. The old watch/control workspace and the observer view take no
   # new features; new Remote work goes to the stream, the LAN stream window or the native client.
   remote-web:
+    if: github.repository == 'kd9taw/Nexus'
     name: Remote browser and Cloudflare service (local only)
     runs-on: ubuntu-24.04
     steps:
@@ -598,6 +602,7 @@ jobs:
   # public so Actions minutes are free. A filter would buy no wall-clock time and no money,
   # and would add a way for the sweep to be silently skipped.
   remote-browser:
+    if: github.repository == 'kd9taw/Nexus'
     name: Compiled browser (shard ${{ matrix.shard }})
     runs-on: ubuntu-24.04
     strategy:
@@ -656,6 +661,7 @@ jobs:
   # vite build`, so this also type-checks the DTO contract that mirrors
   # crates/tempo-app/src/dto.rs.
   ui:
+    if: github.repository == 'kd9taw/Nexus'
     name: Web UI build
     runs-on: ubuntu-24.04
     steps:
@@ -908,6 +914,7 @@ jobs:
   # 147 and 151. Measured at 187 s through `scripts/gates --job spectrum-harness`, the UI install
   # included; most of it is real time the probes wait out, so a slower runner adds little.
   spectrum-harness:
+    if: github.repository == 'kd9taw/Nexus'
     name: Scope and waterfall in a real browser
     runs-on: ubuntu-24.04
     steps:
@@ -961,6 +968,7 @@ jobs:
   # Vite server and Chrome, and two on four cores would race each other's frames. A red does not stop
   # the shard; the end of the step names every red one.
   desktop-probes:
+    if: github.repository == 'kd9taw/Nexus'
     name: Desktop layout probes (shard ${{ matrix.shard }})
     runs-on: ubuntu-24.04
     timeout-minutes: 40
@@ -1029,6 +1037,7 @@ jobs:
   # Its own first ship failed epubcheck with 89 errors (broken cross-links, missing images),
   # so this gate is not hypothetical.
   manual-epub:
+    if: github.repository == 'kd9taw/Nexus'
     name: Manual EPUB validates (epubcheck)
     # ubuntu-24.04, as release.yml's manual job: the pillow pin below is the wheel for its CPython 3.12.
     runs-on: ubuntu-24.04
@@ -1068,6 +1077,7 @@ jobs:
   # (Cargo.toml [workspace.package] rust-version = "1.91"). Build-only check,
   # incl. the propagation `live` feature (the heaviest dep set).
   msrv:
+    if: github.repository == 'kd9taw/Nexus'
     name: MSRV (1.91) check
     runs-on: ubuntu-24.04
     steps:
@@ -1122,6 +1132,7 @@ jobs:
 
   # Job 4 — Supply chain: RustSec advisories, license allow-list, sources, bans.
   deny:
+    if: github.repository == 'kd9taw/Nexus'
     name: cargo-deny (supply chain + licenses)
     runs-on: ubuntu-24.04
     steps:
@@ -1230,6 +1241,7 @@ jobs:
   # installer: no NSIS bundle, no WebView2/Hamlib download (those run out-of-band
   # via scripts/build-windows-cross.sh, which adds --bundles nsis).
   windows-cross:
+    if: github.repository == 'kd9taw/Nexus'
     name: Windows cross-compile (src-tauri)
     runs-on: ubuntu-24.04
     steps:
@@ -1384,6 +1396,7 @@ jobs:
   # scripts, so ring's C and libopus (CMake) are compiled for iOS, by Xcode's clang and SDK, which
   # the cc crate finds through xcrun. No app build, no web UI, no Fortran: minutes, not hours.
   ios-client-check:
+    if: github.repository == 'kd9taw/Nexus'
     name: iOS client core check (tempo-client)
     runs-on: macos-15
     steps:
@@ -1429,6 +1442,7 @@ jobs:
   # GitHub's 10 GB cap (see the `test` job's cache). FFTW's few megabytes are cached by its
   # script's hash, which holds its version and flags.
   macos-imports:
+    if: github.repository == 'kd9taw/Nexus'
     name: macOS app libSystem imports (Apple Silicon)
     runs-on: macos-15
     timeout-minutes: 90
@@ -1536,6 +1550,7 @@ jobs:
   # app RENDERS. The webview smoke test (waterfall, map/globe, Settings) still has to
   # run on real hardware before a base is called supported.
   pi-deb:
+    if: github.repository == 'kd9taw/Nexus'
     name: Raspberry Pi .deb (${{ matrix.base }})
     runs-on: ubuntu-24.04-arm
     strategy:
@@ -1643,6 +1658,7 @@ jobs:
   # wizard, the main UI mounts, and Settings OPENS (the class of the public
   # crash-on-Settings incident). Flows live in e2e/smoke.mjs — zero npm deps.
   e2e-linux:
+    if: github.repository == 'kd9taw/Nexus'
     name: E2E smoke (launch + wizard + Settings)
     # ubuntu-24.04, not -latest: on 26.04 (ubuntu-latest since 2026-10-19) the WebKitGTK WebDriver
     # package is renamed (webkit2gtk-driver -> webkitgtk-webdriver) and apt refuses the install.

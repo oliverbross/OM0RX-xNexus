@@ -180,7 +180,6 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock};
 use tauri::Manager;
 use tauri::State;
-use tauri_plugin_updater::UpdaterExt;
 use tempo_app::dto::{
     AppSnapshot, DiagnosticsReportDto, ImportStats, LoggedQso, LotwSyncResult, MeterReadout,
     SourceKind, Spectrum, Tier, UploadReportDto, WinlinkAttachment, WinlinkMessage, WinlinkRow,
@@ -2185,8 +2184,8 @@ mod pskr_client_id_tests {
 /// to that radio's window) and both PSK Reporter client ids. Each hop dropped alone brings back
 /// two windows fighting over one radio, or bumping each other off PSK Reporter.
 ///
-/// The profile is read once per process from the arguments or `NEXUS_PROFILE`, so the bound half
-/// runs in a child: this same test binary, re-run for this one test with `NEXUS_PROFILE=r1`.
+/// The profile is read once per process from the arguments or `XNEXUS_PROFILE`, so the bound half
+/// runs in a child: this same test binary, re-run for this one test with `XNEXUS_PROFILE=r1`.
 #[cfg(test)]
 mod bound_radio_wiring_tests {
     use super::{bound_radio_id, pskr_feed_client_id};
@@ -2237,7 +2236,7 @@ mod bound_radio_wiring_tests {
                 "--nocapture",
             ])
             .env(CHILD, "1")
-            .env("NEXUS_PROFILE", "r1")
+            .env("XNEXUS_PROFILE", "r1")
             .output()
             .expect("re-run this test binary");
         let stdout = String::from_utf8_lossy(&out.stdout);
@@ -2900,7 +2899,7 @@ fn sanitize_profile(s: &str) -> Option<String> {
 }
 
 /// The active instance profile, resolved once: `--profile <name>` (or `--profile=<name>`) on
-/// the command line wins, else the `NEXUS_PROFILE` env var. `None` = the DEFAULT profile,
+/// the command line wins, else the `XNEXUS_PROFILE` env var. `None` = the DEFAULT profile,
 /// whose config dir is plain `tempo` — byte-identical to the pre-profile layout, so a single
 /// instance is unaffected. Two instances get separate config by launching with distinct
 /// profiles; that is what keeps them from clobbering each other's settings/journals.
@@ -2944,7 +2943,7 @@ fn active_profile() -> Option<&'static str> {
                 found
             };
             from_arg
-                .or_else(|| std::env::var("NEXUS_PROFILE").ok())
+                .or_else(|| std::env::var("XNEXUS_PROFILE").ok())
                 .and_then(|s| sanitize_profile(&s))
         })
         .as_deref()
@@ -2954,8 +2953,8 @@ fn active_profile() -> Option<&'static str> {
 /// naming is testable without touching env/args.
 fn profile_dir_name(profile: Option<&str>) -> String {
     match profile {
-        Some(p) => format!("tempo-{p}"),
-        None => "tempo".to_string(),
+        Some(p) => format!("om0rx-xnexus-{p}"),
+        None => "om0rx-xnexus".to_string(),
     }
 }
 
@@ -4032,20 +4031,20 @@ mod picker_radio_hold_tests {
 /// The SHARED data directory that holds the ONE unified logbook across all instances.
 /// Default = `<base>/tempo` (the default profile's dir — i.e. the pre-profile location, so an
 /// existing `log.adi` stays put and simply becomes the shared one, no migration). Override
-/// with `NEXUS_DATA_DIR` to place the shared log on a NAS/Drive-synced folder (a multi-PC shack).
+/// with `XNEXUS_DATA_DIR` to place the shared log on a NAS/Drive-synced folder (a multi-PC shack).
 #[cfg(not(test))]
 fn shared_data_dir() -> PathBuf {
     // ⚠️ RESOLVED ONCE PER PROCESS (#289). The operator can choose this folder in Settings, and a
     // change must reach the app at the NEXT launch only: the logbook handle is opened from this
     // path at startup while Winlink asks again per call, so a mid-session change would split the
-    // station's data across two folders. `NEXUS_DATA_DIR` still wins, for the multi-PC shack.
+    // station's data across two folders. `XNEXUS_DATA_DIR` still wins, for the multi-PC shack.
     static RESOLVED: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
     RESOLVED
         .get_or_init(
-            || match std::env::var_os("NEXUS_DATA_DIR").filter(|s| !s.is_empty()) {
+            || match std::env::var_os("XNEXUS_DATA_DIR").filter(|s| !s.is_empty()) {
                 Some(d) => PathBuf::from(d),
                 None => read_data_dir_pointer_in(&config_dir_for(None))
-                    .unwrap_or_else(|| config_base().join("tempo")),
+                    .unwrap_or_else(|| config_base().join("om0rx-xnexus")),
             },
         )
         .clone()
@@ -4053,13 +4052,13 @@ fn shared_data_dir() -> PathBuf {
 
 /// The test twin of `shared_data_dir`: the same rule inside the running test's own folder (see
 /// `test_dirs`), resolved once per test as the shipped one is once per launch, and blind to
-/// `NEXUS_DATA_DIR`: a contributor whose shack keeps its log on a share would otherwise have every
+/// `XNEXUS_DATA_DIR`: a contributor whose shack keeps its log on a share would otherwise have every
 /// test write beside that log.
 #[cfg(test)]
 fn shared_data_dir() -> PathBuf {
     thread_local! {
         static RESOLVED: PathBuf = read_data_dir_pointer_in(&config_dir_for(None))
-            .unwrap_or_else(|| config_base().join("tempo"));
+            .unwrap_or_else(|| config_base().join("om0rx-xnexus"));
     }
     RESOLVED.with(PathBuf::clone)
 }
@@ -4343,7 +4342,7 @@ struct DataFolderInfo {
     current: String,
     /// Where the default would be.
     default: String,
-    /// "env" (NEXUS_DATA_DIR), "chosen" (the pointer) or "default".
+    /// "env" (XNEXUS_DATA_DIR), "chosen" (the pointer) or "default".
     source: String,
     /// The folder the pointer names, when one is set — which may differ from `current` until the
     /// operator restarts. Null when no pointer is set.
@@ -4353,7 +4352,7 @@ struct DataFolderInfo {
     /// C8 — the folder in use is CERTAINLY on network storage, where a database can be corrupted.
     ///
     /// This is the readout for the two paths that bypass `validate_data_dir_target` entirely:
-    /// `NEXUS_DATA_DIR`, which `shared_data_dir` reads with no validation at all and which is the
+    /// `XNEXUS_DATA_DIR`, which `shared_data_dir` reads with no validation at all and which is the
     /// documented way to put the log on a NAS, and a `data-dir.json` that was hand-edited or
     /// synced in from another machine. Neither can be REFUSED the way a newly chosen folder is:
     /// the log is already there, and silently falling back to the default folder would open an
@@ -4369,7 +4368,7 @@ struct DataFolderInfo {
 fn get_data_folder() -> DataFolderInfo {
     let base = config_dir_for(None);
     let chosen = read_data_dir_pointer_in(&base);
-    let env_set = std::env::var_os("NEXUS_DATA_DIR")
+    let env_set = std::env::var_os("XNEXUS_DATA_DIR")
         .filter(|s| !s.is_empty())
         .is_some();
     let current = shared_data_dir();
@@ -4391,7 +4390,7 @@ fn get_data_folder() -> DataFolderInfo {
         .to_string(),
         log_present: current.join("log.adi").is_file(),
         current: current.to_string_lossy().into_owned(),
-        default: config_base().join("tempo").to_string_lossy().into_owned(),
+        default: config_base().join("om0rx-xnexus").to_string_lossy().into_owned(),
         chosen: chosen.map(|p| p.to_string_lossy().into_owned()),
     }
 }
@@ -4410,12 +4409,12 @@ async fn set_data_folder(
 ) -> Result<DataCopyReport, String> {
     let engine = Arc::clone(&state);
     tauri::async_runtime::spawn_blocking(move || {
-        if std::env::var_os("NEXUS_DATA_DIR")
+        if std::env::var_os("XNEXUS_DATA_DIR")
             .filter(|s| !s.is_empty())
             .is_some()
         {
             return Err(
-                "NEXUS_DATA_DIR is set for this launch, and it wins over this setting. Clear it \
+                "XNEXUS_DATA_DIR is set for this launch, and it wins over this setting. Clear it \
                  to choose the folder here."
                     .to_string(),
             );
@@ -7530,7 +7529,7 @@ fn snap_bandmap_to_edge(
 /// Where the ADIF logbook is persisted: the SHARED data dir (NOT the per-profile config
 /// dir), so every instance reads and writes the ONE unified log. Default
 /// `%APPDATA%\tempo\log.adi` / `~/.config/tempo/log.adi` (unchanged for a single instance);
-/// `NEXUS_DATA_DIR` relocates it (multi-PC shack). See [`shared_data_dir`].
+/// `XNEXUS_DATA_DIR` relocates it (multi-PC shack). See [`shared_data_dir`].
 fn logbook_path() -> PathBuf {
     shared_data_dir().join(LOG_FILE_NAME)
 }
@@ -9243,7 +9242,7 @@ mod conversations_file_tests {
 /// cosmetic. That store is invisible to the operator, is not beside settings.json, is not covered
 /// by any backup of it, is not per-profile, and is origin-scoped, so it evaporates on a WebView2
 /// data reset, an uninstall-then-reinstall, or an asset-protocol change. Worst of all, WebView2
-/// keys its data folder on the bundle identifier, so a tidy-up rename of `com.kd9taw.tempo` would
+/// keys its data folder on the bundle identifier, so a tidy-up rename of `sk.om0rx.xnexus` would
 /// silently wipe every key on every installed machine — that landmine is pinned by
 /// `the_bundle_identifier_is_pinned_because_renaming_it_wipes_operator_data`, and this store is
 /// what eventually defuses it.
@@ -36757,7 +36756,7 @@ async fn sync_lotw_report(
 // log. The username + the incremental high-water cursor are non-secret and live
 // in Settings.
 
-const LOTW_KEYCHAIN_SERVICE: &str = "tempo";
+const LOTW_KEYCHAIN_SERVICE: &str = "om0rx-xnexus";
 const LOTW_KEYCHAIN_USER: &str = "lotw-password";
 const EQSL_KEYCHAIN_USER: &str = "eqsl-password";
 const QRZ_KEYCHAIN_USER: &str = "qrz-password";
@@ -50058,27 +50057,9 @@ fn restart_app(app: tauri::AppHandle) {
     quit::restart_when_saved(&app);
 }
 
-// ─── Opt-in BETA update channel ────────────────────────────────────────────────────────────
-//
-// The STABLE self-updater (useSelfUpdate.ts → the plugin's own JS commands) is UNTOUCHED: every
-// non-beta user keeps that proven path byte-for-byte. This is a SEPARATE path only a user who
-// turned on `beta_updates` ever reaches. GitHub's `/releases/latest` redirect excludes
-// pre-releases, so the stable feed can never see a beta; the beta path lists releases via the
-// GitHub API, picks the newest build (pre-releases included, see
-// `tempo_app::update::newest_release_manifest`), and points the updater at THAT release's
-// manifest. ONLY the endpoint differs — the signing key, download, signature verification and the
-// flush/restart choreography are the plugin's own, shared with the stable path
-// (`prepare_update_install` / `restart_app`).
-
-/// The GitHub releases API — lists pre-releases too (unlike the `/releases/latest` redirect the
-/// stable feed uses). 20 is far more than the few betas a cycle ever has in flight.
-const GITHUB_RELEASES_URL: &str = "https://api.github.com/repos/kd9taw/Nexus/releases?per_page=20";
-
-/// Holds the pending beta `Update` between the check that found it and the install the operator
-/// presses — the JS side cannot carry a Rust `Update` handle, so it lives here. `None` until a
-/// check finds a newer beta; taken (not cloned) at install time so a double-press can't double-run.
+// Fork update compatibility commands never contact or install upstream releases.
 #[derive(Default)]
-struct BetaUpdateState(std::sync::Mutex<Option<tauri_plugin_updater::Update>>);
+struct BetaUpdateState;
 
 #[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -50089,78 +50070,24 @@ struct BetaUpdateInfo {
     notes: Option<String>,
 }
 
-/// Check the BETA channel for a newer build. Resolves the newest release (pre-releases included)
-/// from the GitHub API, points the updater at its manifest, and — if it is newer than the running
-/// build — stashes the `Update` for [`install_beta_update`] and returns its version. `Ok(None)` =
-/// up to date or nothing installable; `Err` = a fetch/parse failure (the frontend treats it
-/// silently, exactly as the stable check does). Called only while `beta_updates` is on.
+/// No beta update channel is configured for this fork.
 #[tauri::command]
 async fn check_beta_update(
-    app: tauri::AppHandle,
-    state: tauri::State<'_, BetaUpdateState>,
+    _app: tauri::AppHandle,
+    _state: tauri::State<'_, BetaUpdateState>,
 ) -> Result<Option<BetaUpdateInfo>, String> {
-    let body = tauri::async_runtime::spawn_blocking(|| fetch_text(GITHUB_RELEASES_URL))
-        .await
-        .map_err(|e| e.to_string())??;
-    let clear = || *state.0.lock().unwrap_or_else(|p| p.into_inner()) = None;
-    let Some((_ver, manifest_url)) = tempo_app::update::newest_release_manifest(&body) else {
-        clear();
-        return Ok(None);
-    };
-    let url = tauri::Url::parse(&manifest_url).map_err(|e| e.to_string())?;
-    let updater = app
-        .updater_builder()
-        .endpoints(vec![url])
-        .map_err(|e| e.to_string())?
-        .build()
-        .map_err(|e| e.to_string())?;
-    match updater.check().await.map_err(|e| e.to_string())? {
-        Some(update) => {
-            let info = BetaUpdateInfo {
-                version: update.version.clone(),
-                notes: update.body.clone(),
-            };
-            *state.0.lock().unwrap_or_else(|p| p.into_inner()) = Some(update);
-            Ok(Some(info))
-        }
-        None => {
-            clear();
-            Ok(None)
-        }
-    }
+    // No network request and no inherited signing key in an xNexus build.
+    Ok(None)
 }
 
-/// Download and install the beta `Update` the last check stashed. Mirrors the stable path's
-/// choreography, reusing its pieces: the frontend calls `update_install_block` (refuse while the
-/// radio is busy) and `prepare_update_install` (flush before Windows' in-`install()` `exit(0)`)
-/// FIRST, then this; on macOS/Linux it returns and the frontend calls `restart_app`, on Windows
-/// the plugin's `install()` execs the installer and exits the process here. The `Update` was taken
-/// out of state above, so a second press finds nothing to install. Progress is deliberately not
-/// streamed — the beta banner shows an indeterminate "installing" state, which keeps this opt-in
-/// path free of the Tauri `Channel` plumbing the codebase has no other use of.
+/// Refuse installation until a fork-owned update channel has been qualified.
 #[tauri::command]
-async fn install_beta_update(state: tauri::State<'_, BetaUpdateState>) -> Result<(), String> {
-    let update = state
-        .0
-        .lock()
-        .unwrap_or_else(|p| p.into_inner())
-        .take()
-        .ok_or("no beta update is ready to install")?;
-    update
-        .download_and_install(|_chunk, _total| {}, || {})
-        .await
-        .map_err(|e| e.to_string())
+async fn install_beta_update(_state: tauri::State<'_, BetaUpdateState>) -> Result<(), String> {
+    Err("OM0RX-xNexus self-update is not enabled; use a qualified fork release".into())
 }
 
-/// Our own update endpoint (schema 1): a `version.json` with a direct `"latest"` field. Primary,
-/// GitHub-first, and under our control — so update accuracy no longer depends on SourceForge's
-/// per-release "Default Download" flip.
-const VERSION_JSON_URL: &str = "https://hamradiotools.io/nexus/version.json";
-/// SourceForge `best_release.json` — the FALLBACK release feed if the endpoint is unreachable.
-const BEST_RELEASE_URL: &str = "https://sourceforge.net/projects/nexus-ham-radio/best_release.json";
-/// The download page the "Download" button opens — GitHub Releases (primary distribution), which
-/// lists every installer plus notes; SourceForge mirrors it.
-const DOWNLOAD_PAGE_URL: &str = "https://github.com/kd9taw/nexus/releases/latest";
+/// Only an explicit operator request opens the fork's release page.
+const DOWNLOAD_PAGE_URL: &str = "https://github.com/oliverbross/OM0RX-xNexus/releases";
 
 #[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -50175,27 +50102,9 @@ struct UpdateInfo {
     download_url: String,
 }
 
-/// Whether the signed self-updater can replace THIS install, judged by the package the bundler
-/// stamped into the binary (`tauri::utils::platform::bundle_type`).
-///
-/// ⚠️ THE PACKAGE DECIDES, NOT WHETHER A CHECK SUCCEEDS. The manifest (`latest.json`, built in
-/// release.yml) carries four installers: the NSIS setup under `windows-x86_64`, the AppImage
-/// under `linux-x86_64`, and the macOS app under `darwin-aarch64` (Apple Silicon) and
-/// `darwin-x86_64` (Intel), each Mac asking for its own architecture's. The plugin looks up
-/// `linux-x86_64-deb` and then the bare `linux-x86_64`, so on a PC's .deb the check found the
-/// AppImage, downloaded it, and Install failed every time: the plugin installs over a .deb only
-/// from a .deb (`InvalidUpdaterFormat`). The .deb packages (the PC one and both Pi ones) are
-/// apt's to replace, so they keep the notice that opens the download page. An MSI install (Nexus
-/// publishes none) would be handed the NSIS setup, a different installer from the one that put
-/// it there, and a build run straight from cargo reports no package at all; both keep the notice
-/// too. macOS reports its app bundle for every build, a dev build included, because the bundler
-/// stamps nothing there.
-fn self_updates(bundle: Option<&tauri::utils::config::BundleType>) -> bool {
-    use tauri::utils::config::BundleType;
-    matches!(
-        bundle,
-        Some(BundleType::Nsis | BundleType::AppImage | BundleType::App)
-    )
+/// All fork package types require an explicit manual release installation.
+fn self_updates(_bundle: Option<&tauri::utils::config::BundleType>) -> bool {
+    false
 }
 
 /// How this install takes an update: see [`update_route`].
@@ -50268,16 +50177,9 @@ fn fetch_text_limited(url: &str, limit: u64) -> Result<String, String> {
 /// usable version; `Err` = BOTH feeds failed to fetch (treated as offline → the frontend stays
 /// silent). Runs blocking HTTP, so call via `spawn_blocking`.
 fn fetch_latest_version() -> Result<Option<String>, String> {
-    // Primary: our own endpoint.
-    if let Ok(body) = fetch_text(VERSION_JSON_URL) {
-        if let Some(v) = tempo_app::update::parse_latest_from_endpoint(&body) {
-            return Ok(Some(v));
-        }
-        // Reachable but unparseable — fall through to the SF feed as a cross-check.
-    }
-    // Fallback: SourceForge. An error here (with the endpoint also unavailable) means offline.
-    let body = fetch_text(BEST_RELEASE_URL)?;
-    Ok(tempo_app::update::parse_latest_version(&body))
+    // A successful check cannot authorize replacement by an upstream binary.
+    // Keep the command shape for merge compatibility; no upstream feed is queried.
+    Ok(None)
 }
 
 /// Check the release feed for a newer version. Returns the current/latest versions and whether an
@@ -50925,13 +50827,13 @@ struct LaunchRest {
 /// "in `windows`, we need to force a data_directory"): when a webview declares no
 /// `data_directory` of its own — Nexus declares none — Tauri sets it to
 /// `BaseDirectory::LocalData` joined with the bundle **identifier**. So it is
-/// `%LOCALAPPDATA%\com.kd9taw.tempo` (the identifier from `tauri.conf.json`), NOT
+/// `%LOCALAPPDATA%\sk.om0rx.xnexus` (the identifier from `tauri.conf.json`), NOT
 /// `%LOCALAPPDATA%\Nexus`, which is the product-named folder the app's own data lives in. The
 /// folder holds nothing but WebView2's cache and profile, so losing it costs nothing an
 /// operator would notice.
 #[cfg(windows)]
 fn webview_data_dir() -> Option<PathBuf> {
-    std::env::var_os("LOCALAPPDATA").map(|p| PathBuf::from(p).join("com.kd9taw.tempo"))
+    std::env::var_os("LOCALAPPDATA").map(|p| PathBuf::from(p).join("sk.om0rx.xnexus"))
 }
 
 /// A build failed. Set the WebView2 user-data folder aside and try **exactly once** more.
@@ -50965,7 +50867,7 @@ fn rebuild_after_setting_webview_data_aside(
                     .duration_since(std::time::UNIX_EPOCH)
                     .map(|d| d.as_secs())
                     .unwrap_or(0);
-                let aside = dir.with_file_name(format!("com.kd9taw.tempo.corrupt-{stamp}"));
+                let aside = dir.with_file_name(format!("sk.om0rx.xnexus.corrupt-{stamp}"));
                 match std::fs::rename(&dir, &aside) {
                     Ok(()) => tempo_core::applog::warn(
                         "webview",
@@ -54242,7 +54144,6 @@ fn build_app(d: BuildDeps) -> tauri::Result<tauri::App> {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_notification::init())
-        .plugin(tauri_plugin_updater::Builder::new().build())
         // Start at sign-in. Driven from Rust only (`set_launch_at_login`); no capability entry.
         .plugin(tauri_plugin_autostart::Builder::new().build())
         // The data-folder picker (#289). Driven from Rust only (`pick_data_folder`); no
@@ -54537,10 +54438,10 @@ fn remote_service_for(
 ///
 /// Beside `log.adi` in [`shared_data_dir`] rather than in the per-profile config dir, for the
 /// logbook's reason: mail is the operator's data, not this instance's settings, and a second
-/// profile must see the same mailbox. `NEXUS_DATA_DIR` therefore relocates it too.
+/// profile must see the same mailbox. `XNEXUS_DATA_DIR` therefore relocates it too.
 ///
 /// ⚠️ `mailbox.rs`'s concurrency note applies: its lock is PROCESS-local, so two Nexus instances
-/// on one `NEXUS_DATA_DIR` can still lose an index row. That is already true of the logbook and
+/// on one `XNEXUS_DATA_DIR` can still lose an index row. That is already true of the logbook and
 /// is not this batch's to fix — but nothing here adds a second instance path, and no lock file is
 /// taken (a crash leaves one held, which is worse than the race).
 fn winlink_dir() -> PathBuf {
@@ -62231,7 +62132,7 @@ mod tests {
     /// Verified failing first: it named all 149 offenders before the sweep, and
     /// re-named the six the name-keyed version missed.
     /// ⭐ THE BUNDLE IDENTIFIER IS A LANDMINE, AND THIS IS THE TRIPWIRE. It is still
-    /// `com.kd9taw.tempo` while the product is called Nexus, so it reads like leftover
+    /// `sk.om0rx.xnexus` while the product is called Nexus, so it reads like leftover
     /// tidying — and renaming it would be one of the most destructive one-line changes
     /// available in this repo, on every installed machine at once, silently.
     ///
@@ -62245,7 +62146,7 @@ mod tests {
     /// to recover, and the operator simply finds their memories gone after an update.
     ///
     /// AND IT IS NOW IN SHIPPED PROSE. The macOS microphone fix tells operators to run
-    /// `tccutil reset Microphone com.kd9taw.tempo` to clear a stuck permission denial. That
+    /// `tccutil reset Microphone sk.om0rx.xnexus` to clear a stuck permission denial. That
     /// string is in the CHANGELOG, so a rename also invalidates published instructions
     /// people will still be following.
     ///
@@ -62260,7 +62161,7 @@ mod tests {
         let v: serde_json::Value = serde_json::from_str(conf).expect("tauri.conf.json parses");
         assert_eq!(
             v["identifier"].as_str(),
-            Some("com.kd9taw.tempo"),
+            Some("sk.om0rx.xnexus"),
             "the bundle identifier changed — see this test's comment. Renaming it orphans \
              every localStorage key on every installed machine (memory channels, watchlist, \
              chase sets, armed alarms, accessibility scale) with no migration and nothing to \
@@ -65240,12 +65141,12 @@ mod tests {
     /// this install: the three packages the manifest carries. Everything else keeps the notice
     /// with the download page, the .deb above all, whose check used to find the AppImage.
     #[test]
-    fn only_the_packages_the_manifest_carries_update_themselves() {
+    fn fork_self_update_is_disabled_for_every_package() {
         use tauri::utils::config::BundleType;
         for (bundle, expected) in [
-            (Some(BundleType::Nsis), true),
-            (Some(BundleType::AppImage), true),
-            (Some(BundleType::App), true),
+            (Some(BundleType::Nsis), false),
+            (Some(BundleType::AppImage), false),
+            (Some(BundleType::App), false),
             (Some(BundleType::Deb), false),
             (Some(BundleType::Rpm), false),
             (Some(BundleType::Msi), false),
@@ -65275,8 +65176,8 @@ mod tests {
         // Default profile's config dir == the shared "tempo" dir → single instance is unchanged
         // and shares the log with itself (no migration). A named profile is isolated but the
         // shared log dir stays "tempo", so the two never share config yet always share the log.
-        assert_eq!(profile_dir_name(None), "tempo");
-        assert_eq!(profile_dir_name(Some("radio-a")), "tempo-radio-a");
+        assert_eq!(profile_dir_name(None), "om0rx-xnexus");
+        assert_eq!(profile_dir_name(Some("radio-a")), "om0rx-xnexus-radio-a");
         assert_ne!(profile_dir_name(Some("radio-a")), profile_dir_name(None));
     }
 

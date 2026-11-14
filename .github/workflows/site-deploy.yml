@@ -55,6 +55,7 @@ env:
 
 jobs:
   deploy:
+    if: github.repository == 'kd9taw/Nexus'
     name: Build + deploy the site
     runs-on: ubuntu-latest
     # The scoped Cloudflare token and the site-repo token live here, not at repo level.
