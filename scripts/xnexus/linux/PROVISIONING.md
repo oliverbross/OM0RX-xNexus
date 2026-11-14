@@ -102,3 +102,41 @@ New raw evidence is retained under
 
 The original e3 failure remains unchanged, with its separate source/cache and
 receipt. The new volume is `xnexus-linux-c2c917b6f748366f-1b047bd836fc`.
+
+
+## Exact d206 `.3` contract pass
+
+Candidate `1.24.1-xlog.3`, source
+`d206b880216543af2142e600ea6b8e5ac6bdd1b2`, passed fetch and contract using the
+same immutable image and hardened executable harness (documentation head
+`2dc9a8180f6a73be866a5eb0596b06cec9fe7dec`). Its fresh named volume is
+`xnexus-linux-d206b880216543af-1b047bd836fc`; no c2/e3 source, dependency cache or
+frontend assets were copied. Archive SHA256:
+`e74906dfeb3118fe10048f3b16ee36e36e7ae154f8596ca6eff8b6a6fbc3b21c`.
+
+Fetch installed 289 npm packages with scripts disabled and locked Cargo
+dependencies. Contract passed **eight fork-policy tests, 58 SDK tests,
+TypeScript/Vite production frontend build and 40 UI tests in seven files**.
+The generated `ui/dist` therefore belongs to this exact candidate. Both phases
+verified all **5,472 archive entries** before and after execution; generated
+outputs are permitted, tracked source changes are not. Vite reported only its
+large-chunk warning. Guarded contract process/effective exit codes are zero,
+with no interruption or memory-guard error. Its minimum observed available host
+RAM was 9,034,883,072 bytes, above the unchanged 2 GiB running guard floor.
+
+Raw evidence remains in
+`C:/Projects/OM0RX-xLog/.build/xnexus-linux-evidence-d206/evidence/`:
+
+- `1794678356636813900-fetch.json` and `.log`.
+- `1794678512647349100-contract.json`, SHA256
+  `5fb7f9f43003b99e434c0fcccfc7074ffaccbccf31c6121b73ca3d676407ddfb`.
+- `1794678512647349100-contract.log`, SHA256
+  `80a073182b30254d44c286212c4d366bd9f5efb50557d31f1fb35aa8b6a78321`.
+- `1794678512647349100-contract-host-config.json`: actual running container
+  inspection proving network-none, two CPUs, 6 GiB RAM/no additional swap,
+  256 PIDs, capability drop and restricted mounts.
+
+The first desktop invocation was refused before container creation because
+available host RAM was 9.14 GiB, below the unchanged 10 GiB admission threshold.
+This is an admission hold, not a desktop source-test failure. No native desktop
+build, package, GUI or radio acceptance is claimed by these contract receipts.
