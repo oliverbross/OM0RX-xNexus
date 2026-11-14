@@ -1,8 +1,8 @@
 # Isolated Linux qualification
 
 This is a **scoped validation harness**. Image provisioning, dependency fetch and
-the exact c2 SDK/UI contract phase have passed; native desktop compilation has
-not yet been attempted. See
+the exact c2 and d206 SDK/UI contract phases have passed; native desktop
+compilation has not yet started (the first d206 admission was held for RAM). See
 [the retained preparation record](PROVISIONING.md). It does not package, install or launch xNexus.
 Keep the fork's canonical package guards and inherited publishing restrictions.
 
