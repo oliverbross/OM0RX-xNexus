@@ -287,3 +287,63 @@ and its log remains `70ff67ea70a94684accb79abc34c7e756dcace46ccab5bdb11634805960
 Final read-only running-container inventory contained only the unrelated
 `871ae0b9051d`, image `postgres:16-alpine`, name `om0rx-postgres`. It was untouched.
 No xNexus validation/compiler/container remains running from these attempts.
+
+## Targeted donor cache advice: guest pages released, host admission still held
+
+After the contract hold, a separately authorized read-only inspection found
+13,443,160 KiB of Linux file cache and 15,146,636 KiB `MemAvailable`; these are
+guest measurements, not Windows headroom. WSL reported version 3.0.5.0, kernel
+6.18.58.1, and no user `.wslconfig` existed. A non-faulting `mmap`/`mincore`
+sample of the 128 largest target files in each task-owned volume found
+2,051,710,976 resident bytes in the donor and 1,647,181,824 in the seeded copy.
+Residency is a point-in-time observation, not a promise of reclaimable host RAM.
+The inspection used a 128 MiB/no-extra-swap, 0.25 CPU, offline container with
+read-only volume mounts and no cache advice.
+
+The owner then explicitly authorized **one** `POSIX_FADV_DONTNEED` pass over
+only those exact 128 donor target files. The seeded volume was not mounted.
+The helper pinned the sample and verified target-manifest hashes, checked every
+relative path and real ancestor, and opened each regular file using
+`O_RDONLY | O_NOFOLLOW`. All paths/types/sizes were validated before the first
+advice. File descriptor and path device/inode, mode, hardlink count, size, mtime
+and ctime remained equal before/after. There were no explicit data writes,
+`sync` calls, global cache drops, configuration changes, restarts or deletions.
+The container retained the same tiny resource limits and a read-only donor mount.
+
+All 128 advice calls returned zero. At this later snapshot, the sampled files
+had **1,791,987,712 resident bytes before and zero after**. The container exited
+zero. This demonstrates release of those guest page-cache entries; it does not
+demonstrate Windows memory recovery. Windows-only measurements were:
+
+| UTC on 14 November 2026 | Available physical bytes | Available commit bytes |
+|---|---:|---:|
+| 21:21:51, before advice | 6,770,237,440 | 9,848,320,000 |
+| 21:21:56, immediately after | 6,729,416,704 | 9,810,423,808 |
+| 21:23:14, delayed observation | 6,932,111,360 | 9,908,326,400 |
+| 21:27:09, more than five minutes later | 7,224,377,344 | 10,171,412,480 |
+
+Those observations do not establish a causal host benefit, and remained below
+the 7 GiB Linux/8 GiB Windows physical admission gates. No build or contract retry
+was attempted. No further Docker/WSL inspection followed the final inventory,
+which again contained only the untouched `om0rx-postgres` container. The guest
+was left idle; further cache advice was explicitly stopped.
+
+The original retained byte-hash manifests were not reread through the donor
+files afterward, because doing so would repopulate their cache. The read-only
+descriptors, stable identities/metadata and per-file results are retained with
+the prior verified hashes; cache advice does not alter file contents. Advice is
+nonbinding, may leave dirty/pinned pages, and does not itself prove host-page
+return. See the primary [Linux advice documentation](https://man7.org/linux/man-pages/man2/posix_fadvise.2.html),
+[residency documentation](https://man7.org/linux/man-pages/man2/mincore.2.html)
+and [WSL configuration documentation](https://learn.microsoft.com/en-us/windows/wsl/wsl-config).
+No effective WSL reclamation setting or host recovery is inferred merely from
+the documented defaults.
+
+Evidence remains in the exact-0d directory above: `cache-residency.json` SHA256
+`e1df03a0783e209a211e7d864768cbe70f9be74f822df1a9db328b891de3147a`,
+`cache-inspection-receipt.json`, the retained allowlisted helper
+`advise-donor-target.py`, `donor-advice-result.json` SHA256
+`e51a66501a1618accdb1adca64ab8784e2a9f116b6b92b5f56d01eb68a108d83`,
+`donor-advice-receipt.json` and the four `donor-advice-host-*.json`
+observations. The receipt binds the exact executed helper hash. Validation
+source/helpers and the earlier execution records remain unchanged.
