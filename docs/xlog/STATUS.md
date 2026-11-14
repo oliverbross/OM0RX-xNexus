@@ -19,7 +19,7 @@ native two-profile isolation acceptance before paired testing resumes.
 | M0 | Complete: full upstream history, private fork, fetch-only upstream, nine tracked milestones | Maintain upstream review and patch inventory |
 | M1 | 58 client tests; actual owner HTTP and SQLite restart/receipt tests; bridge merged into canonical xLog | Paired installed-application acceptance |
 | M2 | Separate companion startup, native pairing and private profile; no local station services | Final candidate native GUI and lifecycle acceptance |
-| M3 | xLog-authoritative call/DXCC needs, band/world maps, selected-call history | Paired classification matrix; decoded-call batch lookup; richer confirmation/award policy evidence |
+| M3 | xLog-authoritative call/DXCC needs, band/world maps, selected-call history; actual owner mutation and serialized projector matrix passed | Installed UI classification propagation; decoded-call batch lookup; richer confirmation/award policy evidence |
 | M4 | Owner-mediated tune/point and independent Stop; connection-bound Stop fix merged after 95 focused and 1,164 full native tests | Accepted xLog package containing the fix; paired UI and physical control qualification |
 | M5 | Durable outbox and atomic owner write/receipt; restart, replay and edit-conflict tests | Paired native GUI acceptance; queue archive/export design |
 | M6 | Explicit FLEX slice A/DAX mapping, bounded owner PCM, client, FIR/period assembler, threaded native FT8/FT4 decoder and receive UI | Active DAX reception and clock/route qualification; TX contract and supervised qualification |
@@ -39,6 +39,9 @@ receipt are retained. The Mac .1 build remains frozen at that original source.
 
 See [RX_CLIENT_VERIFICATION.md](RX_CLIENT_VERIFICATION.md),
 [RX_DESKTOP.md](RX_DESKTOP.md) and [VERIFICATION.md](VERIFICATION.md).
+The [contact publication verification](CONTACT_PUBLICATION_VERIFICATION.md)
+records 41 passing owner tests and 23 actual worker-response projection cases,
+including intentional row absence and stale classification becoming Unknown.
 RX evidence includes 58 SDK tests, 40 distinct companion UI tests, TypeScript
 and Vite builds, 14 browser viewport/theme cases, 14 pure DSP/assembler tests,
 five native adapter tests including both modes at five rates, two actual owner
