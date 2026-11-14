@@ -212,3 +212,78 @@ check in addition to the scoped SDK/UI contract. It does **not** establish a
 Linux package, GUI/runtime acceptance, complete upstream test matrix or any
 physical-radio behavior. No application/device was launched and no unrelated
 container, VM configuration or production xLog process was changed.
+
+## Exact 0d source: tooling and cache seed passed; contract admission held
+
+The updated application source is
+`0d01248b0504ae77f6f122fdada1b21e4a61806b`; validation tooling is
+`93a6cabaeccacf5e72b767829daa677ff8db9b8d`. Its independently exported
+160,768,000-byte Git archive has SHA256
+`3d831e29e37d0f5cea20b1fe3ff7d210e249fb1edb819b0f05351af8344ffad5`.
+Fresh streamed Git archive verification passed. The immutable image remains
+`sha256:1b047bd836fc8bae9c97bd0a6973630561b1a98604550a1921ef3be0322853aa`.
+All **37 dependency inputs** (four lockfiles and 33 application/path-crate
+manifests) match the independently verified d206 donor archive.
+
+The original 8 GiB physical admission refused at 7.69 GiB before container
+creation. A separately reviewed explicit `contract-low-headroom` profile then
+required fresh **7 GiB physical and 8 GiB available commit**, while retaining
+4 GiB RAM/no additional swap, two CPUs, one build job, network-none and 2 GiB
+physical/commit runtime floors. It is not an automatic fallback or cap increase.
+The standard and earlier reduced-profile evidence above remain unchanged.
+
+**Disposable fixture pass:** all 25 Python tooling tests passed in the real
+Linux image, including the actual shell wrapper and symlink checks that the
+Windows run could not exercise. Admission measured 8,394,575,872 bytes physical
+and 10,078,478,336 bytes available commit. Only the tooling directory was mounted,
+read-only; no station source/cache/device/socket was mounted. Actual Docker
+inspection records the 4 GiB RAM=swap cap, two CPUs, network-none and capability
+drop. The fixture exited zero without OOM; its exact exited container was removed
+after inspection, with removal exit zero. This was tooling execution, not an app
+compiler or application test run.
+
+**Seed pass:** the new volume
+`xnexus-linux-0d01248b0504ae77-1b047bd836fc` was initialized with the d206 donor
+volume and donor archive mounted read-only. Seed admission measured
+8,321,105,920 bytes physical and 9,963,888,640 bytes available commit. The only
+copied paths were Cargo registry (29,947 manifest entries), compiled target cache
+(9,446 entries) and npm content cache (1,517 entries); the optional Cargo git
+cache was absent. No prior application source, UI output, TypeScript state or credentials were
+copied. File bytes/modes and link targets matched the donor before and after copy,
+including the final donor comparison. Archive/source verification and the donor
+receipt comparison also passed. Process and guarded effective exits were zero,
+without interruption or guard/donor-integrity error. Running physical/commit
+minima were 6,656,573,440 and 9,486,462,976 bytes, above the 2 GiB floors. The
+actual mount/resource inspection is retained. The seed container exited normally.
+
+**Separate contract hold:** after the seed exited, the next contract invocation
+performed fresh admission and found **6.35 GiB physical free, below 7 GiB**.
+It stopped before creating a container. Exact-byte/commit readings were not
+printed by that refused call, so the hold receipt does not invent them. No
+automatic retry, threshold change, cache dropping or application closing followed.
+The newly seeded volume and all evidence are preserved. SDK/UI and desktop checks
+for exact 0d have **not run**; no new-source compile, package, GUI or radio
+qualification is claimed. A future resumed phase still requires explicit resource
+coordination, fresh admission and actual non-fresh application compiler evidence.
+
+Raw evidence directory:
+`C:/Projects/OM0RX-xLog/.build/xnexus-linux-evidence-0d01248b/evidence/`.
+
+| Evidence | SHA256 |
+|---|---|
+| `20261114T210838Z-tooling-fixture.json` | `c43d4bbe7ce1d0f65ad611fa56b5843e5db70aa6a7c4ce20b067920faf433838` |
+| `20261114T210838Z-tooling-fixture.log` | `117fb0bff810f151b7768e1342b2a3399102f252c379ee96240795767b433892` |
+| Retained local fixture supervisor `run-tooling-fixture.py` | `fe60a4966264d62e6eeaa94c721bb166ba5abf9d3460cd848dfc636aaf409b05` |
+| `1794690544229301100-seed.json` | `ea6f4639323fc17d476a4663991622f57ac6b6d8a16b3597b01b49a9a969255d` |
+| `1794690544229301100-seed-host-config.json` | `eeb959fa7a9e2573054821c0e3ee66a9b7364a4dc1c1f7468898917ce79e65bd` |
+| `seed/seed-copy.json` | `4142ab1365fd647830053fc5c94b9003f8c93bc060e9ffa60b56f1bb7df45552` |
+| `contract-admission-hold-20261114T211346Z.json` | `981c18c18fe81b9e8529b0a07393cd07885597170973f28e86be8c7fa39a7a56` |
+
+The seed-copy record binds each complete cache manifest. Host rechecks after
+completion confirmed the original d206 archive remains
+`e74906dfeb3118fe10048f3b16ee36e36e7ae154f8596ca6eff8b6a6fbc3b21c`, its desktop
+receipt remains `2bc258e797d298c1552b7b259ea045c3a142cbe0df7bfc72cc645862fdafffac`,
+and its log remains `70ff67ea70a94684accb79abc34c7e756dcace46ccab5bdb11634805960b5122`.
+Final read-only running-container inventory contained only the unrelated
+`871ae0b9051d`, image `postgres:16-alpine`, name `om0rx-postgres`. It was untouched.
+No xNexus validation/compiler/container remains running from these attempts.

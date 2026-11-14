@@ -5,6 +5,10 @@ the exact c2 and d206 SDK/UI contract phases have passed. Exact d206 `.3`
 native desktop all-targets compilation also passed with the reviewed reduced
 resource profile. See
 [the retained preparation record](PROVISIONING.md). It does not package, install or launch xNexus.
+For the later exact `0d01248b` source, all 25 disposable tooling fixtures and the
+independent cache seed passed; the separate SDK/UI phase was held before container
+creation at 6.35 GiB physical headroom. That source has no new Linux contract or
+desktop pass yet. The successful donor cache is not new-source qualification.
 Keep the fork's canonical package guards and inherited publishing restrictions.
 
 The recipe follows `.github/workflows/xnexus-ci.yml`: Ubuntu 24.04, Rust 1.93.1,
