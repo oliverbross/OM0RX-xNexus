@@ -1,6 +1,10 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (C) 2026 OM0RX
 use super::*;
 use serde_json::{json, Value};
 const NOW: u64 = 1_790_000_000_000;
+#[path = "owner_replay.rs"]
+mod owner_replay;
 fn metadata(readiness: Readiness, now: u64) -> NeedsMetadata {
     NeedsMetadata {
         generated_at_unix_ms: now,
