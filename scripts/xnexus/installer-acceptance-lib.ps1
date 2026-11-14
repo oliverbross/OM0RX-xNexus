@@ -129,10 +129,17 @@ function Assert-XnRuntimeVersion([string]$Installed,[string]$Minimum) {
 function Get-XnPayloadMap([string]$Rendered) {
     $sections=[regex]::Matches($Rendered,'(?ms)^Section Install\r?\n(.*?)^SectionEnd\s*$')
     if ($sections.Count -ne 1) { throw 'Expected exactly one generated Install section.' }
-    $result=[Collections.Generic.List[object]]::new(); $seen=@{}
+    $result=[Collections.Generic.List[object]]::new(); $seen=@{}; $rootSelected=$false
     foreach ($line in $sections[0].Groups[1].Value.Split("`n")) {
         $line=$line.Trim()
+        if ($line -match '^SetOutPath(?:\s|$)') {
+            if ($line -cne 'SetOutPath $INSTDIR' -or $rootSelected) { throw 'Unreviewed output-directory change in Install section.' }
+            $rootSelected=$true; continue
+        }
+        if ($line -match '^(StrCpy|StrCpyS|Pop|ReadRegStr|GetFullPathName)\s+\$(INSTDIR|OUTDIR)(?:\s|$)' -or
+            $line -match '^(Goto|Return|SetShellVarContext)(?:\s|$)') { throw 'Unreviewed output-directory/control mutation in Install section.' }
         if ($line -notmatch '^File(?:\s|$)') { continue }
+        if (!$rootSelected) { throw 'File extraction precedes verified $INSTDIR output selection.' }
         if ($line -ceq 'File "${MAINBINARYSRCPATH}"') { $destination='OM0RX-xNexus.exe'; $source=$null }
         elseif ($line -cmatch '^File /a "/oname=([^"$]+)" "([^"$]+)"$') { $destination=$Matches[1].Replace('/','\'); $source=$Matches[2] }
         else { throw "Unreviewed generated File instruction: $line" }

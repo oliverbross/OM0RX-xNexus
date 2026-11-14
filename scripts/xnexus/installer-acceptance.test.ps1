@@ -53,6 +53,7 @@ Reject 'already installed receipt forbidden' { Assert-XnReceiptIdentity $build $
 $audit.installed=$false
 $rendered=@'
 Section Install
+  SetOutPath $INSTDIR
   File "${MAINBINARYSRCPATH}"
   File /a "/oname=WebView2Loader.dll" "C:\inert\WebView2Loader.dll"
   File /a "/oname=resources\deepcw\model.onnx" "C:\inert\model.onnx"
@@ -60,6 +61,10 @@ Section Install
 SectionEnd
 '@
 Pass 'exact generated destination mapping' { $m=@(Get-XnPayloadMap $rendered); if ($m.Count -ne 4 -or $m[2].destination -cne 'resources\deepcw\model.onnx') { throw 'Mapping incorrect' } }
+Reject 'changed output directory rejected' { Get-XnPayloadMap ($rendered.Replace('SetOutPath $INSTDIR','SetOutPath $TEMP')) } 'output-directory'
+Reject 'output directory change before later file rejected' { Get-XnPayloadMap ($rendered.Replace('  File /a "/oname=COPYING"',"  SetOutPath `$INSTDIR\other`n  File /a `"/oname=COPYING`"")) } 'output-directory'
+Reject 'missing output-directory selection rejected' { Get-XnPayloadMap ($rendered.Replace('SetOutPath $INSTDIR','; no output directory')) } 'precedes'
+Reject 'install root reassignment rejected' { Get-XnPayloadMap ($rendered.Replace('  File /a "/oname=COPYING"',"  StrCpy `$INSTDIR `$TEMP`n  File /a `"/oname=COPYING`"")) } 'mutation'
 Reject 'destination traversal rejected' { Get-XnPayloadMap ($rendered.Replace('resources\deepcw\model.onnx','..\escape')) } 'Unsafe'
 Reject 'unknown NSIS extraction switch rejected' { Get-XnPayloadMap ($rendered.Replace('File /a','File /r')) } 'Unreviewed'
 Reject 'case-insensitive destination collision rejected' { Get-XnPayloadMap ($rendered.Replace('/oname=COPYING','/oname=webview2loader.dll')) } 'duplicate'
