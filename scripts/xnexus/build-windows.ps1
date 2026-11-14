@@ -49,9 +49,18 @@ foreach ($name in $models.Keys) {
 }
 $receipt = [ordered]@{
     version = $config.version; source = $source; timestampUtc = [DateTime]::UtcNow.ToString('o')
-    upstream = (git -C $repo rev-parse upstream/main).Trim(); toolchain = $toolchain
+    upstreamBase = (git -C $repo merge-base HEAD upstream/main).Trim(); toolchain = $toolchain
     profile = 'release'; target = 'x86_64-pc-windows-gnu'; features = 'radio,custom-protocol'
     signed = $false; installed = $false; modelHashes = $models; status = 'started'
+    rustc = (& rustc "+$toolchain" -Vv) -join "`n"
+    gfortran = (& gfortran --version | Select-Object -First 1)
+    node = (& node --version); npm = (& npm --version)
+    cargoLockSha256 = (Get-FileHash "$repo\src-tauri\Cargo.lock" -Algorithm SHA256).Hash
+    libvpxArchiveSha256 = (Get-FileHash "$env:VPX_MINGW_PREFIX\lib\libvpx.a" -Algorithm SHA256).Hash
+    libvpxSourceSha256 = (Get-Content -Raw "$env:VPX_MINGW_PREFIX\.xnexus-sha256").Trim()
+    hamlibHashes = @(Get-ChildItem "$repo\src-tauri\resources\hamlib" -File |
+        Where-Object { $_.Extension -in '.exe', '.dll' } |
+        ForEach-Object { @{name=$_.Name; sha256=(Get-FileHash $_.FullName -Algorithm SHA256).Hash} })
 }
 $receipt | ConvertTo-Json -Depth 5 | Set-Content -Encoding utf8 $receiptPath
 Push-Location "$repo\src-tauri"
