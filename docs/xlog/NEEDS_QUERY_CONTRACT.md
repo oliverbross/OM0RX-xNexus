@@ -26,12 +26,19 @@ Reply fields, all present:
   `classification_revision`, `country_reference_revision`, `policy_revision`.
 - `results`: the exact request-ID set, with arbitrary ordering and no duplicates.
 
-Numeric revisions are exact safe JSON integers. Country-reference identity is
+Numeric revisions are exact integers from 0 through 9,007,199,254,740,990; zero
+is permitted only with the owner's explicit ready/complete authority. ADIF is
+null or an integer from 1 through 9999. Band/country are bounded to 32/128
+characters without controls. Reasons are each bounded to 256 characters without
+controls. Country-reference identity is
 the owner's opaque ASCII identity, bounded to 512 bytes and compared only for
 equality. Its present form begins `xlog-country-facts-v3:` and may include entity
 catalogue, fallback and CTY-data identities. Do not truncate or reinterpret it.
 The bounded 64-byte policy identity is initially `xlog-call-dxcc-needs-v1`;
-this versions the existing call/DXCC projection, not a new award policy.
+this versions the existing call/DXCC projection, not a new award policy. Both
+identity strings are nonempty printable ASCII. Clients accept maximum ages from
+1 through 2000 ms and at most 50 ms future clock skew, without extending a
+monotonic lease beyond two seconds or renewing it from a repeated timestamp.
 
 Each result contains `query_id`, `normalized_callsign`, `dial_frequency_hz`,
 `decoder_mode`, `classification_mode` (`DIGI`), `band`, `country`, `adif`,
@@ -39,6 +46,12 @@ Each result contains `query_id`, `normalized_callsign`, `dial_frequency_hz`,
 `need: {status, score, reason_code, reasons}`. Optional facts are null.
 Known need scores are signed 32-bit integers; Unknown always has a null score.
 Reasons are bounded to 30 strings. Known results have a null `reason_code`.
+Call statuses are exactly `New Call`, `New Band`, `New Mode`, `New Band+Mode`,
+`Worked`, `Confirmed`, or `Unknown`. DXCC statuses are exactly `ATNO`,
+`C/New Band`, `C/New Mode`, `C/New Band+Mode`, their `W/` equivalents,
+`Worked`, `Confirmed`, or `Unknown`. Nullable does not mean that required JSON
+fields may be omitted. Missing/null snapshot metadata preserves legacy base
+observations and invalidates only needs authority.
 
 Non-ready envelopes have null authority and every row is Unknown with a null
 score, `reason_code` equal to readiness, and empty reasons. They preserve query
@@ -77,13 +90,29 @@ not cold-load, start a worker, add/archive/forward spots, or write a contact or
 station command. A monotonic mutation-fence generation detects intervening
 writes even if pending state clears before return. No fence lock crosses I/O.
 
-**Owner transport design remains a review gate:** the existing generic worker
-request path can retire the worker after a blocked stdin write. Merely adding
-a non-retiring read classification is insufficient. The needs path must have
-bounded admission, no lookup-triggered retirement, and a permit retained by the
-actual job until completion even after its HTTP deadline. Re-pairing must not
-allow abandoned jobs to accumulate. A blocked-writer fixture must establish
-this behavior before promotion; a one-second success guarantee is not claimed.
+**Chosen owner transport: one mailbox on the existing worker Session.** The
+generic worker request path can retire the worker after a blocked stdin write;
+a new blocking writer is therefore unsuitable even with try-lock admission.
+HTTP queries instead admit one queued job for the current worker generation.
+Only an already-running, ordinary native cluster snapshot poll may carry it;
+there is no new poll, wake-up, worker launch or query writer thread.
+
+An expired queued job is removed before attachment. Once attached, the actual
+poll owns the in-flight permit across HTTP expiry and companion re-pairing.
+Matching stdout completion, including a late abandoned-poll reply, or proven
+worker retirement releases it exactly once. Delivery additionally requires the
+same live lease, workspace, mutation-fence stamp and unexpired owner authority.
+Private query results are removed before ordinary snapshot emission. No needs
+mutex spans poll I/O or classification. Renderer-origin snapshot requests cannot
+inject the private query fields.
+
+The ordinary poll is roughly one second, so the one-second client timeout is a
+deadline, not a success guarantee. A missed cycle or load may return 503/Unknown.
+The bounded batch adds bytes to that poll; it does not eliminate transport
+pressure or fix existing ordinary-poll write failures. Required fake-process
+tests must prove no added writer/retirement call or accumulating jobs under
+blocked writes, repeated timeouts and re-pairing. Delayed replies, pre-write
+admission failure, absent pollers and generation retirement need distinct tests.
 
 ## Acceptance
 
