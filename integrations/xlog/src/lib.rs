@@ -376,12 +376,17 @@ impl BridgeClient {
             let remaining = snapshot.validate(hello, now_ms()?)?;
             let received = Instant::now();
             if let Some(old) = &self.observation {
-                if snapshot.revision < old.snapshot.revision
-                    || (snapshot.revision == old.snapshot.revision && snapshot != old.snapshot)
-                {
+                if snapshot.revision < old.snapshot.revision {
                     return Err(Error::Revision);
                 }
                 if snapshot.revision == old.snapshot.revision {
+                    // Optional classification has its own authority and lease.
+                    // Its metadata cannot change the meaning of a base revision.
+                    let mut comparable_base = snapshot.clone();
+                    comparable_base.needs = old.snapshot.needs.clone();
+                    if comparable_base != old.snapshot {
+                        return Err(Error::Revision);
+                    }
                     return Ok(Observation {
                         snapshot,
                         received,
