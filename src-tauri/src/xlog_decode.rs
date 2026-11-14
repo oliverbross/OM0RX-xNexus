@@ -1,11 +1,14 @@
-//! Receive-only DSP seam. Dormant until xLog advertises qualified owner PCM.
+//! Receive-only DSP seam for owner-authorized, host-clocked endpoint PCM.
 //! No Engine, StationCore, device, socket, persistence or transmit handler exists here.
 //! Call on a bounded worker, never on the UI or audio callback thread.
 
 use tempo_core::modes::{self, DecodeRequest, NativeSource, SignalSource};
+use xnexus_xlog_rx::{
+    ClockProvenance, CompletePeriod, OwnerIdentity, ReceiveContext, RxMode, TimestampBasis,
+    MAX_HOST_UNCERTAINTY_US,
+};
 
 pub const SAMPLE_RATE: u32 = 12_000;
-pub const MAX_UTC_UNCERTAINTY_MS: u32 = 50;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]
 pub enum DecoderMode {
@@ -14,6 +17,12 @@ pub enum DecoderMode {
 }
 
 impl DecoderMode {
+    fn receive_mode(self) -> RxMode {
+        match self {
+            Self::Ft8 => RxMode::Ft8,
+            Self::Ft4 => RxMode::Ft4,
+        }
+    }
     fn kind(self) -> modes::ModeKind {
         match self {
             Self::Ft8 => modes::ModeKind::Ft8,
@@ -37,6 +46,8 @@ impl DecoderMode {
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize)]
 pub struct DecodeContext {
     pub stream_id: String,
+    pub epoch: String,
+    pub mapping_generation: u64,
     pub generation: u64,
     pub radio_id: String,
     pub receiver_id: String,
@@ -48,28 +59,62 @@ pub struct DecodeContext {
 /// FT4 consumes the mode's frame size from the START of its 7.5 s period, not its tail.
 pub struct CompleteFrame {
     pub context: DecodeContext,
-    pub period_start_unix_ms: u64,
-    /// Owner monotonic frame clock, independently anchored from UTC.
+    pub owner: OwnerIdentity,
+    pub host_period_start_unix_us: u64,
+    /// Owner sample-counter time, independent of the host wall clock.
     pub frame_time_ms: i64,
-    pub utc_uncertainty_ms: u32,
+    pub clock: ClockProvenance,
     pub sample_rate: u32,
     pub channels: u16,
     pub samples: Vec<i16>,
 }
 
 impl CompleteFrame {
+    pub fn from_period(period: CompletePeriod) -> Result<Self, String> {
+        let owner = period.context.owner;
+        let mode = match period.context.mode {
+            RxMode::Ft8 => DecoderMode::Ft8,
+            RxMode::Ft4 => DecoderMode::Ft4,
+        };
+        let frame = Self {
+            context: DecodeContext {
+                stream_id: owner.capture_id.clone(),
+                epoch: owner.epoch.clone(),
+                mapping_generation: owner.mapping_generation,
+                generation: period.generation,
+                radio_id: owner.radio_id.clone(),
+                receiver_id: owner.receiver_id.clone(),
+                mode,
+                dial_hz: owner.frequency_hz,
+            },
+            owner,
+            host_period_start_unix_us: period.host_period_start_unix_us,
+            frame_time_ms: period.frame_time_ms,
+            clock: period.clock,
+            sample_rate: SAMPLE_RATE,
+            channels: 1,
+            samples: period.samples,
+        };
+        frame.validate()?;
+        Ok(frame)
+    }
+
     pub fn validate(&self) -> Result<(), String> {
-        for id in [
-            &self.context.stream_id,
-            &self.context.radio_id,
-            &self.context.receiver_id,
-        ] {
-            if id.trim().is_empty() || id.len() > 128 || id.chars().any(char::is_control) {
-                return Err("missing or invalid owner audio identity".into());
-            }
+        ReceiveContext {
+            owner: self.owner.clone(),
+            mode: self.context.mode.receive_mode(),
         }
-        if self.context.dial_hz == 0 {
-            return Err("owner dial frequency is unavailable".into());
+        .validate()
+        .map_err(|_| "missing or invalid owner audio identity")?;
+        if self.context.stream_id != self.owner.capture_id
+            || self.context.epoch != self.owner.epoch
+            || self.context.mapping_generation != self.owner.mapping_generation
+            || self.context.generation == 0
+            || self.context.radio_id != self.owner.radio_id
+            || self.context.receiver_id != self.owner.receiver_id
+            || self.context.dial_hz != self.owner.frequency_hz
+        {
+            return Err("decode context does not match owner audio identity".into());
         }
         if self.sample_rate != SAMPLE_RATE || self.channels != 1 {
             return Err("decoder requires owner 12000 Hz mono PCM".into());
@@ -77,14 +122,51 @@ impl CompleteFrame {
         if self.samples.len() != self.context.mode.frame_samples() {
             return Err("incomplete or oversized decode frame; padding is forbidden".into());
         }
-        if self.utc_uncertainty_ms > MAX_UTC_UNCERTAINTY_MS
-            || self.period_start_unix_ms == 0
-            || self.period_start_unix_ms % self.context.mode.period_ms() != 0
+        let expected_center_ns = if self.owner.sample_rate == SAMPLE_RATE {
+            0
+        } else {
+            63_000_000_000_u64.div_ceil(2 * u64::from(self.owner.sample_rate))
+        };
+        if self.clock.basis != TimestampBasis::WindowsEndpointCapture
+            || self.clock.host_mapping_uncertainty_us > MAX_HOST_UNCERTAINTY_US
+            || self.clock.calibration_uncertainty_us > self.clock.host_mapping_uncertainty_us
+            || self.clock.utc_sync_accuracy_us.is_some()
+            || self.clock.remote_rf_latency_us.is_some()
+            || self.clock.sample_alignment_offset_ns > 83_334
+            || self.clock.resampler_center_offset_ns != expected_center_ns
+            || self.host_period_start_unix_us == 0
+            || self.host_period_start_unix_us % (self.context.mode.period_ms() * 1000) != 0
             || self.frame_time_ms < 0
         {
-            return Err("owner audio has no qualified UTC period anchor".into());
+            return Err("owner audio has no valid host-clock period anchor; UTC/RF timing remains unverified".into());
         }
         Ok(())
+    }
+}
+
+/// Presentation preserves unknown timing facts rather than projecting a calibrated RF clock.
+#[derive(Debug, serde::Serialize)]
+pub struct DecodeClock {
+    pub timestamp_basis: &'static str,
+    pub host_mapping_uncertainty_us: u32,
+    pub calibration_uncertainty_us: u32,
+    pub utc_sync_accuracy_us: Option<u32>,
+    pub remote_rf_latency_us: Option<i64>,
+    pub sample_alignment_offset_ns: u64,
+    pub resampler_center_offset_ns: u64,
+}
+
+impl From<ClockProvenance> for DecodeClock {
+    fn from(clock: ClockProvenance) -> Self {
+        Self {
+            timestamp_basis: "windows_endpoint_capture",
+            host_mapping_uncertainty_us: clock.host_mapping_uncertainty_us,
+            calibration_uncertainty_us: clock.calibration_uncertainty_us,
+            utc_sync_accuracy_us: clock.utc_sync_accuracy_us,
+            remote_rf_latency_us: clock.remote_rf_latency_us,
+            sample_alignment_offset_ns: clock.sample_alignment_offset_ns,
+            resampler_center_offset_ns: clock.resampler_center_offset_ns,
+        }
     }
 }
 
@@ -99,7 +181,8 @@ pub struct DecodeRow {
 #[derive(Debug, serde::Serialize)]
 pub struct DecodedPeriod {
     pub context: DecodeContext,
-    pub period_start_unix_ms: u64,
+    pub host_period_start_unix_us: u64,
+    pub clock: DecodeClock,
     pub rows: Vec<DecodeRow>,
 }
 
@@ -107,6 +190,7 @@ pub struct DecodedPeriod {
 pub struct Decoder {
     source: Option<NativeSource>,
     context: Option<DecodeContext>,
+    owner: Option<OwnerIdentity>,
     last_period: Option<(u64, i64)>,
 }
 
@@ -115,21 +199,29 @@ impl Decoder {
     pub fn reset(&mut self) {
         self.source = None;
         self.context = None;
+        self.owner = None;
         self.last_period = None;
         // This function takes the existing process-wide modem guard internally.
         modes::reset_ft8_a7();
     }
 
     pub fn decode(&mut self, frame: CompleteFrame) -> Result<DecodedPeriod, String> {
-        frame.validate()?;
-        if self.context.as_ref() != Some(&frame.context) {
+        if let Err(error) = frame.validate() {
+            self.reset();
+            return Err(error);
+        }
+        if self.context.as_ref() != Some(&frame.context)
+            || self.owner.as_ref() != Some(&frame.owner)
+        {
             self.reset();
         }
-        if let Some((utc, monotonic)) = self.last_period {
-            if frame.period_start_unix_ms <= utc || frame.frame_time_ms <= monotonic {
+        if let Some((host_time, monotonic)) = self.last_period {
+            if frame.host_period_start_unix_us <= host_time || frame.frame_time_ms <= monotonic {
+                self.reset();
                 return Err("duplicate or reordered decode period".into());
             }
-            if frame.period_start_unix_ms - utc != frame.context.mode.period_ms() {
+            if frame.host_period_start_unix_us - host_time != frame.context.mode.period_ms() * 1000
+            {
                 self.reset();
             }
         }
@@ -152,10 +244,12 @@ impl Decoder {
             }
         };
         self.context = Some(frame.context.clone());
-        self.last_period = Some((frame.period_start_unix_ms, frame.frame_time_ms));
+        self.owner = Some(frame.owner);
+        self.last_period = Some((frame.host_period_start_unix_us, frame.frame_time_ms));
         Ok(DecodedPeriod {
             context: frame.context,
-            period_start_unix_ms: frame.period_start_unix_ms,
+            host_period_start_unix_us: frame.host_period_start_unix_us,
+            clock: frame.clock.into(),
             rows: decoded
                 .into_iter()
                 .map(|d| DecodeRow {
@@ -177,24 +271,56 @@ mod tests {
         CompleteFrame {
             context: DecodeContext {
                 stream_id: "owner-stream".into(),
+                epoch: "owner-epoch".into(),
+                mapping_generation: 1,
                 generation: 1,
                 radio_id: "owner-radio".into(),
                 receiver_id: "owner-receiver".into(),
                 mode,
                 dial_hz: 14_074_000,
             },
-            period_start_unix_ms: 1_800_000,
+            owner: owner(SAMPLE_RATE),
+            host_period_start_unix_us: 1_800_000_000,
             frame_time_ms: 1_000,
-            utc_uncertainty_ms: 20,
+            clock: ClockProvenance {
+                basis: TimestampBasis::WindowsEndpointCapture,
+                host_mapping_uncertainty_us: 20_000,
+                calibration_uncertainty_us: 20_000,
+                utc_sync_accuracy_us: None,
+                remote_rf_latency_us: None,
+                sample_alignment_offset_ns: 0,
+                resampler_center_offset_ns: 0,
+            },
             sample_rate: SAMPLE_RATE,
             channels: 1,
             samples: vec![0; mode.frame_samples()],
         }
     }
 
+    fn owner(sample_rate: u32) -> OwnerIdentity {
+        OwnerIdentity {
+            server_instance: "owner-server".into(),
+            workspace_id: "owner-workspace".into(),
+            capture_id: "owner-stream".into(),
+            epoch: "owner-epoch".into(),
+            radio_id: "owner-radio".into(),
+            receiver_id: "owner-receiver".into(),
+            mapping_generation: 1,
+            device_id: "owner-selected-endpoint".into(),
+            slice: "A".into(),
+            dax_channel: 1,
+            frequency_hz: 14_074_000,
+            radio_mode: "DIGU".into(),
+            sample_rate,
+            source_channels: 2,
+            selected_channel: 0,
+        }
+    }
+
     #[test]
     fn exact_mode_frames_are_accepted_without_assuming_slot_sample_count() {
         for mode in [DecoderMode::Ft8, DecoderMode::Ft4] {
+            assert_eq!(mode.frame_samples(), mode.receive_mode().frame_samples());
             let mut f = frame(mode);
             assert!(f.validate().is_ok());
             f.samples.pop();
@@ -212,14 +338,39 @@ mod tests {
         f.context.radio_id.clear();
         assert!(f.validate().is_err());
         f = frame(DecoderMode::Ft8);
-        f.utc_uncertainty_ms = MAX_UTC_UNCERTAINTY_MS + 1;
+        f.clock.host_mapping_uncertainty_us = MAX_HOST_UNCERTAINTY_US + 1;
         assert!(f.validate().is_err());
         f = frame(DecoderMode::Ft8);
-        f.period_start_unix_ms += 1;
+        f.host_period_start_unix_us += 1;
+        assert!(f.validate().is_err());
+        f = frame(DecoderMode::Ft8);
+        f.clock.utc_sync_accuracy_us = Some(1);
+        assert!(f.validate().is_err());
+        f = frame(DecoderMode::Ft8);
+        f.clock.remote_rf_latency_us = Some(0);
         assert!(f.validate().is_err());
         f = frame(DecoderMode::Ft8);
         f.sample_rate = 48_000;
         assert!(f.validate().is_err());
+        f = frame(DecoderMode::Ft8);
+        f.clock.resampler_center_offset_ns = 1;
+        assert!(f.validate().is_err());
+    }
+
+    #[test]
+    fn rejected_frame_discards_previous_decoder_identity_and_timing() {
+        let mut f = frame(DecoderMode::Ft8);
+        let mut decoder = Decoder {
+            source: None,
+            context: Some(f.context.clone()),
+            owner: Some(f.owner.clone()),
+            last_period: Some((15_000_000, 1000)),
+        };
+        f.context.radio_id.clear();
+        assert!(decoder.decode(f).is_err());
+        assert!(decoder.context.is_none());
+        assert!(decoder.owner.is_none());
+        assert!(decoder.last_period.is_none());
     }
 
     #[test]
@@ -235,6 +386,82 @@ mod tests {
             }
             let rows = Decoder::default().decode(f).unwrap();
             assert!(rows.rows.iter().any(|d| d.message.contains("K1ABC")));
+            assert_eq!(rows.clock.utc_sync_accuracy_us, None);
+            assert_eq!(rows.clock.remote_rf_latency_us, None);
+        }
+    }
+
+    #[test]
+    fn generated_native_rate_owner_chunks_assemble_and_decode_without_a_station() {
+        use xnexus_xlog_rx::{PcmChunk, RxAssembler};
+        for rate in [12_000, 24_000, 44_100, 48_000, 96_000] {
+            for mode in [DecoderMode::Ft8, DecoderMode::Ft4] {
+                let modem = modes::make_mode(mode.kind());
+                let tones = modem.encode("CQ K1ABC FN42");
+                assert!(!tones.is_empty());
+                // Nexus's FT8/FT4 generator fixes samples-per-symbol at 12 kHz;
+                // changing fsample alone would change baud, not the capture rate.
+                let wave = modem.gen_wave(&tones, SAMPLE_RATE as f32, 1500.0);
+                // Explicit fixture capture starts at host13s, with real background
+                // samples before the transmitted waveform's host15s slot boundary.
+                let mut capture = vec![0_i16; rate as usize * 18];
+                // Independent linear interpolation supplies the synthetic endpoint
+                // rate while preserving the real modem's symbol timing. This is a
+                // fixture only; the receiver uses the anti-aliased upstream FIR.
+                for (index, dest) in capture.iter_mut().skip(rate as usize * 2).enumerate() {
+                    let position = index as u64 * u64::from(SAMPLE_RATE);
+                    let whole = (position / u64::from(rate)) as usize;
+                    if whole + 1 >= wave.len() {
+                        break;
+                    }
+                    let fraction = (position % u64::from(rate)) as f32 / rate as f32;
+                    let sample = wave[whole] * (1.0 - fraction) + wave[whole + 1] * fraction;
+                    *dest = (sample * 1000.0).round().clamp(-32768.0, 32767.0) as i16;
+                }
+                let context = ReceiveContext {
+                    owner: owner(rate),
+                    mode: mode.receive_mode(),
+                };
+                let mut assembler = RxAssembler::default();
+                let mut offset = 0;
+                let mut sequence = 1;
+                let sizes = [127, 4096, 63, 1];
+                let mut completed = None;
+                while offset < capture.len() {
+                    let count =
+                        sizes[(sequence as usize - 1) % sizes.len()].min(capture.len() - offset);
+                    completed = assembler
+                        .push(
+                            &context,
+                            PcmChunk {
+                                sequence,
+                                first_frame: offset as u64,
+                                sample0_unix_us: 13_000_000
+                                    + offset as u64 * 1_000_000 / u64::from(rate),
+                                calibration_uncertainty_us: 10,
+                                samples: &capture[offset..offset + count],
+                            },
+                        )
+                        .unwrap();
+                    if completed.is_some() {
+                        break;
+                    }
+                    offset += count;
+                    sequence += 1;
+                }
+                let period = completed.expect("complete real PCM period");
+                assert_eq!(period.host_period_start_unix_us, 15_000_000);
+                let decoded = Decoder::default()
+                    .decode(CompleteFrame::from_period(period).unwrap())
+                    .unwrap();
+                assert!(
+                    decoded.rows.iter().any(|row| row.message.contains("K1ABC")),
+                    "rate={rate} mode={mode:?} rows={:?}",
+                    decoded.rows
+                );
+                assert_eq!(decoded.clock.utc_sync_accuracy_us, None);
+                assert_eq!(decoded.clock.remote_rf_latency_us, None);
+            }
         }
     }
 }
