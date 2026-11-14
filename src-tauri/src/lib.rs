@@ -60,6 +60,7 @@ mod chains;
 /// Client mode: this computer's Nexus driving a paired station's over this network, with its own
 /// station off. Every command its screens make goes where its class says, and fails closed.
 mod client_mode;
+mod xlog_mode;
 /// This station's club key for Field Day club sync (kept beside settings.json, never logged or
 /// shown), and the SHA-256 a club host pins position keys by.
 mod club_key;
@@ -51052,6 +51053,12 @@ pub fn run() {
     #[cfg(target_os = "linux")]
     if std::env::var_os("WEBKIT_DISABLE_DMABUF_RENDERER").is_none() {
         std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
+    }
+
+    // xLog owns the station. Branch before diagnostics, settings or any station startup.
+    if xlog_mode::requested() {
+        xlog_mode::run();
+        return;
     }
 
     // The AI CW decoder's matmul library probes the CPU cache by running `wmic`, with no

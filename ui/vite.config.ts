@@ -117,6 +117,7 @@ export default defineConfig({
       // (src-tauri/src/lan_client/origin.rs).
       input: {
         main: 'index.html',
+        xlog: 'xlog.html',
         tv: 'connect-tv.html',
         lan: 'lan.html',
       },
