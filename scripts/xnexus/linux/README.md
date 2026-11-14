@@ -31,6 +31,17 @@ Docker version, exact command, full log and exit code in the chosen job folder.
 The named cache volume is specific to both source and immutable image ID.
 Nothing is automatically pruned.
 
+The source label is not accepted as proof: before every container phase, the
+host streams a fresh `git archive` for the exact commit and compares its SHA256
+with the retained archive. A mismatch is refused without replacing either
+archive or cache. Inside the container, `verify_source.py` checks every
+archive-tracked regular file's bytes and executable bits, each symlink's exact
+target, and real parent directories before the phase and again on exit.
+Generated/untracked build outputs are allowed. A tracked edit made by a build
+command prevents a successful phase even if that command returned zero; the
+changed source remains available for diagnosis. An interrupted process cannot
+claim the missing post-phase proof.
+
 ## Resource budget and execution
 
 Inspection on the available Windows Docker Desktop Linux engine 28.4.0 found
@@ -73,6 +84,10 @@ the exact owned container ID, image, command and cache volume before requesting
 ordinary Docker stop. Such a run is recorded as interrupted, not a source
 failure or pass. It never pauses a container to address memory pressure, because
 pausing retains its memory. No unrelated container is stopped.
+Any memory-guard error, uncompleted guard, or recorded interruption makes the
+runner's effective exit nonzero even if Docker returned zero. Receipts retain
+the actual `process_exit_code` separately from the effective `exit_code` and
+`result`; a guard failure is not reported as a source-test failure or pass.
 
 `NODE_OPTIONS=--max-old-space-size=4096` gives TypeScript a 4 GiB V8 heap inside
 the unchanged 6 GiB container budget. The initial default-heap run passed all
@@ -89,3 +104,13 @@ The scripts were checked with Python unit tests, a dry plan, Bash syntax
 validation and the fork policy tests. Image provisioning and locked dependency
 fetch subsequently passed. Linux compilation, GUI, package and physical-radio
 validation remain unexecuted until receipts establish otherwise.
+
+Provenance-hardening verification used the existing immutable image
+`sha256:1b047bd836fc8bae9c97bd0a6973630561b1a98604550a1921ef3be0322853aa`
+with no network, one CPU, 256 MiB/no extra swap, no capabilities and a read-only
+tool mount. All **11 tooling tests passed**, including Linux symlink targets and
+the actual phase wrapper with stub compilers. The phase fixture requires
+`XNEXUS_TOOLING_FIXTURE=disposable-container`; never enable it on a host or a
+retained validation volume. Its mutations are restricted to that disposable
+container's scratch filesystem. These are tooling tests, not application
+contract/desktop qualification. Resource thresholds are unchanged.

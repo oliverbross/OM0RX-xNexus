@@ -18,6 +18,37 @@ def capture(args):
     return subprocess.check_output(args, text=True).strip()
 
 
+def stream_hash(stream):
+    digest = hashlib.sha256()
+    for block in iter(lambda: stream.read(1024 * 1024), b""):
+        digest.update(block)
+    return digest.hexdigest()
+
+
+def verify_archive(repo, source, archive):
+    """Compare actual retained bytes with a freshly streamed committed archive."""
+    with archive.open("rb") as stream:
+        actual = stream_hash(stream)
+    with subprocess.Popen(["git", "-C", str(repo), "archive", "--format=tar", source],
+                          stdout=subprocess.PIPE) as process:
+        expected = stream_hash(process.stdout)
+        if process.wait() != 0:
+            raise ValueError("Cannot verify committed source archive")
+    if actual != expected:
+        raise ValueError("Source archive bytes differ from exact git commit; preserved without overwrite")
+    return actual
+
+
+def validation_result(receipt):
+    """A zero command exit alone cannot establish guarded validation."""
+    process_exit = receipt["process_exit_code"]
+    if "interruption" in receipt or "memory_guard_error" in receipt:
+        receipt["result"] = "interrupted" if "interruption" in receipt else "guard_failed"
+        return process_exit if process_exit != 0 else 3
+    receipt["result"] = "passed" if process_exit == 0 else "failed"
+    return process_exit
+
+
 def run_args(image, phase, job, volume, cidfile=None):
     if not re.fullmatch(r"sha256:[0-9a-f]{64}", image):
         raise ValueError("Use the immutable image ID from the image phase receipt")
@@ -144,7 +175,7 @@ def main():
             (job / "input" / "source.sha").write_text(args.source + "\n")
         if (job / "input" / "source.sha").read_text().strip() != args.source:
             raise ValueError("Job directory belongs to another source; preserve it and choose a new directory")
-        receipt["archive_sha256"] = hashlib.sha256(archive.read_bytes()).hexdigest()
+        receipt["archive_sha256"] = verify_archive(repo, args.source, archive)
         receipt["image"] = image
         receipt["image_inspect"] = json.loads(capture(["docker", "image", "inspect", image]))
         cidfile = job / "evidence" / f"{stamp}-{args.phase}.cid"
@@ -164,10 +195,13 @@ def main():
             print(line, end="", flush=True)
             log.write(line)
             log.flush()
-        receipt["exit_code"] = process.wait()
+        receipt["process_exit_code"] = process.wait()
         done.set()
         if guard:
             guard.join(timeout=35)
+            if guard.is_alive():
+                receipt["memory_guard_error"] = "Memory guard did not finish; protected validation is unproven"
+    receipt["exit_code"] = validation_result(receipt)
     if args.phase == "image" and receipt["exit_code"] == 0:
         receipt["image"] = (job / "image.id").read_text().strip()
     receipt_path.write_text(json.dumps(receipt, indent=2) + "\n")

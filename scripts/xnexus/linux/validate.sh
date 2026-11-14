@@ -14,6 +14,20 @@ else
   tar -xf /input/source.tar -C /work/source
   printf '%s\n' "$archive_hash" > /work/archive.sha256
 fi
+python3 /tools/verify_source.py /input/source.tar /work/source
+verify_after_phase() {
+  phase_status=$?
+  trap - EXIT
+  if ! python3 /tools/verify_source.py /input/source.tar /work/source; then
+    echo 'Tracked source changed during validation; cached evidence preserved, validation rejected' >&2
+    exit 3
+  fi
+  if [[ $phase_status == 0 ]]; then
+    printf '%s passed (scoped Linux validation; no package/runtime qualification)\n' "$phase"
+  fi
+  exit "$phase_status"
+}
+trap verify_after_phase EXIT
 cd /work/source
 cp /opt/packages.tsv /evidence/packages.tsv
 { uname -a; rustc -Vv; cargo -V; node -v; npm -v; gfortran --version; cmake --version; } > /evidence/toolchain.txt
@@ -32,4 +46,3 @@ elif [[ $phase == contract ]]; then
 else
   cargo check --locked --offline --manifest-path src-tauri/Cargo.toml --features radio --all-targets
 fi
-printf '%s passed (scoped Linux validation; no package/runtime qualification)\n' "$phase"

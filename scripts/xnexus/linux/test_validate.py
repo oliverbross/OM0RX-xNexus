@@ -1,6 +1,10 @@
 """Guard the isolation command before downloading/building an image."""
 import importlib.util
+import io
+import os
 from pathlib import Path
+import subprocess
+import tarfile
 import tempfile
 import threading
 import unittest
@@ -8,6 +12,9 @@ import unittest
 spec = importlib.util.spec_from_file_location("validate", Path(__file__).with_name("validate.py"))
 validate = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(validate)
+source_spec = importlib.util.spec_from_file_location("verify_source", Path(__file__).with_name("verify_source.py"))
+verify_source = importlib.util.module_from_spec(source_spec)
+source_spec.loader.exec_module(verify_source)
 
 
 class ContainerIsolationTests(unittest.TestCase):
@@ -81,6 +88,137 @@ class ContainerIsolationTests(unittest.TestCase):
             read_memory=memory, stop=lambda _: self.fail("Must not stop with adequate memory"))
         self.assertNotIn("interruption", receipt)
         self.assertEqual(receipt["minimum_observed_host_free_bytes"], 3 * 1024 ** 3)
+
+    def test_guard_failure_or_interruption_cannot_pass_even_with_zero_command_exit(self):
+        for evidence in ({"memory_guard_error": "identity mismatch"},
+                         {"interruption": {"reason": "host_memory_below_2_gib", "stop_exit_code": 0}}):
+            receipt = {"process_exit_code": 0, **evidence}
+            self.assertNotEqual(validate.validation_result(receipt), 0)
+            self.assertNotEqual(receipt["result"], "passed")
+        receipt = {"process_exit_code": 0}
+        self.assertEqual(validate.validation_result(receipt), 0)
+        self.assertEqual(receipt["result"], "passed")
+
+
+class SourceProvenanceTests(unittest.TestCase):
+    def test_retained_archive_must_match_exact_commit_not_its_label(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            repo = root / "repo"
+            repo.mkdir()
+            def git(*args):
+                return subprocess.check_output(["git", "-C", str(repo), *args], stderr=subprocess.PIPE).decode().strip()
+            git("init")
+            (repo / "tracked.txt").write_text("committed bytes\n")
+            git("add", "tracked.txt")
+            git("-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid",
+                "-c", "core.hooksPath=/nonexistent", "commit", "-m", "Fixture")
+            source = git("rev-parse", "HEAD")
+            archive = root / "source.tar"
+            git("archive", "--format=tar", "--output", str(archive), source)
+            (root / "source.sha").write_text(source + "\n")
+            validate.verify_archive(repo, source, archive)
+            altered = archive.read_bytes()[:-1] + b"X"
+            archive.write_bytes(altered)
+            with self.assertRaisesRegex(ValueError, "differ from exact git commit"):
+                validate.verify_archive(repo, source, archive)
+            self.assertEqual(archive.read_bytes(), altered)
+            self.assertEqual((root / "source.sha").read_text().strip(), source)
+
+    def fixture(self, root, symlink=False):
+        archive, source = root / "source.tar", root / "cache"
+        source.mkdir()
+        (source / "src").mkdir()
+        (source / "src" / "tracked.txt").write_bytes(b"source bytes\n")
+        with tarfile.open(archive, "w") as entries:
+            directory = tarfile.TarInfo("src")
+            directory.type = tarfile.DIRTYPE
+            directory.mode = 0o755
+            entries.addfile(directory)
+            file = tarfile.TarInfo("src/tracked.txt")
+            file.size = 13
+            entries.addfile(file, io.BytesIO(b"source bytes\n"))
+            if symlink:
+                link = tarfile.TarInfo("source-link")
+                link.type, link.linkname = tarfile.SYMTYPE, "src/tracked.txt"
+                entries.addfile(link)
+                try:
+                    os.symlink("src/tracked.txt", source / "source-link")
+                except OSError as error:
+                    self.skipTest(f"Host cannot create fixture symlink: {error}")
+        return archive, source
+
+    def test_generated_build_outputs_allowed_but_tracked_edits_preserved_and_rejected(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            archive, source = self.fixture(Path(temporary))
+            self.assertEqual(verify_source.verify(archive, source), 2)
+            (source / "target").mkdir()
+            (source / "target" / "generated.bin").write_bytes(b"build output")
+            self.assertEqual(verify_source.verify(archive, source), 2)
+            tracked = source / "src" / "tracked.txt"
+            tracked.write_bytes(b"edited bytes\n") # same length, different content
+            with self.assertRaisesRegex(ValueError, "Tracked source changed"):
+                verify_source.verify(archive, source)
+            self.assertEqual(tracked.read_bytes(), b"edited bytes\n")
+
+    def test_symlink_target_changes_are_rejected_without_following_link(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            archive, source = self.fixture(Path(temporary), symlink=True)
+            self.assertEqual(verify_source.verify(archive, source), 3)
+            link = source / "source-link"
+            link.unlink()
+            os.symlink("outside-or-missing", link)
+            with self.assertRaisesRegex(ValueError, "Tracked source changed"):
+                verify_source.verify(archive, source)
+            self.assertEqual(os.readlink(link), "outside-or-missing")
+
+
+@unittest.skipUnless(os.environ.get("XNEXUS_TOOLING_FIXTURE") == "disposable-container",
+                     "Phase fixture runs only in its explicit disposable test container")
+class PhaseProvenanceTests(unittest.TestCase):
+    def test_actual_phase_checks_before_and_after_but_allows_generated_outputs(self):
+        # This fixture never runs real compiler/tests. Its stub tools exercise
+        # the real shell phase wrapper, including its post-command EXIT trap.
+        self.assertEqual(os.name, "posix")
+        self.assertFalse(Path("/work/source").exists())
+        Path("/input").mkdir()
+        Path("/evidence").mkdir()
+        with tempfile.TemporaryDirectory() as temporary:
+            archive, _ = SourceProvenanceTests().fixture(Path(temporary))
+            Path("/input/source.tar").write_bytes(archive.read_bytes())
+            stubs = Path(temporary) / "tools"
+            stubs.mkdir()
+            script = ("#!/bin/bash\n"
+                      "echo invoked >> /evidence/stub-invocations\n"
+                      "if [[ $0 == */npm && $* == '--prefix ui run build' ]]; then\n"
+                      "  if [[ $FIXTURE_CHANGE == tracked ]]; then\n"
+                      "    printf 'edited bytes\\n' > /work/source/src/tracked.txt\n"
+                      "  else mkdir -p /work/source/target; printf output > /work/source/target/generated.bin; fi\n"
+                      "fi\n")
+            for tool in ("node", "npm", "cargo", "rustc", "uname", "gfortran", "cmake"):
+                path = stubs / tool
+                path.write_text(script)
+                path.chmod(0o755)
+            env = {**os.environ, "PATH": f"{stubs}:{os.environ['PATH']}", "FIXTURE_CHANGE": "generated"}
+            def phase():
+                return subprocess.run(["bash", "/tools/validate.sh", "contract"], env=env,
+                                      capture_output=True, text=True, timeout=15)
+            valid = phase()
+            self.assertEqual(valid.returncode, 0, valid.stderr)
+            self.assertIn("contract passed", valid.stdout)
+            self.assertTrue(Path("/work/source/target/generated.bin").exists())
+            env["FIXTURE_CHANGE"] = "tracked"
+            mutated = phase()
+            self.assertNotEqual(mutated.returncode, 0)
+            self.assertNotIn("contract passed", mutated.stdout)
+            self.assertIn("Tracked source changed during validation", mutated.stderr)
+            tracked = Path("/work/source/src/tracked.txt")
+            self.assertEqual(tracked.read_bytes(), b"edited bytes\n")
+            calls = Path("/evidence/stub-invocations").read_bytes()
+            rejected_before = phase()
+            self.assertNotEqual(rejected_before.returncode, 0)
+            self.assertEqual(Path("/evidence/stub-invocations").read_bytes(), calls)
+            self.assertEqual(tracked.read_bytes(), b"edited bytes\n")
 
 
 if __name__ == "__main__":
