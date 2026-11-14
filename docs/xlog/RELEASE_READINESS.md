@@ -48,6 +48,19 @@ startup, cross-platform installers, all radio models, rotators and on-air behavi
 need separately recorded acceptance evidence. A successful check only proves the
 compiled shape; no production device is opened by these checks.
 
+Run `scripts/xnexus/test-windows-native.ps1 -ExpectedCommit <full-sha>` for the
+focused hardware-free native tests. Tauri 2.6.2's build helper links its Windows
+resources only into binary targets, so Cargo's library-test executable otherwise
+loads Common-Controls 5.82 and fails before its harness starts: the native dialog
+dependency imports `TaskDialogIndirect`, which requires Common-Controls 6. The
+runner compiles with `--no-run`, preserves the generated executable, and embeds
+the standard v6 dependency manifest into a **copy of the test harness only** with
+Windows SDK `mt.exe`. Its receipt records the source, toolchain, manifest and SDK
+tool hashes, executable hashes before/after preparation, WebView loader hash and
+test result under `target/xnexus-native-tests/<source>/`. The runner never patches
+an application or changes system activation settings. Passing these tests does
+not establish application startup, GUI, installer or on-air acceptance.
+
 ## GitHub Actions audit
 
 All 14 inherited workflows have an exact `github.repository == 'kd9taw/Nexus'`
