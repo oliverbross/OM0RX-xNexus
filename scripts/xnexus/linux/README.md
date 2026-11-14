@@ -90,6 +90,19 @@ runner's effective exit nonzero even if Docker returned zero. Receipts retain
 the actual `process_exit_code` separately from the effective `exit_code` and
 `result`; a guard failure is not reported as a source-test failure or pass.
 
+The separately selected `--resource-profile desktop-reduced` is valid **only**
+for `--phase desktop`. It uses 4 GiB RAM with the same RAM-plus-swap cap,
+one Cargo/CMake build job and the unchanged two-CPU maximum. Admission requires
+both at least 8 GiB physical RAM and 6 GiB available Windows system commit;
+unknown commit availability refuses admission. Its ten-second guard stops only
+the verified owned container if either available physical RAM or commit falls
+below 2 GiB. Standard fetch/contract policy and prior receipts stay unchanged.
+A reduced-profile OOM is preserved as failure; there is no automatic widening,
+retry, cache dropping, Docker/WSL reconfiguration or unrelated process action.
+Receipts record the profile, admission readings, both running minima, helper
+hashes, harness commit and dirty status. Preserve actual Docker inspection too.
+The reduced profile requires separate resource-window coordination before use.
+
 `NODE_OPTIONS=--max-old-space-size=4096` gives TypeScript a 4 GiB V8 heap inside
 the unchanged 6 GiB container budget. The initial default-heap run passed all
 58 SDK and eight policy tests, then exhausted Node's approximately 2 GiB heap

@@ -49,14 +49,40 @@ def validation_result(receipt):
     return process_exit
 
 
-def run_args(image, phase, job, volume, cidfile=None):
+def resource_profile(name, phase):
+    if name == "standard":
+        return {"name": name, "memory": "6g", "jobs": 2,
+                "admission_physical_bytes": 10 * 1024 ** 3,
+                "admission_commit_bytes": None, "guard_commit": False}
+    if name == "desktop-reduced" and phase == "desktop":
+        return {"name": name, "memory": "4g", "jobs": 1,
+                "admission_physical_bytes": 8 * 1024 ** 3,
+                "admission_commit_bytes": 6 * 1024 ** 3, "guard_commit": True}
+    raise ValueError("Reduced resource profile is only valid for desktop")
+
+
+def check_admission(profile, physical, commit=None):
+    if physical < profile["admission_physical_bytes"]:
+        raise ValueError(f"Validation held: host has {physical / 1024**3:.2f} GiB physical free; "
+                         f"require {profile['admission_physical_bytes'] / 1024**3:g} GiB")
+    required = profile["admission_commit_bytes"]
+    if required is not None and (commit is None or commit < required):
+        value = "unknown" if commit is None else f"{commit / 1024**3:.2f} GiB"
+        raise ValueError(f"Validation held: available Windows commit {value}; "
+                         f"require {required / 1024**3:g} GiB")
+
+
+def run_args(image, phase, job, volume, cidfile=None, profile_name="standard"):
     if not re.fullmatch(r"sha256:[0-9a-f]{64}", image):
         raise ValueError("Use the immutable image ID from the image phase receipt")
     if phase not in ("fetch", "contract", "desktop"):
         raise ValueError("Unknown validation phase")
+    profile = resource_profile(profile_name, phase)
+    profile_args = (["--env", "XNEXUS_RESOURCE_PROFILE=desktop-reduced"]
+                    if profile_name == "desktop-reduced" else [])
     cid_args = ["--cidfile", str(cidfile)] if cidfile else []
     return ["docker", "run", "--rm", *cid_args, "--platform", "linux/amd64", "--pull", "never",
-            "--cpus", "2", "--memory", "6g", "--memory-swap", "6g", "--pids-limit", "256",
+            "--cpus", "2", "--memory", profile["memory"], "--memory-swap", profile["memory"], "--pids-limit", "256", *profile_args,
             "--env", "NODE_OPTIONS=--max-old-space-size=4096",
             "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
             "--network", "bridge" if phase == "fetch" else "none",
@@ -67,8 +93,8 @@ def run_args(image, phase, job, volume, cidfile=None):
             image, "bash", "/tools/validate.sh", phase]
 
 
-def available_memory():
-    """Physical host headroom, not the Docker container's memory limit."""
+def host_headroom():
+    """Physical RAM and Windows system commit availability, not address space."""
     if sys.platform == "win32":
         class MemoryStatus(ctypes.Structure):
             _fields_ = [("length", ctypes.c_uint32), ("load", ctypes.c_uint32)] + [
@@ -79,11 +105,22 @@ def available_memory():
         status.length = ctypes.sizeof(status)
         if not ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(status)):
             raise OSError("Cannot read host memory headroom")
-        return status.available_physical
+        return {"physical": status.available_physical, "commit": status.available_pagefile}
     for line in Path("/proc/meminfo").read_text().splitlines():
         if line.startswith("MemAvailable:"):
-            return int(line.split()[1]) * 1024
+            return {"physical": int(line.split()[1]) * 1024, "commit": None}
     raise OSError("No supported host memory headroom source")
+
+
+def available_memory():
+    return host_headroom()["physical"]
+
+
+def available_commit():
+    value = host_headroom()["commit"]
+    if value is None:
+        raise OSError("Windows available commit measurement is required")
+    return value
 
 
 def owns_container(details, cid, image, phase, volume):
@@ -95,8 +132,8 @@ def owns_container(details, cid, image, phase, volume):
 
 
 def memory_guard(done, cidfile, image, phase, volume, receipt,
-                 read_memory=available_memory, read_json=None, stop=None):
-    """Stop only our proven container if host available RAM falls below 2 GiB."""
+                 read_memory=available_memory, read_json=None, stop=None, read_commit=None):
+    """Stop only our proven container below either enabled 2 GiB headroom floor."""
     read_json = read_json or (lambda cid: json.loads(capture(["docker", "inspect", cid]))[0])
     stop = stop or (lambda cid: subprocess.run(["docker", "stop", "--time", "10", cid],
                                              capture_output=True, text=True, timeout=30).returncode)
@@ -105,15 +142,21 @@ def memory_guard(done, cidfile, image, phase, volume, receipt,
             free = read_memory()
             receipt["minimum_observed_host_free_bytes"] = min(
                 free, receipt.get("minimum_observed_host_free_bytes", free))
-            if free < 2 * 1024 ** 3 and cidfile.exists():
+            commit = read_commit() if read_commit else None
+            if commit is not None:
+                receipt["minimum_observed_host_commit_bytes"] = min(
+                    commit, receipt.get("minimum_observed_host_commit_bytes", commit))
+            reason = ("host_memory_below_2_gib" if free < 2 * 1024 ** 3 else
+                      "host_commit_below_2_gib" if commit is not None and commit < 2 * 1024 ** 3 else None)
+            if reason and cidfile.exists():
                 cid = cidfile.read_text().strip()
                 if not re.fullmatch(r"[0-9a-f]{64}", cid):
                     raise ValueError("Invalid owned-container receipt")
                 if not owns_container(read_json(cid), cid, image, phase, volume):
                     raise ValueError("Container identity mismatch; refused to stop it")
-                receipt["interruption"] = {"reason": "host_memory_below_2_gib",
-                                           "available_bytes": free, "container_id": cid}
-                print("Stopping owned Linux validation container: host RAM below 2 GiB.", flush=True)
+                receipt["interruption"] = {"reason": reason, "available_bytes": free,
+                                           "available_commit_bytes": commit, "container_id": cid}
+                print(f"Stopping owned Linux validation container: {reason}.", flush=True)
                 receipt["interruption"]["stop_exit_code"] = stop(cid)
                 return
         except Exception as error:
@@ -129,9 +172,14 @@ def main():
     parser.add_argument("--source", required=True, help="Exact 40-character committed source SHA")
     parser.add_argument("--job", type=Path, required=True, help="Dedicated evidence directory outside source")
     parser.add_argument("--phase", choices=("image", "fetch", "contract", "desktop"), default="contract")
+    parser.add_argument("--resource-profile", choices=("standard", "desktop-reduced"), default="standard")
     parser.add_argument("--execute", action="store_true", help="Without this flag, only print the plan")
     args = parser.parse_args()
     repo, job = args.repo.resolve(), args.job.resolve()
+    try:
+        profile = resource_profile(args.resource_profile, args.phase)
+    except ValueError as error:
+        parser.error(str(error))
     if not re.fullmatch(r"[0-9a-f]{40}", args.source):
         parser.error("--source must be a full lowercase commit SHA")
     resolved = capture(["git", "-C", str(repo), "rev-parse", f"{args.source}^{{commit}}"])
@@ -142,22 +190,28 @@ def main():
         parser.error("Only the OM0RX-xNexus fork is accepted")
     volume = "xnexus-linux-" + args.source[:16]
     plan = {"source": args.source, "phase": args.phase, "execute": args.execute,
-            "job": str(job), "cache_volume": volume, "cpus": 2, "memory": "6g",
+            "job": str(job), "cache_volume": volume, "cpus": 2, "memory": profile["memory"],
+            "resource_profile": profile,
             "network": "downloads only; contract/desktop none",
             "scope": "Linux source validation, no package/install/device/GUI acceptance"}
     print(json.dumps(plan, indent=2), flush=True)
     if not args.execute:
         return 0
+    headroom = None
     if args.phase in ("contract", "desktop"):
-        headroom = available_memory()
-        if headroom < 10 * 1024 ** 3:
-            parser.error(f"Validation held: host has {headroom / 1024**3:.2f} GiB free; require 10 GiB before start")
+        headroom = host_headroom()
+        try:
+            check_admission(profile, headroom["physical"], headroom["commit"])
+        except ValueError as error:
+            parser.error(str(error))
     job.mkdir(parents=True, exist_ok=True)
     (job / "input").mkdir(exist_ok=True)
     (job / "evidence").mkdir(exist_ok=True)
     stamp = str(time.time_ns())
-    receipt = {**plan, "tool_hashes": {p.name: hashlib.sha256(p.read_bytes()).hexdigest()
+    receipt = {**plan, "admission_headroom": headroom, "tool_hashes": {p.name: hashlib.sha256(p.read_bytes()).hexdigest()
                                      for p in TOOLS.iterdir() if p.is_file()}}
+    receipt["harness_commit"] = capture(["git", "-C", str(TOOLS), "rev-parse", "HEAD"])
+    receipt["harness_worktree_dirty"] = bool(capture(["git", "-C", str(TOOLS), "status", "--porcelain"]))
     receipt["docker"] = capture(["docker", "version", "--format", "{{json .}}"])
     if args.phase == "image":
         image_file = job / "image.id"
@@ -179,7 +233,7 @@ def main():
         receipt["image"] = image
         receipt["image_inspect"] = json.loads(capture(["docker", "image", "inspect", image]))
         cidfile = job / "evidence" / f"{stamp}-{args.phase}.cid"
-        cmd = run_args(image, args.phase, job, volume, cidfile)
+        cmd = run_args(image, args.phase, job, volume, cidfile, args.resource_profile)
     receipt["command"] = cmd
     receipt_path = job / "evidence" / f"{stamp}-{args.phase}.json"
     receipt_path.write_text(json.dumps(receipt, indent=2) + "\n")
@@ -189,7 +243,8 @@ def main():
         guard = None
         if args.phase in ("contract", "desktop"):
             guard = threading.Thread(target=memory_guard,
-                args=(done, cidfile, image, args.phase, volume, receipt), daemon=True)
+                args=(done, cidfile, image, args.phase, volume, receipt),
+                kwargs={"read_commit": available_commit if profile["guard_commit"] else None}, daemon=True)
             guard.start()
         for line in process.stdout:
             print(line, end="", flush=True)

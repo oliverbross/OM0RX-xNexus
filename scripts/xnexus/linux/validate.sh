@@ -3,7 +3,14 @@ set -euo pipefail
 case "${1:-}" in fetch|contract|desktop) phase=$1;; *) echo 'Expected fetch, contract or desktop' >&2; exit 2;; esac
 mkdir -p /work/cargo /work/home
 export HOME=/work/home CARGO_HOME=/work/cargo CARGO_TARGET_DIR=/work/target
-export CARGO_BUILD_JOBS=2 CMAKE_BUILD_PARALLEL_LEVEL=2 RUST_TEST_THREADS=2
+case "${XNEXUS_RESOURCE_PROFILE:-standard}" in
+  standard) jobs=2 ;;
+  desktop-reduced)
+    [[ $phase == desktop ]] || { echo 'Reduced profile requires desktop phase' >&2; exit 2; }
+    jobs=1 ;;
+  *) echo 'Unknown resource profile' >&2; exit 2 ;;
+esac
+export CARGO_BUILD_JOBS=$jobs CMAKE_BUILD_PARALLEL_LEVEL=$jobs RUST_TEST_THREADS=$jobs
 export RUSTUP_HOME=/opt/rustup
 archive_hash=$(sha256sum /input/source.tar | cut -d' ' -f1)
 if [[ -e /work/archive.sha256 ]]; then
