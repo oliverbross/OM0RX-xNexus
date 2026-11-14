@@ -5,6 +5,16 @@ set -euo pipefail
 die() { printf '%s\n' "$*" >&2; exit 1; }
 sha256() { shasum -a 256 "$1" | awk '{print $1}'; }
 
+# Cargo searches CARGO_HOME/bin for subcommands before PATH. Execute the
+# hash-verified extracted CLI directly so an installed cargo-tauri cannot win.
+run_verified_tauri() {
+  local executable=$1 expected_sha=$2
+  shift 2
+  [[ "$executable" = /* && -f "$executable" && -x "$executable" && ! -L "$executable" ]] || die 'Tauri CLI must be an absolute regular executable.'
+  [[ "$(sha256 "$executable")" = "$expected_sha" ]] || die 'Tauri CLI executable changed after archive verification.'
+  "$executable" "$@"
+}
+
 assert_source() {
   local repo=$1 expected=$2 version=$3 origin
   [[ "$expected" =~ ^[0-9a-f]{40}$ ]] || die 'Expected commit must be the full reviewed SHA.'
@@ -160,12 +170,21 @@ NODE
   curl --proto '=https' --tlsv1.2 -fL --retry 3 "https://github.com/tauri-apps/tauri/releases/download/tauri-cli-v2.11.5/cargo-tauri-$target.zip" -o "$run/cargo-tauri.zip"
   [[ "$(sha256 "$run/cargo-tauri.zip")" = "$cli_sha" ]] || die 'Pinned Tauri CLI archive hash mismatch.'
   unzip -q "$run/cargo-tauri.zip" cargo-tauri -d "$run/tools"
-  export PATH="$run/tools:$PATH"
-  [[ "$(rustup run 1.93.1 cargo tauri --version)" = 'tauri-cli 2.11.5' ]] || die 'Unexpected Tauri CLI version.'
+  local cli="$run/tools/cargo-tauri" cli_executable_sha
+  cli_executable_sha=$(sha256 "$cli")
+  [[ "$(run_verified_tauri "$cli" "$cli_executable_sha" --version)" = 'tauri-cli 2.11.5' ]] || die 'Unexpected Tauri CLI version.'
+  node - "$receipt" "$cli" "$cli_executable_sha" <<'NODE'
+const fs=require('node:fs');
+const [file,executable,executableSha256]=process.argv.slice(2);
+const receipt=JSON.parse(fs.readFileSync(file));
+Object.assign(receipt.tauriCli,{executable,executableSha256,invocation:'absolute extracted executable; no Cargo subcommand lookup'});
+const temp=file+'.cli.tmp';
+fs.writeFileSync(temp,JSON.stringify(receipt,null,2)+'\n',{flag:'wx'});fs.renameSync(temp,file);
+NODE
   phase=dependencies
   npm --prefix "$repo/ui" ci > "$run/npm-ci.log" 2>&1
   phase=build
-  (cd "$repo/src-tauri" && rustup run 1.93.1 cargo tauri build --target "$target" --features radio,custom-protocol --bundles app --no-sign -- --locked) > "$run/build.log" 2>&1
+  (cd "$repo/src-tauri" && run_verified_tauri "$cli" "$cli_executable_sha" build --target "$target" --features radio,custom-protocol --bundles app --no-sign -- --locked) > "$run/build.log" 2>&1
   assert_source "$repo" "$expected" "$version"
   local app="$CARGO_TARGET_DIR/$target/release/bundle/macos/OM0RX-xNexus.app"
   [[ -x "$app/Contents/MacOS/OM0RX-xNexus" ]] || die 'Expected app executable was not produced.'

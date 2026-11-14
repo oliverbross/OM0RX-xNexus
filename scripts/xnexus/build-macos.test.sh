@@ -55,3 +55,24 @@ NODE
 update_receipt "$fixture/receipt.json" failed artifact-audit
 node -e "if(require(process.argv[1]).status!=='failed')process.exit(1)" "$fixture/receipt.json"
 printf 'PASS: source, origin, branch, dirty-tree, version reuse and receipt/hash guards. No candidate built.\n'
+
+# Positive reproduction of Cargo's precedence: even a PATH-selected downloaded
+# CLI loses to CARGO_HOME/bin. The wrapper must use the exact verified path.
+mkdir -p "$fixture/cargo-home/bin" "$fixture/pinned tools"
+printf '#!/usr/bin/env bash\nprintf "SHADOW\\n"\n' > "$fixture/cargo-home/bin/cargo-tauri"
+printf '#!/usr/bin/env bash\nprintf "PINNED\\n"\nprintf "%%s\\n" "$@" > "$XNEXUS_TEST_TAURI_ARGS"\n' > "$fixture/pinned tools/cargo-tauri"
+chmod +x "$fixture/cargo-home/bin/cargo-tauri" "$fixture/pinned tools/cargo-tauri"
+export XNEXUS_TEST_TAURI_ARGS="$fixture/tauri-args.txt"
+[[ "$(CARGO_HOME="$fixture/cargo-home" PATH="$fixture/pinned tools:$PATH" cargo tauri --version)" = SHADOW ]] || die 'Cargo-home precedence positive control did not reproduce.'
+cli_sha=$(sha256 "$fixture/pinned tools/cargo-tauri")
+[[ "$(CARGO_HOME="$fixture/cargo-home" run_verified_tauri "$fixture/pinned tools/cargo-tauri" "$cli_sha" build --target 'test target')" = PINNED ]] || die 'Verified CLI was shadowed.'
+node - "$fixture/tauri-args.txt" <<'NODE'
+const fs=require('node:fs'),assert=require('node:assert/strict');
+assert.deepEqual(fs.readFileSync(process.argv[2],'utf8').trimEnd().split('\n'),['build','--target','test target']);
+NODE
+ln -s "$fixture/pinned tools/cargo-tauri" "$fixture/tauri-link"
+reject run_verified_tauri "$fixture/tauri-link" "$cli_sha" --version
+reject run_verified_tauri 'relative/cargo-tauri' "$cli_sha" --version
+printf '# changed after extraction\n' >> "$fixture/pinned tools/cargo-tauri"
+reject run_verified_tauri "$fixture/pinned tools/cargo-tauri" "$cli_sha" --version
+printf 'PASS: actual Cargo-home shadow positive control, absolute verified CLI, argument preservation and changed-executable rejection.\n'
