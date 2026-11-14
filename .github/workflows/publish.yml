@@ -99,6 +99,7 @@ jobs:
   # half-gigabyte download. Its whole job is to fail fast and say exactly why.
   # ---------------------------------------------------------------------------------------
   resolve:
+    if: github.repository == 'kd9taw/Nexus'
     name: Resolve the release + check the secrets
     runs-on: ubuntu-latest
     # A job-level block REPLACES the workflow-level one, so `contents: read` is repeated.
@@ -261,7 +262,7 @@ jobs:
   publish:
     name: SourceForge + site
     needs: resolve
-    if: needs.resolve.outputs.proceed == 'true'
+    if: ${{ github.repository == 'kd9taw/Nexus' && (needs.resolve.outputs.proceed == 'true') }}
     runs-on: ubuntu-latest
     environment: production
     timeout-minutes: 90

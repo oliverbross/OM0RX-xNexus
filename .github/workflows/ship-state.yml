@@ -96,6 +96,7 @@ concurrency:
 
 jobs:
   digest:
+    if: github.repository == 'kd9taw/Nexus'
     name: What is committed, unshipped, unanswered or out of sync
     runs-on: ubuntu-latest
     steps:

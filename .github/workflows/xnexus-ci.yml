@@ -1,0 +1,85 @@
+name: xNexus isolated validation
+on:
+  push:
+    branches: [main, 'codex/**']
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: xnexus-ci-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  contract-ui:
+    if: github.repository == 'oliverbross/OM0RX-xNexus'
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025, macos-15]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de
+        with:
+          toolchain: '1.93.1'
+      - run: node --test scripts/xnexus/fork-policy.test.mjs
+      - run: cargo test --locked --manifest-path integrations/xlog/Cargo.toml
+      - run: npm --prefix ui ci
+      - run: npm --prefix ui run build
+      - run: npm --prefix ui test -- src/xlog
+  desktop:
+    if: github.repository == 'oliverbross/OM0RX-xNexus'
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de
+        with:
+          toolchain: '1.93.1'
+      - if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends gfortran libfftw3-dev libboost-dev cmake ninja-build pkg-config libasound2-dev libudev-dev libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev libssl-dev libsoup-3.0-dev
+      - if: runner.os == 'macOS'
+        run: brew install gcc fftw boost cmake ninja pkg-config
+      - if: runner.os == 'macOS'
+        run: |
+          echo "FC=$(find "$(brew --prefix)/bin" -name 'gfortran-*' | head -1)" >> "$GITHUB_ENV"
+          echo "PKG_CONFIG_PATH=$(brew --prefix)/lib/pkgconfig" >> "$GITHUB_ENV"
+      - run: cargo check --locked --manifest-path src-tauri/Cargo.toml --features radio --all-targets
+  windows-desktop:
+    if: github.repository == 'oliverbross/OM0RX-xNexus'
+    runs-on: windows-2025
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de
+        with:
+          toolchain: 1.93.1-x86_64-pc-windows-gnu
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: make tar curl mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-gcc-fortran mingw-w64-ucrt-x86_64-fftw mingw-w64-ucrt-x86_64-boost mingw-w64-ucrt-x86_64-cmake mingw-w64-ucrt-x86_64-ninja mingw-w64-ucrt-x86_64-pkgconf mingw-w64-ucrt-x86_64-nasm
+      - shell: msys2 {0}
+        run: |
+          bash scripts/xnexus/prepare-windows-deps.sh
+          cygpath -w /ucrt64/bin >> "$GITHUB_PATH"
+      - shell: pwsh
+        run: |
+          $env:VPX_MINGW_PREFIX = "$pwd\target\xnexus-vpx-1.17.0"
+          cargo +1.93.1-x86_64-pc-windows-gnu check --locked --manifest-path src-tauri/Cargo.toml --features radio --all-targets

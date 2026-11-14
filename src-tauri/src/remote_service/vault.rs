@@ -108,7 +108,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-const SERVICE: &str = "org.hamradiotools.nexus.remote";
+const SERVICE: &str = "sk.om0rx.xnexus.remote";
 const ACCOUNT: &str = "pairing";
 const STATE: &str = "state";
 const PINS: &str = "pins";

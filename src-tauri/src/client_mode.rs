@@ -2815,7 +2815,6 @@ pub(crate) fn run(station: String, typed: Option<Typed>) {
     let built = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_notification::init())
-        .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_autostart::Builder::new().build())
         .plugin(tauri_plugin_dialog::init())
         // WebView2's browser keys off in every window here too, as in the station's own app.
