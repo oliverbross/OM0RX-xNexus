@@ -75,6 +75,19 @@ try {
     $receipt.harness = $harness
     $receipt.harnessSha256 = (Get-FileHash $harness -Algorithm SHA256).Hash
     $receipt.webViewLoaderSha256 = (Get-FileHash $loader -Algorithm SHA256).Hash
+    $listingPath = Join-Path $evidence 'selected-tests.log'
+    & $harness @filters --list *> $listingPath
+    if ($LASTEXITCODE -ne 0) { throw 'The prepared native test harness could not enumerate tests.' }
+    $selected = @(Get-Content -LiteralPath $listingPath |
+        Where-Object { $_ -match ': test$' } | ForEach-Object { $_ -replace ': test$', '' })
+    if ($selected.Count -eq 0) { throw 'No native tests selected; refuse a vacuous success.' }
+    foreach ($filter in $filters) {
+        if (!($selected | Where-Object { $_.IndexOf($filter, [StringComparison]::Ordinal) -ge 0 })) {
+            throw "Native test filter matched nothing: $filter"
+        }
+    }
+    $receipt.selectedTests = $selected
+    $receipt.selectedTestCount = $selected.Count
     $receipt.status = 'running'
     SaveReceipt
     Push-Location "$repo\src-tauri"
@@ -84,6 +97,14 @@ try {
     } finally { Pop-Location }
     $receipt.exitCode = $result
     if ($result -ne 0) { throw "Native tests failed with exit code $result; see $evidence\tests.log" }
+    $summary = Get-Content -LiteralPath (Join-Path $evidence 'tests.log') |
+        Select-String '^test result: ok\. (\d+) passed; (\d+) failed; (\d+) ignored;'
+    if (@($summary).Count -ne 1 -or
+        [int]$summary.Matches[0].Groups[1].Value -ne $selected.Count -or
+        [int]$summary.Matches[0].Groups[2].Value -ne 0 -or
+        [int]$summary.Matches[0].Groups[3].Value -ne 0) {
+        throw 'Native test summary did not confirm every selected test passed.'
+    }
     if ((git -C $repo rev-parse HEAD).Trim() -ne $source -or (git -C $repo status --porcelain)) {
         throw 'Source changed during native test execution.'
     }
