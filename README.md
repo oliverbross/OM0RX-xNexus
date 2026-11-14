@@ -13,8 +13,13 @@ commands. It does not start Nexus's own station, logbook or cluster services.
 An xLog version containing the companion bridge is required. No qualified
 installer or on-air transmission support is claimed.
 
+The [companion operator guide](docs/xlog/OPERATOR_GUIDE.md) covers pairing, needed
+stations, maps, history, explicit controls and recoverable QSO submissions.
+
 The dependency-light native client lives in `integrations/xlog`; its synthetic
 tests do not require Nexus DSP, a radio, or a production xLog profile.
+Repeatable [paired acceptance](integrations/xlog-paired/README.md) also checks the
+actual xLog HTTP transport and an explicitly launched disposable SQLite owner.
 
 The remainder of this README is the retained upstream documentation and describes
 upstream Nexus, not completed OM0RX-xLog integration.

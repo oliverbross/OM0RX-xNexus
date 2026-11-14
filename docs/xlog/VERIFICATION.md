@@ -1,37 +1,61 @@
 # Integration verification — 14 November 2026
 
-Latest native client source: `3a0686ee8`. Windows Rust 1.99.1 MSVC.
-All 43 native client tests pass with the locked offline dependency graph, followed
-by Clippy (`--all-targets -- -D warnings`) and rustfmt. This covers observation,
-control receipts, independent Stop, durable file outbox recovery, explicit retry,
-owner geography, and bounded selected-call history/confirmation reads. The
-history tests prove portable-call URL encoding, no request without capability,
-workspace fencing and refusal of invalid edit revisions.
+## Current execution checkpoint
 
-The actual production bridge module from the isolated xLog source was compiled
-with the actual production client in a temporary paired harness. Five tests
-passed: the four then-current bridge transport cases plus authenticated pairing,
-wrong-token refusal, tune receipt lookup, independent Stop, and revocation.
-Its provider was synthetic: no physical device or production log was used.
-The harness resides in the xLog workspace `.build/xnexus-paired-e2e`; eight
-subsequent owner transport/projection cases are reported by the owner agent.
+The native client at `075cea571` passed **49 tests**, Clippy with warnings denied,
+and formatting on Windows Rust 1.99.1 MSVC. Tests include the shared desktop wire
+fixture, immutable outbox recovery, positive edit revisions, workspace binding,
+receipt validation and independent Stop. These checks use locked dependencies.
 
-Fork identity/workflow policy: six tests pass on canonical xNexus. Upstream jobs
-require the upstream repository identity, inherited workflows are disabled via
-GitHub, and the fork updater cannot install upstream binaries. Windows GNU
-toolchain and pinned libvpx, Hamlib and DeepCW assets are prepared. Native desktop
-compilation is in progress; the first CMake attempt exposed a Windows verbatim
-path issue, with a source correction awaiting the coordinated next build.
+The maintained `integrations/xlog-paired` crate compiles the actual client and
+actual HTTP transport from an explicitly supplied xLog checkout. Its latest run
+passed **14 tests**, with the actual Swift-owner case separately opted into and
+also passed. The default transport tests use synthetic providers. The separate
+owner test uses production `LiveLogbookMethods` and its SQLite transaction code
+in a marked empty disposable root, with no LiveWorker or device owners:
 
-Desktop agent evidence: initial eight UI tests, then four QSO queue cases,
-focused TypeScript validation, and two browser probe runs covering fourteen
-viewport/theme combinations. Full desktop qualification and installed-app
-acceptance remain open; browser mocks do not prove the Tauri/native wiring.
+- Create through the client and HTTP bridge, then simulate losing the local
+  acknowledgement after the owner commits.
+- Exit both sides, reopen the same workspace/outbox, and recover the durable
+  receipt without another contact.
+- Apply an exact-revision correction, reject a stale correction, replay the
+  original immutable create operation, and verify one history row at revision 2.
+- Preserve the original millisecond UTC timestamp and multiline comment.
 
-Hosted validation did not execute: GitHub run 43586230218 reports the account's
-payment/spending restriction on every job. No macOS/Linux build is claimed.
-No radio transmission, rotator movement, production log mutation or installation
-has been performed by these verification tests.
+Passing evidence root:
+`C:/Projects/OM0RX-xLog/.build/xnexus-paired-owner-evidence/xlog-companion-owner-4fa3217e-f16c-4403-a93a-e7a223cdef51`.
+Fixture executable SHA-256:
+`0efc1eabedb67c431af66a1e8f1432e7a3cde711478f71ab298588cb186421fe`.
+The runner prints both checkout commits, dirty status, transport hash and fixture
+hash. This test uses a synthetic station snapshot and a test provider mapping;
+it is not native GUI, physical hardware or the complete Tauri host acceptance.
+The owner fixture's final source/build receipt is maintained by the xLog worktree.
+
+The isolated xLog branch passed six Swift durability/history tests, native Rust
+compilation, TypeScript and transport/projection tests. Independent review found
+stale Hamlib PTT projection and need-invalidation lifecycle defects; their fixes
+are being verified before canonical integration. The existing xLog release owner
+retains canonical ownership while fixing its separate startup acceptance failure.
+
+Canonical xNexus `f96eed63c` passed the full native Windows GNU **all-targets
+check**, including test compilation. Twenty build-script tests passed, including
+Windows local/UNC path normalization. Native test execution on the subsequent
+`d5cf11014` draft-recovery source is still building; compilation is not execution.
+Six fork identity/workflow policy tests passed. No installer is qualified yet.
+
+Desktop evidence includes the full TypeScript/Vite build, 31 companion tests at
+`96de58dce`, and focused tests for subsequent history-draft and owner-band fixes.
+The real-browser probe passed 14 viewport/theme combinations plus band/world
+selection, history corrections, independent Stop and clean-console assertions.
+Latest screenshots are retained under
+`C:/Projects/OM0RX-xLog/.build/xnexus-worktrees/desktop/.build/xlog-browser-1794656076936`.
+Browser mocks do not establish Tauri/native IPC or installed-app behavior.
+
+GitHub run 43586230218 did not execute any job steps because of the account's
+payment/spending restriction. Local macOS verification is being attempted on the
+connected Mac; no platform pass is claimed before its result. Linux remains
+unverified. No physical transmission, rotator movement, production-log mutation
+or installation has been performed by these integration checks.
 
 ## Archived foundation evidence
 

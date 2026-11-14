@@ -119,7 +119,7 @@ impl LogbookMutation {
     }
     fn validate(&self) -> Result<(), OutboxError> {
         self.qso().validate()?;
-        if matches!(self,Self::Update{expected_contact_revision,..} if *expected_contact_revision>9_007_199_254_740_990)
+        if matches!(self,Self::Update{expected_contact_revision,..} if !(1..=9_007_199_254_740_990).contains(expected_contact_revision))
         {
             return Err(OutboxError::Invalid);
         }
@@ -595,6 +595,21 @@ mod tests {
     }
     struct Fixture(PathBuf);
     #[test]
+    fn correction_without_an_owner_revision_never_enters_durable_queue() {
+        let f = Fixture::new();
+        let mut queue = Outbox::open(&f.0).unwrap();
+        let mutation = LogbookMutation::Update {
+            qso: draft().qso().clone(),
+            expected_contact_revision: 0,
+        };
+        assert_eq!(
+            queue.enqueue("workspace", ID, mutation),
+            Err(OutboxError::Invalid)
+        );
+        drop(queue);
+        assert!(Outbox::open(&f.0).unwrap().entries().is_empty());
+    }
+    #[test]
     fn multiline_history_comments_survive_edit_queue_without_normalization() {
         let f = Fixture::new();
         let mut mutation = draft();
@@ -615,13 +630,15 @@ mod tests {
     }
     impl Fixture {
         fn new() -> Self {
+            static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
             let path = std::env::temp_dir().join(format!(
-                "xnexus-outbox-{}-{}",
+                "xnexus-outbox-{}-{}-{}",
                 std::process::id(),
                 std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
                     .unwrap()
-                    .as_nanos()
+                    .as_nanos(),
+                NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
             ));
             fs::create_dir(&path).unwrap();
             Self(path)

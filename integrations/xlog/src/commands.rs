@@ -54,7 +54,10 @@ impl Command {
             Self::LogbookUpdate {
                 qso,
                 expected_contact_revision,
-            } => qso.validate().is_ok() && *expected_contact_revision <= 9_007_199_254_740_990,
+            } => {
+                qso.validate().is_ok()
+                    && (1..=9_007_199_254_740_990).contains(expected_contact_revision)
+            }
         };
         if valid {
             Ok(())
