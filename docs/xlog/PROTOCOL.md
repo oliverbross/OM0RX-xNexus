@@ -65,5 +65,27 @@ The desktop keeps it outside the ordinary poll mutex; Stop neither waits for a
 fresh poll nor takes its queue slot. Revocation/workspace changes still refuse
 the action at the host. Desktop disconnect drops this handle.
 
-Logbook create/update, audio and TX remain unavailable until their owner-side
-contracts are implemented and validated; no control capability implies them.
+## Durable logbook operations
+
+`logbook.write` explicitly grants `logbook.create {qso}` and
+`logbook.update {qso, expected_contact_revision}`. A QSO contains contact_id
+(UUID), callsign, band, mode, started_at_unix_ms, optional frequency_hz, rst_sent,
+rst_received, grid and comment. The operation request UUID is distinct from the
+contact UUID. The owner must atomically commit the contact and its durable
+operation receipt; repeated identical operations return the original receipt,
+and reused IDs with different payloads are rejected. Update is revision fenced.
+The workspace identity persists over normal owner restarts and changes on restore.
+
+The native `outbox::Outbox` stores immutable queue records and syncs an attempt
+marker before network dispatch. Its single-writer file lock prevents concurrent
+desktop senders. Lost replies and process interruption leave `NeedsReceipt`;
+ordinary submission then performs receipt lookup only. Missing receipts require
+a separate explicit retry action, which checks receipt absence again and sends
+the same operation UUID and payload. Only applied/observed/rejected receipts are
+terminal; accepted and uncertain are never displayed as saved. Foreign workspace
+records cannot be submitted. Corrupt records and partial temporary writes are
+preserved for diagnosis. Queue files remain private to the xNexus profile.
+
+Client tests use synthetic owners; actual availability requires an xLog build
+advertising the durable contract. Audio and TX remain separate ungranted
+capabilities; no receive/control or logbook capability implies them.
