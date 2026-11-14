@@ -170,6 +170,27 @@ NODE
   local app="$CARGO_TARGET_DIR/$target/release/bundle/macos/OM0RX-xNexus.app"
   [[ -x "$app/Contents/MacOS/OM0RX-xNexus" ]] || die 'Expected app executable was not produced.'
   phase=artifact-audit
+  node - "$receipt" "$app" "$repo" "$expected" "$version" <<'NODE'
+const fs=require('node:fs'),path=require('node:path'),cp=require('node:child_process'),crypto=require('node:crypto');
+const [receiptFile,app,root,source,version]=process.argv.slice(2);
+const plist=JSON.parse(cp.execFileSync('/usr/bin/plutil',['-convert','json','-o','-',`${app}/Contents/Info.plist`],{encoding:'utf8'}));
+if(plist.CFBundleIdentifier!=='sk.om0rx.xnexus' || !plist.CFBundleVersion || !plist.CFBundleShortVersionString)
+  throw Error('Packaged bundle identity or version fields are missing/unexpected.');
+const dist=path.join(root,'ui/dist'), html=fs.readFileSync(path.join(dist,'xlog.html'),'utf8');
+const entry=html.match(/<script\b[^>]*\bsrc="([^"]+)"/);
+if(!entry)throw Error('Built companion entry script is missing.');
+const entryFile=path.resolve(dist,entry[1].replace(/^\/+/,''));
+if(!entryFile.startsWith(dist+path.sep))throw Error('Companion entry escapes built UI.');
+const code=fs.readFileSync(entryFile,'utf8');
+const short=cp.execFileSync('git',['-C',root,'rev-parse','--short',source],{encoding:'utf8'}).trim();
+if(!code.includes(version)||!code.includes(short))throw Error('Built companion footer lacks the candidate version/source.');
+const receipt=JSON.parse(fs.readFileSync(receiptFile));
+receipt.macBundle={CFBundleIdentifier:plist.CFBundleIdentifier,CFBundleVersion:plist.CFBundleVersion,
+  CFBundleShortVersionString:plist.CFBundleShortVersionString};
+receipt.companionFooter={version,sourceShort:short,entry:entry[1],
+  sha256:crypto.createHash('sha256').update(code).digest('hex'),verified:'built UI entry; native window acceptance remains required'};
+const temp=receiptFile+'.identity.tmp';fs.writeFileSync(temp,JSON.stringify(receipt,null,2)+'\n',{flag:'wx'});fs.renameSync(temp,receiptFile);
+NODE
   [[ "$(sha256 "$app/Contents/Resources/resources/deepcw/model.onnx")" = "$model_sha" ]] || die 'Packaged model hash mismatch.'
   [[ "$(sha256 "$app/Contents/Resources/resources/deepcw/model.onnx.json")" = "$metadata_sha" ]] || die 'Packaged metadata hash mismatch.'
   for file in COPYING NOTICE resources/hamlib/COPYING.txt resources/hamlib/COPYING.LIB.txt resources/hamlib/LICENSE.txt resources/hamlib/AUTHORS.txt resources/hamlib/libusb-COPYING.txt; do

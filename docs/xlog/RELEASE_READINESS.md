@@ -120,3 +120,7 @@ retains its receipt and logs. Existing `.build` validation evidence must be
 inventoried before using a local Git exclusion or relocating it; never delete
 it to satisfy the clean-source guard. Run `bash scripts/xnexus/build-macos.test.sh`
 to exercise source/version/provenance guards without compiling a candidate.
+The receipt records the actual `CFBundleVersion` and `CFBundleShortVersionString`
+from the packaged app instead of assuming they preserve the prerelease string.
+The built companion entry must contain its full candidate version and source
+stamp; native window acceptance must still verify their visible presentation.

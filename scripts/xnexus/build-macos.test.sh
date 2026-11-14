@@ -6,6 +6,16 @@ source "$script"
 bash -n "$script"
 fixture=$(mktemp -d "${TMPDIR:-/tmp}/xnexus-macos-script.XXXXXX")
 printf 'Preserved script-test evidence: %s\n' "$fixture"
+node - "$script" "$fixture" <<'NODE'
+const fs=require('node:fs'),cp=require('node:child_process');
+const [script,fixture]=process.argv.slice(2);
+let count=0;
+for(const match of fs.readFileSync(script,'utf8').matchAll(/<<'NODE'\n([\s\S]*?)\nNODE/g)) {
+  const file=`${fixture}/embedded-${count++}.cjs`;fs.writeFileSync(file,match[1]);
+  cp.execFileSync(process.execPath,['--check',file]);
+}
+if(count<5)throw Error('Expected source/provenance and artifact-audit scripts were not checked.');
+NODE
 mkdir -p "$fixture/source/src-tauri"
 git -C "$fixture/source" init -q -b main
 git -C "$fixture/source" config user.name OM0RX
