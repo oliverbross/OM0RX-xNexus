@@ -3,6 +3,10 @@
 The integration remains in qualification. Source, synthetic tests, packaged
 binaries and physical station acceptance are separate evidence levels.
 
+[Candidate 1.24.1-xlog.4](CANDIDATE_1.24.1-xlog.4.md) is version-reserved with
+exact pre-version source and build provenance requirements. It has not been
+packaged, installed or accepted. Canonical xLog 1.6.27 is likewise source-prepared.
+
 **Preserved isolation failure:** the fresh Mac `.2` profile displayed a draft from
 the prior `.1` test before pairing. Both processes exited normally and no station
 action occurred. The locked Tauri configuration conversion drops the requested

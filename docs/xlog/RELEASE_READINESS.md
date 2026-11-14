@@ -1,8 +1,10 @@
 # OM0RX-xNexus release readiness
 
-The next Windows candidate is **not version-reserved or authorized to build**.
-It must include the reviewed profile repair, installer hardening and completed
-SDK/native/UI integration, with its own exact source and paired-owner evidence.
+The next Windows candidate is reserved as
+[1.24.1-xlog.4](CANDIDATE_1.24.1-xlog.4.md), source-prepared only.
+It includes the reviewed profile repair, installer hardening and completed
+SDK/native/UI integration. Packaging still requires its exact clean canonical
+source, reviewed runner and fresh resource admission; no artifact is claimed.
 Source tests, an artifact audit, native lifecycle checks and physical station
 qualification remain separate gates; see the maintained [execution ledger](STATUS.md).
 
@@ -115,7 +117,7 @@ a new optimized application build. No reliable `.2` peak-memory measurement
 justifies a higher limit. `npm ci` and pinned CLI installation still require
 registry availability; this is not an offline reproducibility claim.
 
-### Next-candidate sequence — no version reserved
+### Candidate preparation and qualification sequence
 
 1. Complete and review SDK/native/UI integration and owner lifecycle gates.
    Record exact pre-version Nexus commit `P`, paired xLog owner commit `O`,
