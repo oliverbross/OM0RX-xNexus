@@ -74,7 +74,39 @@ Guard receipt SHA-256:
 The exact Rust-serialized fixture supplied to UI tests has SHA-256
 `00a4efc0828fbc78cd88aa8743ce5ec5ddeea316b726a8d504685e66320fb3dd`.
 
-The focused harness does not compile Tauri command hooks. Full integrated
-desktop compilation, final UI validation, a new uniquely versioned candidate,
+## Frontend evidence
+
+UI commit `09b31a62feab0ee9b100179c42ac8058cf1803ce` displays xLog's status,
+score and optional evidence independently from the decoded signal measurements.
+It matches immutable row identity, current owner/route and decoder mode. Its
+monotonic deadline starts before the native status request, so IPC delay cannot
+renew evidence. Expiry works even while IPC stalls. Pending Start/Stop actions,
+capability loss and context changes revoke displayed facts; delayed responses
+cannot restore a cancelled action's classification.
+
+All 55 companion UI tests passed, including 15 new needs cases and the exact
+Rust-serialized fixture. Full TypeScript and production Vite checks passed in
+the same guarded job: 7m11s total, 2,585,292,800-byte peak under a 4 GiB aggregate
+cap, with a 2,560 MiB V8 heap. Root exit and zero owned processes were confirmed.
+The final receipt is under the UI worktree's
+`target/needs-ui-check/build4-55a2b84656804bd590970bf4fe4ed96b`, SHA-256
+`23023cb3583e03c43cef4c6046ff3e7abe6b83637ec645dd1d1e70e0803998df`.
+Earlier heap exhaustion, three test-only Promise type errors, and one history
+timeout remain preserved; the final run passed without a test-timeout override.
+
+The actual production bundle passed 14 private-browser viewport/theme cases,
+expiry/capability-loss/no-auto-command checks and a negative geometry control.
+Expanded evidence was visually inspected at 1366 pixels and at 1024 pixels with
+175% scaling in both themes. The data area scrolls while the connection bar and
+rotator Stop remain visible. Source and bundle hashes were unchanged, and both
+browser jobs confirmed cleanup. Main browser receipt SHA-256:
+`c21804987c1e14794c87c9eed5f1d6b9bbb9a4d76f98207608e4bbcde76c38e6`;
+focused visual receipt:
+`fa99f1a2e79a8d6e3c8c8f389489819a3f9c8a4f7973b5045370933bbe3e8f85`.
+These use a synthetic browser-side bridge and do not establish native IPC or
+installed xLog behavior.
+
+The focused native harness does not compile Tauri command hooks. Full integrated
+desktop compilation, a new uniquely versioned candidate,
 paired native acceptance and physical DAX reception remain separate gates.
 Installed xLog 1.6.26 is unchanged and does not include this new endpoint.
