@@ -76,6 +76,9 @@ A new isolated upstream merge rehearsal from exact `.2` source to
 Eight policy checks passed and all 44 inherited workflow jobs remain guarded.
 The uncommitted merge and earlier rehearsal remain preserved; no upgrade was
 promoted and the upstream base remains `c88740a94`.
+Source review found an incoming serial-port alias mismatch that can incorrectly
+clear a stuck-CW warning in independent mode. Promotion awaits a fix and runtime
+checks; see [the upstream review](UPSTREAM_REVIEW_2026-11-14.md).
 
 Linux provisioning and the initial 58 SDK/eight policy tests passed. TypeScript
 then exhausted Node's default 2 GB heap. A 4 GB retry is prepared inside the same
