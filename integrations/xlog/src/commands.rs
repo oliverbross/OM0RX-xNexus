@@ -246,14 +246,20 @@ impl BridgeClient {
         if !valid_request_id(request_id) {
             return Err(Error::Invalid);
         }
-        let hello = self.hello.as_ref().ok_or(Error::Disconnected)?;
-        let receipt: CommandReceipt =
-            match self.get(&format!("/xlog/v1/receipt/{request_id}"), 65536) {
-                Ok(receipt) => receipt,
-                Err(Error::Http(404)) => return Ok(None),
-                Err(error) => return Err(error),
-            };
-        receipt.validate(hello, request_id)?;
-        Ok(Some(receipt))
+        let result = (|| {
+            let hello = self.hello.as_ref().ok_or(Error::Disconnected)?;
+            let receipt: CommandReceipt =
+                match self.get(&format!("/xlog/v1/receipt/{request_id}"), 65536) {
+                    Ok(receipt) => receipt,
+                    Err(Error::Http(404)) => return Ok(None),
+                    Err(error) => return Err(error),
+                };
+            receipt.validate(hello, request_id)?;
+            Ok(Some(receipt))
+        })();
+        if matches!(result, Err(Error::IdentityChanged | Error::Http(401 | 403))) {
+            self.disconnect();
+        }
+        result
     }
 }

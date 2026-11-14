@@ -161,7 +161,7 @@ pub enum OutboxError {
 impl std::fmt::Display for OutboxError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(match self {
-            Self::Io => "Cannot persist the QSO queue; no contact was sent",
+            Self::Io => "QSO queue persistence failed; check the retained operation receipt before another submission",
             Self::Locked => "The QSO queue is already open in another process",
             Self::Corrupt => "The QSO queue requires recovery; its files were preserved",
             Self::Invalid => "Invalid QSO queue entry",
@@ -351,6 +351,7 @@ impl Outbox {
             if e.state != OutboxState::NeedsReceipt
                 || e.queued.workspace_id != r.workspace_id
                 || !terminal(r.status)
+                || !receipt_matches_contact(&r, &e.queued.mutation)
             {
                 return Err(OutboxError::Corrupt);
             }
@@ -441,6 +442,9 @@ impl Outbox {
             return Err(OutboxError::Invalid);
         }
         let e = self.entry(&receipt.request_id, &receipt.workspace_id)?;
+        if !receipt_matches_contact(&receipt, &e.queued.mutation) {
+            return Err(OutboxError::Invalid);
+        }
         if let OutboxState::Settled(existing) = &e.state {
             return if existing == &receipt {
                 Ok(())
@@ -498,7 +502,7 @@ impl Outbox {
             .and_then(|_| file.sync_all())
             .map_err(|_| OutboxError::Io)?;
         drop(file);
-        fs::rename(&path, &final_path).map_err(|_| OutboxError::Io)?;
+        publish_file(&path, &final_path).map_err(|_| OutboxError::Io)?;
         #[cfg(unix)]
         {
             File::open(&self.root)
@@ -507,6 +511,48 @@ impl Outbox {
         }
         Ok(())
     }
+}
+#[cfg(not(windows))]
+fn publish_file(source: &Path, destination: &Path) -> std::io::Result<()> {
+    fs::rename(source, destination)
+}
+#[cfg(windows)]
+fn publish_file(source: &Path, destination: &Path) -> std::io::Result<()> {
+    use std::os::windows::ffi::OsStrExt;
+    // Same-directory publication, no replacement and no copy/delete fallback.
+    // Request write-through rather than std::fs::rename's default Windows flags.
+    // https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-movefileexw
+    #[link(name = "kernel32")]
+    extern "system" {
+        fn MoveFileExW(source: *const u16, destination: *const u16, flags: u32) -> i32;
+    }
+    let wide = |path: &Path| -> std::io::Result<Vec<u16>> {
+        let path = std::path::absolute(path)?;
+        let value: Vec<u16> = path.as_os_str().encode_wide().collect();
+        if value.contains(&0) {
+            return Err(std::io::Error::from(std::io::ErrorKind::InvalidInput));
+        }
+        Ok(value.into_iter().chain(Some(0)).collect())
+    };
+    let source = wide(source)?;
+    let destination = wide(destination)?;
+    if unsafe { MoveFileExW(source.as_ptr(), destination.as_ptr(), 0x8) } == 0 {
+        Err(std::io::Error::last_os_error())
+    } else {
+        Ok(())
+    }
+}
+fn receipt_matches_contact(receipt: &CommandReceipt, mutation: &LogbookMutation) -> bool {
+    bounded(&receipt.server_instance, 128)
+        && receipt.message.as_ref().is_none_or(|m| bounded(m, 512))
+        && (receipt.status == CommandStatus::Rejected
+            || (receipt
+                .contact_id
+                .as_ref()
+                .is_some_and(|id| id.eq_ignore_ascii_case(&mutation.qso().contact_id))
+                && receipt
+                    .contact_revision
+                    .is_some_and(|revision| (1..=9_007_199_254_740_990).contains(&revision))))
 }
 fn terminal(status: CommandStatus) -> bool {
     matches!(
@@ -598,9 +644,48 @@ mod tests {
             server_instance: "server".into(),
             status: CommandStatus::Applied,
             message: None,
-            contact_id: None,
-            contact_revision: None,
+            contact_id: Some(ID.into()),
+            contact_revision: Some(1),
         }
+    }
+    #[test]
+    fn applied_receipt_requires_matching_contact_and_positive_revision() {
+        let f = Fixture::new();
+        let mut q = Outbox::open(&f.0).unwrap();
+        q.enqueue("workspace", ID, draft()).unwrap();
+        q.mark_attempted(ID, "workspace").unwrap();
+        for (contact_id, contact_revision) in [
+            (None, Some(1)),
+            (Some("00000000-0000-4000-8000-000000000002".into()), Some(1)),
+            (Some(ID.into()), None),
+            (Some(ID.into()), Some(0)),
+        ] {
+            let mut r = receipt();
+            r.contact_id = contact_id;
+            r.contact_revision = contact_revision;
+            assert_eq!(q.settle(r), Err(OutboxError::Invalid));
+            assert_eq!(q.entries()[0].state, OutboxState::NeedsReceipt);
+        }
+    }
+    #[test]
+    fn settlement_io_failure_does_not_claim_no_send_or_discard_attempt() {
+        let f = Fixture::new();
+        let mut q = Outbox::open(&f.0).unwrap();
+        q.enqueue("workspace", ID, draft()).unwrap();
+        q.mark_attempted(ID, "workspace").unwrap();
+        // Inject an unavailable publication directory after the owner has replied.
+        let existing_root = q.root.clone();
+        q.root = q.root.join("missing-test-directory");
+        let error = q.settle(receipt()).unwrap_err();
+        assert_eq!(error, OutboxError::Io);
+        assert!(!error.to_string().contains("no contact was sent"));
+        assert_eq!(q.entries()[0].state, OutboxState::NeedsReceipt);
+        q.root = existing_root;
+        drop(q);
+        assert_eq!(
+            Outbox::open(&f.0).unwrap().entries()[0].state,
+            OutboxState::NeedsReceipt
+        );
     }
     #[test]
     fn persisted_before_send_and_uncertainty_survives_restart() {
