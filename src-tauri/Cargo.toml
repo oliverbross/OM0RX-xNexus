@@ -175,6 +175,11 @@ tempo-audio = { path = "../crates/tempo-audio", optional = true }
 [target.'cfg(target_os = "linux")'.dependencies]
 gdk = "0.18"
 
+# Already a locked Tauri dependency (MIT). Query the native OS version before
+# requesting an isolated WKWebView store; macOS <14 must never silently share it.
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2-foundation = { version = "=0.3.2", default-features = false, features = ["std", "NSProcessInfo"] }
+
 # The windows' keys: WebView2's own browser accelerators switched off in every Nexus window
 # (`ICoreWebView2Settings3::SetAreBrowserAcceleratorKeysEnabled`, `src/browser_keys.rs`), and F11
 # kept for the Stations on this network window's full screen (`AcceleratorKeyPressed`,

@@ -40,4 +40,16 @@ describe('owner logbook history', () => {
     const { contact_revision: _, ...qso } = contact
     await waitFor(() => expect(api.enqueue).toHaveBeenCalledWith({ kind: 'logbook.update', qso: { ...qso, rst_received: '579' }, expected_contact_revision: 12 }, expect.any(String), 'workspace-a'))
   })
+  it('does not replace an unfinished draft whose callsign is still blank', async () => {
+    const api = { ...bridge, history: vi.fn(async () => history()), outbox: vi.fn(async () => []), enqueue: vi.fn(async () => []) }
+    render(<QsoPanel api={api} enabled connected readEnabled workspace="workspace-a" selected={selected} />)
+    fireEvent.change(screen.getByLabelText('Comment'), { target: { value: 'Unfinished contact notes' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Load history from xLog' }))
+    const edit = await screen.findByRole('button', { name: 'Edit QSO' })
+    expect(edit).toHaveProperty('disabled', true)
+    fireEvent.click(edit)
+    expect(screen.getByLabelText('Comment')).toHaveProperty('value', 'Unfinished contact notes')
+    fireEvent.click(screen.getByRole('button', { name: 'Clear draft' }))
+    expect(screen.getByRole('button', { name: 'Edit QSO' })).toHaveProperty('disabled', false)
+  })
 })
