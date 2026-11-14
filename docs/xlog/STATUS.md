@@ -71,8 +71,19 @@ decoder and owner HTTP/validator path into classification, pending-operation
 revocation, expiry and Stop. Its classifier is synthetic; the actual Swift
 reply replay remains separate evidence. See
 [decoded classification verification](DECODED_NEEDS_VERIFICATION.md) for exact
-receipts. Updated Linux and macOS checks are in progress; neither a new Windows
-package nor physical DAX reception is claimed.
+receipts. Updated Linux tooling fixtures passed all 25 cases and its cache seed
+passed with unchanged donor hashes. The subsequent contract phase was held
+before container creation at 6.35 GiB physical headroom, below its 7 GiB gate;
+updated SDK/UI and desktop checks have not run. See
+[the Linux evidence](../../scripts/xnexus/linux/PROVISIONING.md).
+
+The updated Mac check reached 35% admission briefly, then fell below that
+threshold before TypeScript started. No frontend/compiler child launched;
+source, cache and earlier archive preservation passed, with no remaining owned
+processes. Held receipt SHA-256:
+`4019b0fda7a90e1db07d57500b42ae8fad3dd4f9eb3d08151d231de8bb459405`.
+These resource holds do not qualify the updated source on either platform.
+Neither a new Windows package nor physical DAX reception is claimed.
 
 Earlier canonical xLog integrated the bridge and receive owner at
 `5efffc1a23af68157e3c564eb2aa345256bea90a`. Validation includes 1,154 native
