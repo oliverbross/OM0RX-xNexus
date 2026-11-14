@@ -106,7 +106,49 @@ focused visual receipt:
 These use a synthetic browser-side bridge and do not establish native IPC or
 installed xLog behavior.
 
-The focused native harness does not compile Tauri command hooks. Full integrated
-desktop compilation, a new uniquely versioned candidate,
-paired native acceptance and physical DAX reception remain separate gates.
-Installed xLog 1.6.26 is unchanged and does not include this new endpoint.
+## Integrated Windows compilation
+
+Exact integrated application source
+`0d01248b0504ae77f6f122fdada1b21e4a61806b` passed a fresh frontend build and
+the full pinned GNU Rust 1.93.1 `cargo check --locked --offline --features radio
+--all-targets -j1`. Cargo reported both application and test `tempo_lib` targets
+with `fresh=false`; checking took 6m07s. Source, frontend asset inventories,
+prior receipts and baseline library hashes remained unchanged.
+
+The 4 GiB aggregate job peaked at 3,671,310,336 bytes; minimum available
+physical memory was 5,214,150,656 bytes and commit headroom 6,223,089,664 bytes.
+The root and all descendants exited naturally. This is compile evidence, not
+linking, packaging or GUI evidence. An earlier admission refusal is preserved.
+Evidence directory:
+`.build/xnexus-integrated-native-check/attempt-1e0c23b1f2f4412e8401f263b19984cf`.
+Receipt SHA-256:
+`4acaf46bdba3d5b06972b4e6d479b97d9d4892c813c29129059be81a9f8282be`;
+guard SHA-256:
+`6d55d60ac7e2ca9925e99f7dd3ac2c4db33c8af12a1d3ef82b21524f8f4f85dc`.
+
+## Generated FT4 through the actual decoder
+
+Test-only commit `82f08245ca6b425e933ff1f26863a3e29e99a8b8` preserves the
+integrated production bytes. Its paced generated FT4 signal crosses the actual
+48 kHz owner buffer, HTTP endpoint and needs validator, SDK, worker poll,
+assembler and decoder. The decoded K1ABC row receives score 100 from an
+explicitly synthetic classifier. A durable pending operation clears facts;
+settlement permits new evidence; original authority expiry clears facts while
+PCM remains fresh. Stop clears rows and permits exclusive restart.
+
+The test passed in 16.85 seconds under a 2 GiB job cap, peaking at 890,462,208
+bytes, with natural root exit and zero owned processes. Guard evidence:
+`.build/xnexus-needs-chain-evidence/attempt-22da3308c6794946b9f2380f437a74fb`,
+SHA-256 `058706f2716a1062844d362482d6969d357f91f90798f667f1d8a99e04d63727`.
+Maintained runner receipt under the test worktree's
+`target/xnexus-rx-needs-chain/acfee72a16f841dfb49820d7062c3141/receipt.json`,
+SHA-256 `a0b0860422e1cf73e89b19de37ad3a7b8218de0bde84c514c4e9f889ada0f069`.
+This closes the decoder-to-lookup test gap; it does not run Swift classification,
+a live database, native GUI or physical audio hardware. The actual Swift wire
+replay above remains separate evidence.
+
+A new uniquely versioned package, paired native acceptance and physical DAX
+reception remain separate gates. Canonical xLog reserved 1.6.27 at
+`16cac86739274073ab2f8000a3916b4e37bc57a5`, containing the reviewed owner source;
+it is source-prepared only. Installed xLog 1.6.26 remains unchanged and does not
+include this new endpoint.

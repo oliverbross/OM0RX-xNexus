@@ -28,10 +28,10 @@ new implementation still requires its own source tests and candidate qualificati
 | M0 | Complete: full upstream history, private fork, fetch-only upstream, nine tracked milestones | Maintain upstream review and patch inventory |
 | M1 | 80 client tests plus exact replay of 40 Swift needs replies; actual owner HTTP and SQLite restart/receipt tests; base bridge merged into canonical xLog | Paired installed-application acceptance |
 | M2 | Separate companion startup, native pairing and private profile; no local station services | Final candidate native GUI and lifecycle acceptance |
-| M3 | xLog-authoritative call/DXCC needs, band/world maps, selected-call history; actual owner mutation/projector matrix; decoded-call owner/SDK/native/UI tests passed | Integrated native build and paired UI; installed classification propagation; richer confirmation/award policy evidence |
+| M3 | xLog-authoritative call/DXCC needs, band/world maps, selected-call history; actual owner mutation/projector matrix; decoded-call owner/SDK/native/UI tests and integrated Windows all-targets check passed | New package and paired UI; installed classification propagation; richer confirmation/award policy evidence |
 | M4 | Owner-mediated tune/point and independent Stop; connection-bound Stop fix merged after 95 focused and 1,164 full native tests | Accepted xLog package containing the fix; paired UI and physical control qualification |
 | M5 | Durable outbox and atomic owner write/receipt; restart, replay and edit-conflict tests | Paired native GUI acceptance; queue archive/export design |
-| M6 | Explicit FLEX slice A/DAX mapping, bounded owner PCM, client, FIR/period assembler, threaded native FT8/FT4 decoder and receive UI | Active DAX reception and clock/route qualification; TX contract and supervised qualification |
+| M6 | FLEX slice A selected; bounded owner PCM, client, FIR/period assembler, threaded native FT8/FT4 decoder and receive UI; generated FT4 to needs chain passed | Select actual DAX input channel; active reception and clock/route qualification; TX implementation and supervised qualification |
 | M7 | Distinct identity, repaired profile construction, reviewed installer ownership/payload guards and bounded build supervisor | New unique Windows candidate; isolated application and installer acceptance |
 | M8 | Mac .3 artifact and A→B→A isolation passed; exact .3 Linux contract and desktop all-targets check passed | Complete paired UI, Linux native lifecycle, signing and distribution qualification |
 
@@ -53,8 +53,9 @@ records 42 passing owner tests and replay of 23 publication plus six independent
 classification exports through the actual Rust projector. They include row
 absence, stale classification becoming Unknown, band/mode differences and
 paper/LoTW/eQSL confirmation cases. This is worker-to-projector evidence, not
-installed HTTP/UI propagation. Canonical xLog is at `72c4f00956b4eeaa3f4addb1ed8dfa5ee525c0d5`;
-these latest commits do not change its installed application.
+installed HTTP/UI propagation. Canonical xLog is now at
+`16cac86739274073ab2f8000a3916b4e37bc57a5`, with version 1.6.27 reserved and
+source provenance recorded. It has not yet been packaged or installed.
 RX evidence includes 58 SDK tests, 40 distinct companion UI tests, TypeScript
 and Vite builds, 14 browser viewport/theme cases, 14 pure DSP/assembler tests,
 five native adapter tests including both modes at five rates, two actual owner
@@ -63,7 +64,17 @@ These sets cover different boundaries and are not a combined coverage claim.
 
 ## xLog coordination
 
-Canonical xLog contains the bridge and receive owner at
+The latest integrated xNexus application source is
+`0d01248b0504ae77f6f122fdada1b21e4a61806b`. Full Windows frontend and native
+all-targets checks passed. A generated FT4 signal also passed through the real
+decoder and owner HTTP/validator path into classification, pending-operation
+revocation, expiry and Stop. Its classifier is synthetic; the actual Swift
+reply replay remains separate evidence. See
+[decoded classification verification](DECODED_NEEDS_VERIFICATION.md) for exact
+receipts. Updated Linux and macOS checks are in progress; neither a new Windows
+package nor physical DAX reception is claimed.
+
+Earlier canonical xLog integrated the bridge and receive owner at
 `5efffc1a23af68157e3c564eb2aa345256bea90a`. Validation includes 1,154 native
 tests, 30 selected Swift tests, 33 focused bridge/audio checks, six actual
 isolated FLEX metadata checks and three receive UI checks. Detailed receipts
