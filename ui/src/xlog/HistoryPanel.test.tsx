@@ -32,6 +32,7 @@ describe('owner logbook history', () => {
     render(<QsoPanel api={api} enabled connected readEnabled workspace="workspace-a" selected={selected} />)
     fireEvent.click(screen.getByRole('button', { name: 'Load history from xLog' }))
     fireEvent.click(await screen.findByRole('button', { name: 'Edit QSO' }))
+    for (const label of ['Callsign', 'Band', 'Mode']) expect(screen.getByLabelText(label)).toHaveProperty('readOnly', true)
     expect(screen.getByLabelText('Comment')).toHaveProperty('value', 'Original\ncomment')
     fireEvent.change(screen.getByLabelText('RST received'), { target: { value: '579' } })
     fireEvent.click(screen.getByRole('button', { name: 'Queue QSO correction' }))

@@ -44,11 +44,11 @@ export function QsoPanel({ api, enabled, connected, workspace, selected, readEna
     <div><h2>Log through xLog</h2><p>QSO drafts are queued on this computer. Only an applied xLog receipt confirms a logbook write. Nothing is sent automatically.</p></div>
     {!enabled && <p className="xn-hint">A fresh connection with xLog’s logbook.write capability is required to queue or submit a contact.</p>}
     <form className="xn-qso-form" onSubmit={event => { event.preventDefault(); if (enabled && !busy) void enqueue() }}>
-      {edit && <p>Editing contact {draft.contact_id} at xLog revision {edit.revision}. Clear this draft to start a different contact.</p>}
+      {edit && <p>Editing contact {draft.contact_id} at xLog revision {edit.revision}. Change callsign, band or mode in xLog to preserve award and confirmation evidence. Clear this draft to start a different contact.</p>}
       {selected && !edit && <button type="button" onClick={() => setDraft(old => ({ ...old, callsign: selected.callsign, mode: selected.mode, band: bandLabelForMhz(selected.frequency_hz / 1e6) || old.band, frequency_hz: selected.frequency_hz }))}>Use selected station</button>}
-      <label>Callsign<input required maxLength={32} value={draft.callsign} onChange={event => field('callsign', event.target.value)} /></label>
-      <label>Band<input required maxLength={16} value={draft.band} onChange={event => field('band', event.target.value)} /></label>
-      <label>Mode<input required maxLength={16} value={draft.mode} onChange={event => field('mode', event.target.value)} /></label>
+      <label>Callsign<input required readOnly={!!edit} maxLength={32} value={draft.callsign} onChange={event => field('callsign', event.target.value)} /></label>
+      <label>Band<input required readOnly={!!edit} maxLength={16} value={draft.band} onChange={event => field('band', event.target.value)} /></label>
+      <label>Mode<input required readOnly={!!edit} maxLength={16} value={draft.mode} onChange={event => field('mode', event.target.value)} /></label>
       <label>Started UTC<input required type="datetime-local" value={new Date(draft.started_at_unix_ms).toISOString().slice(0,16)} onChange={event => { const value = Date.parse(`${event.target.value}Z`); if (Number.isFinite(value)) field('started_at_unix_ms', value) }} /></label>
       <label>Frequency MHz<input type="number" min="0.000001" step="0.000001" value={draft.frequency_hz == null ? '' : draft.frequency_hz / 1e6} onChange={event => field('frequency_hz', event.target.value ? Math.round(Number(event.target.value) * 1e6) : null)} /></label>
       <label>RST sent<input maxLength={16} value={draft.rst_sent} onChange={event => field('rst_sent', event.target.value)} /></label>

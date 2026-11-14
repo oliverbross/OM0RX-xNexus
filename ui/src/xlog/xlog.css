@@ -65,3 +65,15 @@
 .xn-history { padding-bottom: var(--space-4); margin-bottom: var(--space-4); border-bottom: 1px solid var(--border); }
 .xn-history-matrix { display: flex; gap: var(--space-3); flex-wrap: wrap; }
 .xn-qso-form textarea { min-height: 60px; resize: vertical; }
+.xn-world svg { width: 100%; height: auto; border: 1px solid var(--border); border-radius: var(--radius-sm); }
+.xn-world-ocean { fill: var(--bg); }
+.xn-world-land { fill: var(--border); stroke: var(--text-dim); stroke-width: .3; }
+.xn-world-grid { fill: none; stroke: var(--text-dim); stroke-width: .35; opacity: .4; }
+.xn-world-spot { cursor: pointer; }
+.xn-world-spot circle { fill: currentColor; stroke: var(--bg); stroke-width: 1.5; }
+.xn-world-spot text { fill: var(--text); font: 14px var(--font-mono); stroke: var(--bg); stroke-width: 3; paint-order: stroke; }
+.xn-world-needed { color: var(--accent); }
+.xn-world-worked { color: var(--text-dim); }
+.xn-world-unknown { color: var(--state-warn); }
+.xn-world-spot:focus-visible circle { stroke: var(--text); stroke-width: 3; }
+.xn-world-legend { display: flex; flex-wrap: wrap; gap: var(--space-3); font-size: var(--fs-label); }
