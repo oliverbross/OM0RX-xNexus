@@ -29,6 +29,12 @@
 # To add a name the check reports: confirm the app's minimum macOS exports it for that
 # architecture (the SDK's .tbd files, or the API's availability in its header), add it in sorted
 # order, and say in the commit how it was checked. One Mach-O symbol per line, as nm prints it.
+# OM0RX-xNexus bundled Hamlib additions, reviewed 2026-11-14 for the fork's
+# macOS 14.0 minimum. The original list covered the application executable;
+# check-macho-bundle also checks the bundled Hamlib library and four tools.
+# Apple macOS 14.0 release-pinned source/aliases and SDK availability evidence:
+# docs/xlog/MACOS_SYMBOL_REVIEW.md
+# docs/xlog/evidence/macos-hamlib-imports-20261114.json
 
 _CCRandomGenerateBytes
 __Block_copy
@@ -60,6 +66,7 @@ ___assert_rtn
 ___bzero
 ___chkstk_darwin
 ___cxa_atexit
+___darwin_check_fd_set_overflow
 ___error
 ___exp10
 ___exp10f
@@ -75,10 +82,12 @@ ___stack_chk_guard
 ___stderrp
 ___stdinp
 ___stdoutp
+___strcat_chk
 ___strcpy_chk
 ___strlcat_chk
 ___strlcpy_chk
 ___strncat_chk
+___strncpy_chk
 ___tolower
 ___toupper
 __dispatch_main_q
@@ -100,7 +109,9 @@ _atan
 _atan2
 _atan2f
 _atanf
+_atof
 _atoi
+_atol
 _bind
 _bsearch
 _bzero
@@ -109,9 +120,12 @@ _calloc
 _cexp
 _cexpf
 _cfmakeraw
+_cfsetispeed
+_cfsetospeed
 _chdir
 _chmod
 _chroot
+_clearerr
 _clock
 _clock_gettime
 _close
@@ -126,6 +140,7 @@ _cos
 _cosf
 _cosh
 _coshf
+_ctime
 _dirfd
 _dispatch_async
 _dispatch_async_f
@@ -151,22 +166,35 @@ _expf
 _fchmod
 _fchown
 _fclonefileat
+_fclose
 _fcntl
 _fcopyfile
+_fdopen$DARWIN_EXTSN
 _fdopendir
 _fdopendir$INODE64
 _fegetround
+_feof
+_ferror
 _fflush
+_fgetc
+_fgets
+_fileno
 _flock
 _fma
 _fmod
 _fmodf
+_fopen
+_fopen$DARWIN_EXTSN
 _fork
 _fprintf
+_fputc
+_fputs
+_fread
 _free
 _freeaddrinfo
 _freeifaddrs
 _freelocale
+_fscanf
 _fsctl
 _fsetattrlist
 _fstat
@@ -189,6 +217,8 @@ _geteuid
 _getgid
 _gethostuuid
 _getifaddrs
+_getnameinfo
+_getopt_long
 _getpagesize
 _getpeername
 _getpid
@@ -197,10 +227,15 @@ _getsockname
 _getsockopt
 _gettimeofday
 _getuid
+_glob
+_gmtime_r
 _grantpt
 _hypot
 _hypotf
 _if_nametoindex
+_inet_addr
+_inet_ntop
+_inet_pton
 _ioctl
 _kevent
 _kill
@@ -223,6 +258,7 @@ _lseek
 _lstat
 _lstat$INODE64
 _lutimes
+_mach_absolute_time
 _mach_timebase_info
 _malloc
 _malloc_create_zone
@@ -240,6 +276,7 @@ _memset
 _memset_pattern16
 _mkdir
 _mkostemp
+_mkstemp
 _mmap
 _mprotect
 _munmap
@@ -249,7 +286,10 @@ _open
 _openat
 _opendir
 _opendir$INODE64
+_optarg
+_optind
 _pause
+_perror
 _pipe
 _poll
 _posix_memalign
@@ -269,7 +309,9 @@ _pread
 _printf
 _pthread_attr_destroy
 _pthread_attr_init
+_pthread_attr_setdetachstate
 _pthread_attr_setstacksize
+_pthread_cancel
 _pthread_cond_broadcast
 _pthread_cond_destroy
 _pthread_cond_init
@@ -280,6 +322,7 @@ _pthread_cond_wait
 _pthread_create
 _pthread_detach
 _pthread_equal
+_pthread_exit
 _pthread_get_stackaddr_np
 _pthread_get_stacksize_np
 _pthread_getspecific
@@ -310,6 +353,7 @@ _puts
 _putwc
 _pwrite
 _qsort
+_rand
 _random
 _read
 _readdir_r
@@ -319,17 +363,22 @@ _realloc
 _realpath$DARWIN_EXTSN
 _recv
 _recvfrom
+_remove
 _rename
 _rmdir
+_scanf
 _sched_yield
+_select$DARWIN_EXTSN
 _send
 _sendto
 _setgid
 _setgroups
+_setlocale
 _setpgid
 _setsid
 _setsockopt
 _setuid
+_setvbuf
 _setxattr
 _shutdown
 _sigaction
@@ -341,21 +390,29 @@ _sin
 _sinf
 _sinh
 _sinhf
+_sleep
 _snprintf
 _socket
+_socketpair
 _sprintf
+_srand
 _srandomdev
+_sscanf
 _stat
 _stat$INODE64
 _statfs
 _statfs$INODE64
 _statvfs
+_strcasecmp
+_strcat
 _strchr
 _strcmp
 _strcpy
 _strcspn
 _strdup
+_strerror
 _strerror_r
+_strftime
 _strlen
 _strncasecmp
 _strncat
@@ -365,14 +422,19 @@ _strndup
 _strnlen
 _strrchr
 _strspn
+_strstr
 _strtod
 _strtof
 _strtok
+_strtok_r
+_strtol
 _strtold
+_strtoll
 _strtoull
 _symlink
 _sysconf
 _sysctlbyname
+_system
 _tan
 _tanf
 _tanh
@@ -387,7 +449,9 @@ _unlink
 _unlinkat
 _unlockpt
 _uselocale
+_usleep
 _utimes
+_vfprintf
 _vsnprintf
 _waitpid
 _write
