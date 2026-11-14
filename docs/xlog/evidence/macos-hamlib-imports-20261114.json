@@ -1,0 +1,633 @@
+{
+  "releaseManifest": {
+    "url": "https://raw.githubusercontent.com/apple-oss-distributions/distribution-macOS/macos-140/release.json",
+    "sha256": "6a8ba5836827bfdb7d63d7f11dd442794398d23d2b7393f4d8750c302beed109"
+  },
+  "projects": [
+    {
+      "project": "Libc",
+      "macos14Tag": "Libc-1583.0.14",
+      "treeSha": "c5a3293354e22262702a3add5b2dfc9bb0b93b85",
+      "sourceUrl": "https://github.com/apple-oss-distributions/Libc/tree/Libc-1583.0.14",
+      "archiveSha256": "90964e1c15cf7c6ec63d39070fd5d96e4bf96f678744f69d275783b5c09acc7a"
+    },
+    {
+      "project": "Libinfo",
+      "macos14Tag": "Libinfo-583.0.1",
+      "treeSha": "e8168bbe0d36a521c12bfb0514e41480ca1c1038",
+      "sourceUrl": "https://github.com/apple-oss-distributions/Libinfo/tree/Libinfo-583.0.1",
+      "archiveSha256": "80a5ed051b4795eeb8abb54044be45c339110a0db35ddae1c590c0ba0d672b15"
+    },
+    {
+      "project": "libpthread",
+      "macos14Tag": "libpthread-519",
+      "treeSha": "d8c4e3c212553d3e0f5d76bb7d45a8acd61302dc",
+      "sourceUrl": "https://github.com/apple-oss-distributions/libpthread/tree/libpthread-519",
+      "archiveSha256": "e442b88b061ebb56e975b86eed9a52445d12841c0e2734d666a1c19d141ad3c4"
+    },
+    {
+      "project": "Libsystem",
+      "macos14Tag": "Libsystem-1336",
+      "treeSha": "2d1997e5d5ed9001012144a4d2ed92caa493d528",
+      "sourceUrl": "https://github.com/apple-oss-distributions/Libsystem/tree/Libsystem-1336",
+      "archiveSha256": "be367827a726c00e9ce9dc4da1a840fe9078ad15bf78cb207db520cc3b090c99"
+    },
+    {
+      "project": "xnu",
+      "macos14Tag": "xnu-10002.1.13",
+      "treeSha": "1031c584a5e37aff177559b9f69dbd3c8c3fd30a",
+      "sourceUrl": "https://github.com/apple-oss-distributions/xnu/tree/xnu-10002.1.13"
+    }
+  ],
+  "symbols": [
+    {
+      "symbol": "___darwin_check_fd_set_overflow",
+      "file": "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/sys/_types/_fd_def.h",
+      "sha256": "feea8c758abe49372bcf3ab7dd9b0391d02269e4a531ef838895e961e9f43f30",
+      "lines": [
+        54
+      ],
+      "basis": "Apple SDK explicitly declares availability since macOS 11.0"
+    },
+    {
+      "symbol": "___strcat_chk",
+      "file": "Libc-Libc-1583.0.14/secure/strcat_chk.c",
+      "sha256": "e51255392b031bd7db7c05c33c85f4bd76218ea861bc9a6ced61ca6a494759c0",
+      "lines": [
+        30
+      ],
+      "basis": "Apple macOS 14.0 release-pinned declaration/implementation"
+    },
+    {
+      "symbol": "___strncpy_chk",
+      "file": "Libc-Libc-1583.0.14/secure/strncpy_chk.c",
+      "sha256": "98874f28ab8227d2c821b57fc4afcb8fbd9181f4e0b4bd96dbde9ac77d6e1b54",
+      "lines": [
+        29
+      ],
+      "basis": "Apple macOS 14.0 release-pinned declaration/implementation"
+    },
+    {
+      "symbol": "_atof",
+      "file": "Libc-Libc-1583.0.14/include/stdlib.h",
+      "sha256": "b6e0fda06f0de3479388859d0587ee2f0796222bfbc447e0e6e0e859a0304901",
+      "lines": [
+        142
+      ],
+      "basis": "Apple macOS 14.0 release-pinned declaration/implementation"
+    },
+    {
+      "symbol": "_atol",
+      "file": "Libc-Libc-1583.0.14/include/stdlib.h",
+      "sha256": "b6e0fda06f0de3479388859d0587ee2f0796222bfbc447e0e6e0e859a0304901",
+      "lines": [
+        144
+      ],
+      "basis": "Apple macOS 14.0 release-pinned declaration/implementation"
+    },
+    {
+      "symbol": "_cfsetispeed",
+      "file": "Libc-Libc-1583.0.14/gen/FreeBSD/termios.c",
+      "sha256": "3986e4c5fd7d8045487ce12d5d3ffc25d06f437802c8466b698cd7946f13bca4",
+      "lines": [
+        158
+      ],
+      "basis": "Apple macOS 14.0 release-pinned declaration/implementation"
+    },
+    {
+      "symbol": "_cfsetospeed",
+      "file": "Libc-Libc-1583.0.14/gen/FreeBSD/termios.c",
+      "sha256": "3986e4c5fd7d8045487ce12d5d3ffc25d06f437802c8466b698cd7946f13bca4",
+      "lines": [
+        150
+      ],
+      "basis": "Apple macOS 14.0 release-pinned declaration/implementation"
+    },
+    {
+      "symbol": "_clearerr",
+      "file": "Libc-Libc-1583.0.14/include/stdio.h",
+      "sha256": "3030943cb407f45f75e9ca3a02c418808d19fad609219180354cce5701e62a70",
+      "lines": [
+        135
+      ],
+      "basis": "Apple macOS 14.0 release-pinned declaration/implementation"
+    },
+    {
+      "symbol": "_ctime",
+      "file": "Libc-Libc-1583.0.14/include/time.h",
+      "sha256": "8d42b1cb3b3b1e62343cd01affd1eb3de203b2523d7a3d3095accced84b73fd2",
+      "lines": [
+        131
+      ],
+      "basis": "Apple macOS 14.0 release-pinned declaration/implementation"
+    },
+    {
+      "symbol": "_fclose",
+      "file": "Libc-Libc-1583.0.14/include/stdio.h",
+      "sha256": "3030943cb407f45f75e9ca3a02c418808d19fad609219180354cce5701e62a70",
+      "lines": [
+        136
+      ],
+      "basis": "Apple macOS 14.0 release-pinned declaration/implementation"
+    },
+    {
+      "symbol": "_fdopen$DARWIN_EXTSN",
+      "file": "Libc-Libc-1583.0.14/include/stdio.h",
+      "sha256": "3030943cb407f45f75e9ca3a02c418808d19fad609219180354cce5701e62a70",
+      "lines": [
+        84,
+        252,
+        257,
+        260
+      ],
+      "basis": "Apple macOS 14.0 release-pinned declaration/implementation"
+    },
+    {
+      "symbol": "_feof",
+      "file": "Libc-Libc-1583.0.14/include/stdio.h",
+      "sha256": "3030943cb407f45f75e9ca3a02c418808d19fad609219180354cce5701e62a70",
+      "lines": [
+        137
+      ],
+      "basis": "Apple macOS 14.0 release-pinned declaration/implementation"
+    },
+    {
+      "symbol": "_ferror",
+      "file": "Libc-Libc-1583.0.14/include/stdio.h",
+      "sha256": "3030943cb407f45f75e9ca3a02c418808d19fad609219180354cce5701e62a70",
+      "lines": [
+        138
+      ],
+      "basis": "Apple macOS 14.0 release-pinned declaration/implementation"
+    },
+    {
+      "symbol": "_fgetc",
+      "file": "Libc-Libc-1583.0.14/include/stdio.h",
+      "sha256": "3030943cb407f45f75e9ca3a02c418808d19fad609219180354cce5701e62a70",
+      "lines": [
+        140
+      ],
+      "basis": "Apple macOS 14.0 release-pinned declaration/implementation"
+    },
+    {
+      "symbol": "_fgets",
+      "file": "Libc-Libc-1583.0.14/include/stdio.h",
+      "sha256": "3030943cb407f45f75e9ca3a02c418808d19fad609219180354cce5701e62a70",
+      "lines": [
+        142,
+        196
+      ],
+      "basis": "Apple macOS 14.0 release-pinned declaration/implementation"
+    },
+    {
+      "symbol": "_fileno",
+      "file": "Libc-Libc-1583.0.14/include/stdio.h",
+      "sha256": "3030943cb407f45f75e9ca3a02c418808d19fad609219180354cce5701e62a70",
+      "lines": [
+        264
+      ],
+      "basis": "Apple macOS 14.0 release-pinned declaration/implementation"
+    },
+    {
+      "symbol": "_fopen",
+      "file": "Libc-Libc-1583.0.14/include/stdio.h",
+      "sha256": "3030943cb407f45f75e9ca3a02c418808d19fad609219180354cce5701e62a70",
+      "lines": [
+        144,
+        149,
+        152
+      ],
+      "basis": "Apple macOS 14.0 release-pinned declaration/implementation"
+    },
+    {
+      "symbol": "_fopen$DARWIN_EXTSN",
+      "file": "Libc-Libc-1583.0.14/include/stdio.h",
+      "sha256": "3030943cb407f45f75e9ca3a02c418808d19fad609219180354cce5701e62a70",
+      "lines": [
+        144,
+        149,
+        152
+      ],
+      "basis": "Apple macOS 14.0 release-pinned declaration/implementation"
+    },
+    {
+      "symbol": "_fputc",
+      "file": "Libc-Libc-1583.0.14/include/stdio.h",
+      "sha256": "3030943cb407f45f75e9ca3a02c418808d19fad609219180354cce5701e62a70",
+      "lines": [
+        157
+      ],
+      "basis": "Apple macOS 14.0 release-pinned declaration/implementation"
+    },
+    {
+      "symbol": "_fputs",
+      "file": "Libc-Libc-1583.0.14/include/stdio.h",
+      "sha256": "3030943cb407f45f75e9ca3a02c418808d19fad609219180354cce5701e62a70",
+      "lines": [
+        161,
+        164
+      ],
+      "basis": "Apple macOS 14.0 release-pinned declaration/implementation"
+    },
+    {
+      "symbol": "_fread",
+      "file": "Libc-Libc-1583.0.14/include/stdio.h",
+      "sha256": "3030943cb407f45f75e9ca3a02c418808d19fad609219180354cce5701e62a70",
+      "lines": [
+        167
+      ],
+      "basis": "Apple macOS 14.0 release-pinned declaration/implementation"
+    },
+    {
+      "symbol": "_fscanf",
+      "file": "Libc-Libc-1583.0.14/include/stdio.h",
+      "sha256": "3030943cb407f45f75e9ca3a02c418808d19fad609219180354cce5701e62a70",
+      "lines": [
+        179
+      ],
+      "basis": "Apple macOS 14.0 release-pinned declaration/implementation"
+    },
+    {
+      "symbol": "_getnameinfo",
+      "file": "Libinfo-Libinfo-583.0.1/lookup.subproj/libinfo.c",
+      "sha256": "7dbe0f84c87973cf59c4535975b627af53fe1b833505f8fa750dc21e5bde0e08",
+      "lines": [
+        2914
+      ],
+      "basis": "Apple macOS 14.0 release-pinned declaration/implementation"
+    },
+    {
+      "symbol": "_getopt_long",
+      "file": "Libc-Libc-1583.0.14/include/getopt.h",
+      "sha256": "f1e4aaea136da188d6cb2eefe4f94320695a9d264a3b00a7e04d56ea8da2f888",
+      "lines": [
+        47,
+        69
+      ],
+      "basis": "Apple macOS 14.0 release-pinned declaration/implementation"
+    },
+    {
+      "symbol": "_glob",
+      "file": "Libc-Libc-1583.0.14/include/glob.h",
+      "sha256": "e373769e88b4350c5163f91ada84fd97b55674642f7e0e0abfa2851de6cb8169",
+      "lines": [
+        32,
+        33,
+        52,
+        54,
+        65,
+        94,
+        119,
+        120,
+        123,
+        124
+      ],
+      "basis": "Apple macOS 14.0 release-pinned declaration/implementation"
+    },
+    {
+      "symbol": "_gmtime_r",
+      "file": "Libc-Libc-1583.0.14/include/time.h",
+      "sha256": "8d42b1cb3b3b1e62343cd01affd1eb3de203b2523d7a3d3095accced84b73fd2",
+      "lines": [
+        172
+      ],
+      "basis": "Apple macOS 14.0 release-pinned declaration/implementation"
+    },
+    {
+      "symbol": "_inet_addr",
+      "file": "Libc-Libc-1583.0.14/net/FreeBSD/inet_addr.c",
+      "sha256": "7a80c6ec480141d5f2919206ef6d5b170c12ffe3f8b0d502cf1563f8e74e9b6a",
+      "lines": [
+        71,
+        72,
+        79,
+        98,
+        110,
+        227,
+        228
+      ],
+      "basis": "Apple macOS 14.0 release-pinned declaration/implementation"
+    },
+    {
+      "symbol": "_inet_ntop",
+      "file": "Libc-Libc-1583.0.14/net/inet_ntop.c",
+      "sha256": "f217b1fbc94eb9913bcc16a8ac0f9b162a322d98acf5dfb0eb87dfa18be32b1d",
+      "lines": [
+        56
+      ],
+      "basis": "Apple macOS 14.0 release-pinned declaration/implementation"
+    },
+    {
+      "symbol": "_inet_pton",
+      "file": "Libc-Libc-1583.0.14/net/inet_pton.c",
+      "sha256": "7c3c5010cf0a119e522f5b25d192d52da255ccbe587db59707eb10b23671b5a1",
+      "lines": [
+        19,
+        74,
+        85
+      ],
+      "basis": "Apple macOS 14.0 release-pinned declaration/implementation"
+    },
+    {
+      "symbol": "_mach_absolute_time",
+      "file": "xnu-xnu-10002.1.13/libsyscall/wrappers/mach_absolute_time.s",
+      "sha256": "1b2251edb17a5b2d5aab5398929c54a0f8feaed2d4b9bd3452748ec340aec053",
+      "lines": [
+        34,
+        50,
+        51,
+        102,
+        118,
+        119,
+        177,
+        178,
+        183,
+        188,
+        195,
+        201,
+        202,
+        208,
+        209,
+        234,
+        250,
+        251,
+        259,
+        261,
+        263,
+        270,
+        275,
+        283,
+        284
+      ],
+      "basis": "Apple macOS 14.0 release-pinned declaration/implementation"
+    },
+    {
+      "symbol": "_mkstemp",
+      "file": "Libc-Libc-1583.0.14/include/stdlib.h",
+      "sha256": "b6e0fda06f0de3479388859d0587ee2f0796222bfbc447e0e6e0e859a0304901",
+      "lines": [
+        239,
+        242
+      ],
+      "basis": "Apple macOS 14.0 release-pinned declaration/implementation"
+    },
+    {
+      "symbol": "_optarg",
+      "file": "Libc-Libc-1583.0.14/include/unistd.h",
+      "sha256": "5736dcb7a9ecffe5e9532dcff7270849d5237c529cf85c81abd2a0ef9ab22478",
+      "lines": [
+        580
+      ],
+      "basis": "Apple macOS 14.0 release-pinned declaration/implementation"
+    },
+    {
+      "symbol": "_optind",
+      "file": "Libc-Libc-1583.0.14/include/unistd.h",
+      "sha256": "5736dcb7a9ecffe5e9532dcff7270849d5237c529cf85c81abd2a0ef9ab22478",
+      "lines": [
+        581
+      ],
+      "basis": "Apple macOS 14.0 release-pinned declaration/implementation"
+    },
+    {
+      "symbol": "_perror",
+      "file": "Libc-Libc-1583.0.14/include/stdio.h",
+      "sha256": "3030943cb407f45f75e9ca3a02c418808d19fad609219180354cce5701e62a70",
+      "lines": [
+        200,
+        428
+      ],
+      "basis": "Apple macOS 14.0 release-pinned declaration/implementation"
+    },
+    {
+      "symbol": "_pthread_attr_setdetachstate",
+      "file": "libpthread-libpthread-519/src/pthread.c",
+      "sha256": "79063c681e77f3cc86d6e239b5cc5a080cb9688a9b52966ff08b3d58d4c5b0ca",
+      "lines": [
+        333
+      ],
+      "basis": "Apple macOS 14.0 release-pinned declaration/implementation"
+    },
+    {
+      "symbol": "_pthread_cancel",
+      "file": "libpthread-libpthread-519/src/pthread_cancelable.c",
+      "sha256": "982676f930ec0d7a3feb6279d653c8dd431ddd6b35be52b242169140bb214fda",
+      "lines": [
+        97,
+        456
+      ],
+      "basis": "Apple macOS 14.0 release-pinned declaration/implementation"
+    },
+    {
+      "symbol": "_pthread_exit",
+      "file": "libpthread-libpthread-519/src/pthread.c",
+      "sha256": "79063c681e77f3cc86d6e239b5cc5a080cb9688a9b52966ff08b3d58d4c5b0ca",
+      "lines": [
+        788,
+        1694,
+        1698
+      ],
+      "basis": "Apple macOS 14.0 release-pinned declaration/implementation"
+    },
+    {
+      "symbol": "_rand",
+      "file": "Libc-Libc-1583.0.14/include/stdlib.h",
+      "sha256": "b6e0fda06f0de3479388859d0587ee2f0796222bfbc447e0e6e0e859a0304901",
+      "lines": [
+        179
+      ],
+      "basis": "Apple macOS 14.0 release-pinned declaration/implementation"
+    },
+    {
+      "symbol": "_remove",
+      "file": "Libc-Libc-1583.0.14/include/stdio.h",
+      "sha256": "3030943cb407f45f75e9ca3a02c418808d19fad609219180354cce5701e62a70",
+      "lines": [
+        205
+      ],
+      "basis": "Apple macOS 14.0 release-pinned declaration/implementation"
+    },
+    {
+      "symbol": "_scanf",
+      "file": "Libc-Libc-1583.0.14/include/stdio.h",
+      "sha256": "3030943cb407f45f75e9ca3a02c418808d19fad609219180354cce5701e62a70",
+      "lines": [
+        208
+      ],
+      "basis": "Apple macOS 14.0 release-pinned declaration/implementation"
+    },
+    {
+      "symbol": "_select$DARWIN_EXTSN",
+      "file": "xnu-xnu-10002.1.13/libsyscall/Platforms/MacOSX/arm64/syscall.map",
+      "sha256": "241d04fbbc8ab08431b803aa98e09e373717f79681ab43c4e2b222110eab12dd",
+      "lines": [
+        24,
+        25
+      ],
+      "basis": "Apple macOS 14.0 release-pinned declaration/implementation"
+    },
+    {
+      "symbol": "_setlocale",
+      "file": "Libc-Libc-1583.0.14/include/locale.h",
+      "sha256": "280067c9f446ff9ca65a0668d54142775425f4949793e86f1b2d2aee30792133",
+      "lines": [
+        53
+      ],
+      "basis": "Apple macOS 14.0 release-pinned declaration/implementation"
+    },
+    {
+      "symbol": "_setvbuf",
+      "file": "Libc-Libc-1583.0.14/include/stdio.h",
+      "sha256": "3030943cb407f45f75e9ca3a02c418808d19fad609219180354cce5701e62a70",
+      "lines": [
+        96,
+        102,
+        103,
+        104,
+        210
+      ],
+      "basis": "Apple macOS 14.0 release-pinned declaration/implementation"
+    },
+    {
+      "symbol": "_sleep",
+      "file": "Libc-Libc-1583.0.14/include/unistd.h",
+      "sha256": "5736dcb7a9ecffe5e9532dcff7270849d5237c529cf85c81abd2a0ef9ab22478",
+      "lines": [
+        512,
+        516
+      ],
+      "basis": "Apple macOS 14.0 release-pinned declaration/implementation"
+    },
+    {
+      "symbol": "_socketpair",
+      "file": "xnu-xnu-10002.1.13/libsyscall/Platforms/MacOSX/arm64/syscall.map",
+      "sha256": "241d04fbbc8ab08431b803aa98e09e373717f79681ab43c4e2b222110eab12dd",
+      "lines": [
+        54
+      ],
+      "basis": "Apple macOS 14.0 release-pinned declaration/implementation"
+    },
+    {
+      "symbol": "_srand",
+      "file": "Libc-Libc-1583.0.14/include/stdlib.h",
+      "sha256": "b6e0fda06f0de3479388859d0587ee2f0796222bfbc447e0e6e0e859a0304901",
+      "lines": [
+        181
+      ],
+      "basis": "Apple macOS 14.0 release-pinned declaration/implementation"
+    },
+    {
+      "symbol": "_sscanf",
+      "file": "Libc-Libc-1583.0.14/include/stdio.h",
+      "sha256": "3030943cb407f45f75e9ca3a02c418808d19fad609219180354cce5701e62a70",
+      "lines": [
+        218,
+        464
+      ],
+      "basis": "Apple macOS 14.0 release-pinned declaration/implementation"
+    },
+    {
+      "symbol": "_strcasecmp",
+      "file": "Libc-Libc-1583.0.14/include/strings.h",
+      "sha256": "f774fe5d44f261c846bf597df2c5c55cf758c4666cc07b31d080fbc1d2dd6689",
+      "lines": [
+        78
+      ],
+      "basis": "Apple macOS 14.0 release-pinned declaration/implementation"
+    },
+    {
+      "symbol": "_strcat",
+      "file": "Libc-Libc-1583.0.14/include/string.h",
+      "sha256": "23cdb5790e5c1a61a53dd0142d8b0bd582fa307e69b3dd1fb578c72fd2156082",
+      "lines": [
+        76
+      ],
+      "basis": "Apple macOS 14.0 release-pinned declaration/implementation"
+    },
+    {
+      "symbol": "_strerror",
+      "file": "Libc-Libc-1583.0.14/include/string.h",
+      "sha256": "23cdb5790e5c1a61a53dd0142d8b0bd582fa307e69b3dd1fb578c72fd2156082",
+      "lines": [
+        88,
+        91
+      ],
+      "basis": "Apple macOS 14.0 release-pinned declaration/implementation"
+    },
+    {
+      "symbol": "_strftime",
+      "file": "Libc-Libc-1583.0.14/include/time.h",
+      "sha256": "8d42b1cb3b3b1e62343cd01affd1eb3de203b2523d7a3d3095accced84b73fd2",
+      "lines": [
+        148,
+        151
+      ],
+      "basis": "Apple macOS 14.0 release-pinned declaration/implementation"
+    },
+    {
+      "symbol": "_strstr",
+      "file": "Libc-Libc-1583.0.14/include/string.h",
+      "sha256": "23cdb5790e5c1a61a53dd0142d8b0bd582fa307e69b3dd1fb578c72fd2156082",
+      "lines": [
+        101
+      ],
+      "basis": "Apple macOS 14.0 release-pinned declaration/implementation"
+    },
+    {
+      "symbol": "_strtok_r",
+      "file": "Libc-Libc-1583.0.14/include/string.h",
+      "sha256": "23cdb5790e5c1a61a53dd0142d8b0bd582fa307e69b3dd1fb578c72fd2156082",
+      "lines": [
+        116
+      ],
+      "basis": "Apple macOS 14.0 release-pinned declaration/implementation"
+    },
+    {
+      "symbol": "_strtol",
+      "file": "Libc-Libc-1583.0.14/include/stdlib.h",
+      "sha256": "b6e0fda06f0de3479388859d0587ee2f0796222bfbc447e0e6e0e859a0304901",
+      "lines": [
+        185
+      ],
+      "basis": "Apple macOS 14.0 release-pinned declaration/implementation"
+    },
+    {
+      "symbol": "_strtoll",
+      "file": "Libc-Libc-1583.0.14/include/stdlib.h",
+      "sha256": "b6e0fda06f0de3479388859d0587ee2f0796222bfbc447e0e6e0e859a0304901",
+      "lines": [
+        190
+      ],
+      "basis": "Apple macOS 14.0 release-pinned declaration/implementation"
+    },
+    {
+      "symbol": "_system",
+      "file": "Libc-Libc-1583.0.14/include/stdlib.h",
+      "sha256": "b6e0fda06f0de3479388859d0587ee2f0796222bfbc447e0e6e0e859a0304901",
+      "lines": [
+        206,
+        209
+      ],
+      "basis": "Apple macOS 14.0 release-pinned declaration/implementation"
+    },
+    {
+      "symbol": "_usleep",
+      "file": "Libc-Libc-1583.0.14/include/unistd.h",
+      "sha256": "5736dcb7a9ecffe5e9532dcff7270849d5237c529cf85c81abd2a0ef9ab22478",
+      "lines": [
+        745,
+        748
+      ],
+      "basis": "Apple macOS 14.0 release-pinned declaration/implementation"
+    },
+    {
+      "symbol": "_vfprintf",
+      "file": "Libc-Libc-1583.0.14/include/stdio.h",
+      "sha256": "3030943cb407f45f75e9ca3a02c418808d19fad609219180354cce5701e62a70",
+      "lines": [
+        228
+      ],
+      "basis": "Apple macOS 14.0 release-pinned declaration/implementation"
+    }
+  ]
+}
