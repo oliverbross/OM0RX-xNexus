@@ -57,6 +57,19 @@ fn server(replies: Vec<String>) -> (BridgeClient, thread::JoinHandle<Vec<String>
                 stream.read_exact(&mut byte).unwrap();
                 request.push(byte[0]);
             }
+            let header_text = String::from_utf8(request.clone()).unwrap();
+            let content_len = header_text
+                .lines()
+                .find_map(|line| {
+                    line.to_ascii_lowercase()
+                        .strip_prefix("content-length:")
+                        .map(|v| v.trim().parse::<usize>().unwrap())
+                })
+                .unwrap_or(0);
+            assert!(content_len <= 65536);
+            let mut body = vec![0; content_len];
+            stream.read_exact(&mut body).unwrap();
+            request.extend_from_slice(&body);
             requests.push(String::from_utf8(request).unwrap());
             // A client rejecting the length may close before the response finishes.
             let _ = stream.write_all(reply.as_bytes());
@@ -67,6 +80,317 @@ fn server(replies: Vec<String>) -> (BridgeClient, thread::JoinHandle<Vec<String>
         BridgeClient::new(&format!("http://{address}"), &token()).unwrap(),
         thread,
     )
+}
+
+const REQUEST_ID: &str = "00000000-0000-4000-8000-000000000001";
+fn control_hello() -> Value {
+    let mut h = hello();
+    h["capabilities"] = json!(["snapshot.read", "station.tune", "rotor.point", "rotor.stop"]);
+    h
+}
+fn receipt(status: &str) -> Value {
+    json!({"request_id":REQUEST_ID,"server_instance":"synthetic-server","workspace_id":"synthetic-workspace","status":status,"message":null})
+}
+fn tune() -> Command {
+    Command::StationTune {
+        radio_id: "fake-radio".into(),
+        frequency_hz: 14075000,
+        mode: "USB".into(),
+    }
+}
+
+#[test]
+fn action_is_bound_to_identity_revision_and_observed_target() {
+    let (mut c, s) = server(vec![
+        json_response(control_hello()),
+        json_response(snapshot()),
+        json_response(receipt("applied")),
+    ]);
+    c.connect().unwrap();
+    c.poll().unwrap();
+    assert_eq!(
+        c.command(REQUEST_ID, tune()).unwrap().status,
+        CommandStatus::Applied
+    );
+    assert_eq!(c.snapshot().unwrap_err(), Error::Disconnected);
+    let requests = s.join().unwrap();
+    let action = &requests[2];
+    assert!(action.starts_with("POST /xlog/v1/command HTTP/1.1"));
+    let value: Value = serde_json::from_str(action.split("\r\n\r\n").nth(1).unwrap()).unwrap();
+    assert_eq!(value["workspace_id"], "synthetic-workspace");
+    assert_eq!(value["expected_revision"], 5);
+    assert_eq!(value["command"]["kind"], "station.tune");
+    assert_eq!(value["command"]["radio_id"], "fake-radio");
+}
+#[test]
+fn actions_require_capability_and_fresh_non_transmitting_target() {
+    let (mut c, s) = server(vec![json_response(hello()), json_response(snapshot())]);
+    c.connect().unwrap();
+    c.poll().unwrap();
+    assert_eq!(
+        c.command(REQUEST_ID, tune()).unwrap_err(),
+        Error::Capability
+    );
+    s.join().unwrap();
+    for (key, value) in [
+        ("radio_id", json!("other")),
+        ("transmitting", json!(true)),
+        ("transmitting", Value::Null),
+        ("connected", json!(false)),
+    ] {
+        let mut snap = snapshot();
+        snap["station"][key] = value;
+        let (mut c, s) = server(vec![json_response(control_hello()), json_response(snap)]);
+        c.connect().unwrap();
+        c.poll().unwrap();
+        assert_eq!(c.command(REQUEST_ID, tune()).unwrap_err(), Error::Invalid);
+        s.join().unwrap();
+    }
+}
+#[test]
+fn stale_action_is_refused_but_independent_rotor_stop_is_sent() {
+    let (mut c, s) = server(vec![
+        json_response(control_hello()),
+        json_response(snapshot()),
+        json_response(receipt("observed")),
+    ]);
+    c.connect().unwrap();
+    let stop = c.stop_handle().unwrap();
+    c.poll().unwrap();
+    c.observation.as_mut().unwrap().received -= Duration::from_secs(11);
+    assert_eq!(c.command(REQUEST_ID, tune()).unwrap_err(), Error::Stale);
+    assert_eq!(
+        stop.stop_rotor(REQUEST_ID, "fake-rotor").unwrap().status,
+        CommandStatus::Observed
+    );
+    let requests = s.join().unwrap();
+    let value: Value = serde_json::from_str(requests[2].split("\r\n\r\n").nth(1).unwrap()).unwrap();
+    assert_eq!(value["expected_revision"], 0);
+    assert_eq!(value["command"]["kind"], "rotor.stop");
+}
+#[test]
+fn malformed_or_wrong_identity_action_reply_is_uncertain_never_retried() {
+    for mut r in [receipt("observed"), receipt("invalid-status")] {
+        r["workspace_id"] = json!("other");
+        let (mut c, s) = server(vec![
+            json_response(control_hello()),
+            json_response(snapshot()),
+            json_response(r),
+        ]);
+        c.connect().unwrap();
+        c.poll().unwrap();
+        assert_eq!(
+            c.command(REQUEST_ID, tune()).unwrap_err(),
+            Error::OutcomeUnknown
+        );
+        assert_eq!(c.snapshot().unwrap_err(), Error::Disconnected);
+        assert_eq!(s.join().unwrap().len(), 3);
+    }
+}
+#[test]
+fn receipt_lookup_distinguishes_missing_from_rejected_and_validates_identity() {
+    let (mut c, s) = server(vec![
+        json_response(control_hello()),
+        "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".into(),
+        json_response(receipt("rejected")),
+    ]);
+    c.connect().unwrap();
+    assert!(c.receipt(REQUEST_ID).unwrap().is_none());
+    assert_eq!(
+        c.receipt(REQUEST_ID).unwrap().unwrap().status,
+        CommandStatus::Rejected
+    );
+    let requests = s.join().unwrap();
+    assert!(requests[1].starts_with(&format!("GET /xlog/v1/receipt/{REQUEST_ID} ")));
+}
+#[test]
+fn invalid_action_request_id_and_out_of_range_rotor_never_leave_client() {
+    let (mut c, s) = server(vec![
+        json_response(control_hello()),
+        json_response(snapshot()),
+    ]);
+    c.connect().unwrap();
+    let stop = c.stop_handle().unwrap();
+    c.poll().unwrap();
+    assert_eq!(
+        c.command(
+            REQUEST_ID,
+            Command::RotorPoint {
+                rotor_id: "fake-rotor".into(),
+                azimuth_deg: 360.0
+            }
+        )
+        .unwrap_err(),
+        Error::Invalid
+    );
+    assert_eq!(
+        stop.stop_rotor("../../secrets", "fake-rotor").unwrap_err(),
+        Error::Invalid
+    );
+    assert_eq!(c.command("bad", tune()).unwrap_err(), Error::Invalid);
+    s.join().unwrap();
+}
+
+struct QueueFixture(std::path::PathBuf);
+impl QueueFixture {
+    fn new() -> Self {
+        let path = std::env::temp_dir().join(format!(
+            "xnexus-delivery-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir(&path).unwrap();
+        Self(path)
+    }
+}
+impl Drop for QueueFixture {
+    fn drop(&mut self) {
+        for item in std::fs::read_dir(&self.0).unwrap() {
+            let path = item.unwrap().path();
+            assert_eq!(path.parent(), Some(self.0.as_path()));
+            std::fs::remove_file(path).unwrap();
+        }
+        std::fs::remove_dir(&self.0).unwrap();
+    }
+}
+fn log_hello() -> Value {
+    let mut h = hello();
+    h["capabilities"] = json!(["snapshot.read", "logbook.write"]);
+    h
+}
+fn queued_draft() -> outbox::LogbookMutation {
+    outbox::LogbookMutation::Create {
+        qso: outbox::QsoDraft {
+            contact_id: REQUEST_ID.into(),
+            callsign: "W1AW".into(),
+            band: "20m".into(),
+            mode: "FT8".into(),
+            started_at_unix_ms: 1700000000000,
+            frequency_hz: Some(14074000),
+            rst_sent: "-10".into(),
+            rst_received: "-12".into(),
+            grid: "FN31".into(),
+            comment: "synthetic".into(),
+        },
+    }
+}
+
+#[test]
+fn durable_queue_sends_owner_create_and_retains_terminal_receipt() {
+    let f = QueueFixture::new();
+    let mut queue = outbox::Outbox::open(&f.0).unwrap();
+    queue
+        .enqueue("synthetic-workspace", REQUEST_ID, queued_draft())
+        .unwrap();
+    let (mut c, s) = server(vec![
+        json_response(log_hello()),
+        json_response(snapshot()),
+        json_response(receipt("applied")),
+    ]);
+    c.connect().unwrap();
+    c.poll().unwrap();
+    queue.submit(&mut c, REQUEST_ID).unwrap();
+    assert!(matches!(
+        queue.entries()[0].state,
+        outbox::OutboxState::Settled(_)
+    ));
+    let requests = s.join().unwrap();
+    let body: Value = serde_json::from_str(requests[2].split("\r\n\r\n").nth(1).unwrap()).unwrap();
+    assert_eq!(body["command"]["kind"], "logbook.create");
+    assert_eq!(body["command"]["qso"]["callsign"], "W1AW");
+}
+#[test]
+fn crash_after_dispatch_recovers_by_receipt_without_second_post() {
+    let f = QueueFixture::new();
+    {
+        let mut queue = outbox::Outbox::open(&f.0).unwrap();
+        queue
+            .enqueue("synthetic-workspace", REQUEST_ID, queued_draft())
+            .unwrap();
+        let (mut c, s) = server(vec![
+            json_response(log_hello()),
+            json_response(snapshot()),
+            json_response(json!({"broken":true})),
+        ]);
+        c.connect().unwrap();
+        c.poll().unwrap();
+        assert_eq!(
+            queue.submit(&mut c, REQUEST_ID).unwrap_err(),
+            outbox::DeliveryError::Bridge(Error::OutcomeUnknown)
+        );
+        s.join().unwrap();
+    }
+    let mut queue = outbox::Outbox::open(&f.0).unwrap();
+    let (mut c, s) = server(vec![
+        json_response(log_hello()),
+        json_response(receipt("applied")),
+    ]);
+    c.connect().unwrap();
+    queue.submit(&mut c, REQUEST_ID).unwrap();
+    let requests = s.join().unwrap();
+    assert_eq!(requests.len(), 2);
+    assert!(requests[1].starts_with("GET /xlog/v1/receipt/"));
+}
+#[test]
+fn missing_receipt_needs_separate_explicit_retry_using_same_operation() {
+    let f = QueueFixture::new();
+    let mut queue = outbox::Outbox::open(&f.0).unwrap();
+    queue
+        .enqueue("synthetic-workspace", REQUEST_ID, queued_draft())
+        .unwrap();
+    queue
+        .mark_attempted(REQUEST_ID, "synthetic-workspace")
+        .unwrap();
+    let missing = "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
+    let (mut c, s) = server(vec![
+        json_response(log_hello()),
+        json_response(snapshot()),
+        missing.into(),
+        missing.into(),
+        json_response(receipt("applied")),
+    ]);
+    c.connect().unwrap();
+    c.poll().unwrap();
+    assert_eq!(
+        queue.submit(&mut c, REQUEST_ID).unwrap_err(),
+        outbox::DeliveryError::Queue(outbox::OutboxError::ReceiptRequired)
+    );
+    queue.retry_missing(&mut c, REQUEST_ID).unwrap();
+    let requests = s.join().unwrap();
+    assert_eq!(
+        requests.iter().filter(|r| r.starts_with("POST ")).count(),
+        1
+    );
+    let body: Value = serde_json::from_str(requests[4].split("\r\n\r\n").nth(1).unwrap()).unwrap();
+    assert_eq!(body["request_id"], REQUEST_ID);
+}
+#[test]
+fn wrong_workspace_or_missing_grant_does_not_record_attempt_or_send() {
+    let f = QueueFixture::new();
+    let mut queue = outbox::Outbox::open(&f.0).unwrap();
+    queue
+        .enqueue("synthetic-workspace", REQUEST_ID, queued_draft())
+        .unwrap();
+    let (mut c, s) = server(vec![json_response(hello())]);
+    c.connect().unwrap();
+    assert_eq!(
+        queue.submit(&mut c, REQUEST_ID).unwrap_err(),
+        outbox::DeliveryError::Bridge(Error::Capability)
+    );
+    s.join().unwrap();
+    let mut other = log_hello();
+    other["workspace_id"] = json!("other");
+    let (mut c, s) = server(vec![json_response(other)]);
+    c.connect().unwrap();
+    assert_eq!(
+        queue.submit(&mut c, REQUEST_ID).unwrap_err(),
+        outbox::DeliveryError::Queue(outbox::OutboxError::WorkspaceChanged)
+    );
+    s.join().unwrap();
+    assert_eq!(queue.entries()[0].state, outbox::OutboxState::Pending);
 }
 fn assert_bad_snapshot(value: Value, expected: Error) {
     let (mut client, server) = server(vec![json_response(hello()), json_response(value)]);
@@ -285,6 +609,25 @@ fn needs_evidence_and_valid_observations() {
     assert_bad_snapshot(value, Error::Invalid);
     let mut value = snapshot();
     value["spots"][0]["callsign"] = json!("<script>");
+    assert_bad_snapshot(value, Error::Invalid);
+}
+#[test]
+fn owner_geography_is_preserved_and_invalid_coordinates_are_refused() {
+    let mut value = snapshot();
+    value["spots"][0]["country"] = json!("United States");
+    value["spots"][0]["adif"] = json!(291);
+    value["spots"][0]["latitude"] = json!(41.7);
+    value["spots"][0]["longitude"] = json!(-72.7);
+    value["spots"][0]["call_status"] = json!("worked");
+    let (mut c, s) = server(vec![json_response(hello()), json_response(value.clone())]);
+    c.connect().unwrap();
+    let spot = &c.poll().unwrap().spots[0];
+    assert_eq!(spot.adif, Some(291));
+    assert_eq!(spot.latitude, Some(41.7));
+    assert_eq!(spot.call_status.as_deref(), Some("worked"));
+    assert_eq!(spot.need.status, NeedStatus::Needed);
+    s.join().unwrap();
+    value["spots"][0]["latitude"] = json!(91);
     assert_bad_snapshot(value, Error::Invalid);
 }
 #[test]

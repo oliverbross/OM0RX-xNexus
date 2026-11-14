@@ -1,13 +1,14 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Copyright (C) 2026 OM0RX
-//! Native read-only client for the proposed xLog companion bridge.
+//! Native observation and receive/control client for the xLog companion bridge.
 //!
 //! xLog is the authority. This crate neither opens a log database nor starts
 //! hardware, feeds, a Nexus engine, or a transmitter. A failed or stale poll
 //! removes usable state. Reconnection is explicit and replaces session identity.
 //! HTTP is limited to an explicitly configured IPv4 loopback endpoint, with no
 //! redirects/proxies. Error messages never include payloads, URLs or credentials.
-//! The endpoint is a draft contract, NOT an API available in released xLog.
+//! Controls require explicit advertised capabilities. No transmission API exists.
+//! Availability depends on the companion bridge in the paired xLog build.
 
 use reqwest::{blocking::Client, header, redirect::Policy, Url};
 use serde::{Deserialize, Serialize};
@@ -34,6 +35,8 @@ pub enum Error {
     Revision,
     Stale,
     Disconnected,
+    Capability,
+    OutcomeUnknown,
 }
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -49,6 +52,10 @@ impl fmt::Display for Error {
             Self::Revision => "xLog snapshot revision is inconsistent",
             Self::Stale => "xLog observations are stale",
             Self::Disconnected => "Connect to xLog before requesting observations",
+            Self::Capability => "xLog has not granted this capability",
+            Self::OutcomeUnknown => {
+                "The action outcome is unknown; check its receipt before retrying"
+            }
         })
     }
 }
@@ -104,6 +111,20 @@ pub struct Spot {
     pub observed_at_unix_ms: u64,
     pub source: String,
     pub need: Need,
+    #[serde(default)]
+    pub country: Option<String>,
+    #[serde(default)]
+    pub adif: Option<u32>,
+    #[serde(default)]
+    pub latitude: Option<f64>,
+    #[serde(default)]
+    pub longitude: Option<f64>,
+    #[serde(default)]
+    pub band: Option<String>,
+    #[serde(default)]
+    pub call_status: Option<String>,
+    #[serde(default)]
+    pub dxcc_status: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
@@ -118,6 +139,10 @@ pub struct Snapshot {
     pub rotor: Rotor,
     pub spots: Vec<Spot>,
 }
+
+mod commands;
+pub use commands::{Command, CommandReceipt, CommandStatus, StopClient};
+pub mod outbox;
 
 fn bounded(text: &str, max: usize) -> bool {
     !text.trim().is_empty() && text.len() <= max && !text.chars().any(char::is_control)
@@ -186,6 +211,16 @@ impl Snapshot {
                 || !frequency(spot.frequency_hz)
                 || !bounded(&spot.mode, 32)
                 || !bounded(&spot.source, 256)
+                || spot.country.as_ref().is_some_and(|s| !bounded(s, 128))
+                || spot.band.as_ref().is_some_and(|s| !bounded(s, 32))
+                || spot.call_status.as_ref().is_some_and(|s| !bounded(s, 64))
+                || spot.dxcc_status.as_ref().is_some_and(|s| !bounded(s, 64))
+                || spot
+                    .latitude
+                    .is_some_and(|v| !v.is_finite() || !(-90.0..=90.0).contains(&v))
+                || spot
+                    .longitude
+                    .is_some_and(|v| !v.is_finite() || !(-180.0..=180.0).contains(&v))
                 || spot.observed_at_unix_ms > self.generated_at_unix_ms.saturating_add(2000)
                 || spot.need.reasons.len() > 32
                 || spot.need.reasons.iter().any(|s| !bounded(s, 256))
@@ -280,35 +315,11 @@ impl BridgeClient {
             .get(format!("{}{path}", self.endpoint))
             .send()
             .map_err(|_| Error::Transport)?;
-        if response.status().as_u16() != 200 {
-            return Err(Error::Http(response.status().as_u16()));
-        }
-        if response.content_length().is_some_and(|n| n > max as u64) {
-            return Err(Error::TooLarge);
-        }
-        let content_type = response
-            .headers()
-            .get(header::CONTENT_TYPE)
-            .and_then(|v| v.to_str().ok())
-            .unwrap_or("");
-        if !content_type
-            .split(';')
-            .next()
-            .unwrap_or("")
-            .trim()
-            .eq_ignore_ascii_case("application/json")
-        {
-            return Err(Error::Invalid);
-        }
-        let mut body = Vec::new();
-        response
-            .take(max as u64 + 1)
-            .read_to_end(&mut body)
-            .map_err(|_| Error::Transport)?;
-        if body.len() > max {
-            return Err(Error::TooLarge);
-        }
-        serde_json::from_slice(&body).map_err(|_| Error::Invalid)
+        read_response(response, max)
+    }
+
+    pub fn hello(&self) -> Option<&Hello> {
+        self.hello.as_ref()
     }
 
     /// Explicitly establishes a new identity. Failure leaves no prior session usable.
@@ -346,7 +357,6 @@ impl BridgeClient {
                     return Err(Error::Revision);
                 }
                 if snapshot.revision == old.snapshot.revision {
-                    // Never renew the same snapshot after clock rollback or repeated polling.
                     return Ok(Observation {
                         snapshot,
                         received,
@@ -388,6 +398,41 @@ impl BridgeClient {
         self.hello = None;
         self.observation = None;
     }
+}
+
+fn read_response<T: for<'de> Deserialize<'de>>(
+    response: reqwest::blocking::Response,
+    max: usize,
+) -> Result<T, Error> {
+    if response.status().as_u16() != 200 {
+        return Err(Error::Http(response.status().as_u16()));
+    }
+    if response.content_length().is_some_and(|n| n > max as u64) {
+        return Err(Error::TooLarge);
+    }
+    let content_type = response
+        .headers()
+        .get(header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+    if !content_type
+        .split(';')
+        .next()
+        .unwrap_or("")
+        .trim()
+        .eq_ignore_ascii_case("application/json")
+    {
+        return Err(Error::Invalid);
+    }
+    let mut body = Vec::new();
+    response
+        .take(max as u64 + 1)
+        .read_to_end(&mut body)
+        .map_err(|_| Error::Transport)?;
+    if body.len() > max {
+        return Err(Error::TooLarge);
+    }
+    serde_json::from_slice(&body).map_err(|_| Error::Invalid)
 }
 
 #[cfg(test)]
