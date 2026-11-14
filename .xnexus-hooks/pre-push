@@ -1,0 +1,10 @@
+#!/bin/sh
+set -eu
+case "$2" in
+  https://github.com/oliverbross/OM0RX-xNexus.git|git@github.com:oliverbross/OM0RX-xNexus.git) ;;
+  *) echo 'Refusing push outside OM0RX-xNexus' >&2; exit 1 ;;
+esac
+while read local_ref local_sha remote_ref remote_sha; do
+  case "$remote_ref" in refs/tags/*) echo 'Release tags require the later qualified release workflow' >&2; exit 1;; esac
+done
+git -C "$PWD" diff --check

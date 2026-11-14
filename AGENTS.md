@@ -1,3 +1,24 @@
+# OM0RX-xNexus fork workflow
+
+This is OM0RX's independent derivative of kd9taw/Nexus. The user's instruction
+authorizes developing and pushing completed changes to this fork. Never push to
+upstream. Use project author OM0RX <oliverbross@users.noreply.github.com>, not the
+upstream maintainer's identity. Upstream-specific publishing/identity instructions
+below apply to the upstream project, not to impersonating its maintainer here.
+Use absolute git -C paths, explicit staging, one logical change per commit, and
+push each completed commit immediately. No force push or upstream publication.
+The fork uses .xnexus-hooks/pre-push for its target/source gates; preserve the
+upstream .githooks source unchanged for future merges.
+
+Read docs/xlog/PROJECT_PLAN.md and STATUS.md before integration work. Preserve
+licenses and history. Never open xLog's database, compete for its hardware,
+copy its private credentials, or bypass its station owners. No production UI
+launch during bootstrap. Build qualification is distinct from source tests.
+Keep imported deployment workflows disabled until audited. Tests proportional
+to fork changes are required; report unrun upstream gates explicitly.
+
+---
+
 # Nexus agent entry point
 
 Read [CLAUDE.md](CLAUDE.md) before making changes. It is the shared contributor

@@ -1,3 +1,23 @@
+# OM0RX-xNexus
+
+Standalone derivative of [KD9TAW's Nexus](https://github.com/kd9taw/Nexus), being
+integrated with OM0RX-xLog as the authority for logbook, needs, radio, rotator and
+cluster. Upstream history and attribution are preserved; this is not an upstream
+Nexus release.
+
+**Development bootstrap, not an integrated release.** See the [project plan](docs/xlog/PROJECT_PLAN.md),
+[execution ledger](docs/xlog/STATUS.md), and [draft bridge contract](docs/xlog/PROTOCOL.md).
+The copied upstream desktop is not yet isolated for xLog-connected operation.
+Do not run it against a live station as xNexus. No installer has been produced.
+
+The dependency-light native client lives in `integrations/xlog`; its synthetic
+tests do not require Nexus DSP, a radio, or a production xLog profile.
+
+The remainder of this README is the retained upstream documentation and describes
+upstream Nexus, not completed OM0RX-xLog integration.
+
+---
+
 <div align="center">
 
 <img src="docs/img/nexus-banner.jpg" alt="Nexus — the all-mode amateur radio operations center" width="840" />

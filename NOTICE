@@ -1956,3 +1956,18 @@ code (GPL-3.0). The **full AGPL-3.0 license text ships with the model** at
 `resources/deepcw/LICENSE.AGPL-3.0.txt` (bundled in the installer), so the
 model's license travels with the binary as AGPLv3 §4 requires; the model's
 corresponding source is the upstream e04/deepcw-engine repository above.
+
+
+## OM0RX-xNexus derivative (14 November 2026)
+
+The OM0RX-xNexus fork preserves the Nexus and WSJT-X attribution above.
+New original integration code in integrations/xlog is Copyright (C) 2026 OM0RX,
+GPL-3.0-only. It implements a draft, independent-process xLog protocol; it does
+not incorporate xLog implementation code. Fork documentation and workflow
+changes are identified in Git history.
+
+The reference client uses registry dependencies reqwest, serde and serde_json,
+with exact resolution in integrations/xlog/Cargo.lock. No third-party source
+was copied into that module. Their distribution notices, and all transitive
+notices, must accompany any future shipped binary; this bootstrap ships source
+only and does not claim completion of the desktop dependency/model audit.
