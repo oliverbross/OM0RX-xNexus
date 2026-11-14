@@ -58,3 +58,27 @@ matrix retains it. These tests use LoTW `Y` and do not redefine that policy.
 
 No production log, radio, rotator, installed application or package was changed.
 The source changes are test-only and do not require an application version bump.
+
+## Broader M3 owner inventory
+
+The xLog owner reviewed existing tests at
+`82ba0df513e027bd82699db9236daab467d8d29b`. The following is source review,
+not a new execution claim. It separates existing owner capabilities from fields
+the current companion API actually exports.
+
+| Area | Existing owner evidence | Companion boundary |
+|---|---|---|
+| Portable and special calls | `CountryFactsTests.portableCorpus`, `CTYResolverTests.portableOperatingPrefixPrecedence`, `CountryIntegrationTests.sharedHostSnapshot`, `LiveClusterHistoryTests.portableCallHistory` | Cluster indexes literal calls; history merges selected aliases. `/MM` and `/AM` have explicit no-entity facts. A companion comparison fixture remains needed; do not unify these policies. |
+| Stored DXCC and corrections | `LiveClusterHistoryTests.pjStoredEntityOverride`, `effectiveCountryOverride`, `CTYCorrectionPreviewTests.isolatedPreview`, `CountryIntegrationTests.atomicConflicts` | Storage/correction evidence does not prove a DXCC-changing edit updates both old/new entity needs through the companion path. |
+| Band/mode priorities | `ClusterClassificationTests.testNF3RPatternPreservesBandModeAndConfirmationRules`, `testEntityConfirmationPrefixAndExactCombinationPriority`, plus the executed publication matrix above | Actual New Band, New Mode and New Band+Mode exports need a focused extension to the present matrix. |
+| Confirmation sources | `ClusterClassificationTests.testConfirmationFlagsAndEqslOnlyExclusion`; `OperatingGoalTests.history`; `LocalAwardProgressTests.globalCandidatesAndPositiveWAC` | Paper/LoTW, eQSL and award-specific card evidence are distinct. Paper-Y/LoTW-Y/eQSL-only companion fixtures are pending; X/V remains an explicit owner-policy difference. |
+| Workspace replacement | Executed `PostCommitContactRefreshTests.workspaceFence`, `rejectedRestore`, `shutdownFence`; `CompanionContactTests.ownerHistoryAndReceiptUseWorkspaceIdentityAndUnixMilliseconds` | The 23 exports do not include replacement. Actual replacement export and native host cache-retirement evidence are separate remaining checks. |
+| Satellite contacts | `LogbookTests.satelliteFieldsParticipateInSyncBaseline`; award-specific POTA and QRP DXCC tests | Current cluster classification and companion need keys have no satellite dimension; companion QSO/history DTOs omit satellite fields. Satellite-specific needs are unsupported by this contract. |
+| Contest needs | Python duplicate/statistics and append-scoring tests; `PythonContestLaneTests.testCWOPSOpenOriginalPluginSerialDupeAndScoreThroughNativeBridge` | Current companion rows have no contest session, duplicate or multiplier fields. Normal-log need status must not be presented as contest qualification. |
+| Goals and activation references | `LiveOperatingGoalMethodsTests.retainedProjection`, `LiveOpportunitiesMethodsTests.cachedEvidenceAndHistory`, `clusterProgrammeIdentity`, `islandExpeditions` | Owner functionality exists, but companion rows omit explicit goals/reference need results. A programme tag alone is not evidence that a park/island is needed. |
+
+Satellite, contest, goal and reference needs require explicit additive owner/API
+design, source/age/station identity and tests before UI claims are expanded.
+They are incomplete integration scope, not failures to be hidden by synthesizing
+an independent xNexus award engine. Normal worked/confirmed facts must remain
+separate from sponsor eligibility and credit.
