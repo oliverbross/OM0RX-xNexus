@@ -170,6 +170,9 @@ tested ownership, payload-completion, ordinary-close and data-retention guards.
 Its inert executable NSIS tests do not qualify a real install, upgrade or uninstall.
 Actual merged-config bundling, static audit and isolated installer/application
 acceptance remain required for the new candidate.
+The [silent installer acceptance plan](WINDOWS_INSTALLER_ACCEPTANCE_PLAN.md)
+defines fresh current-user namespace checks, reviewed flags, process evidence
+and synthetic file/profile retention checks without launching the application.
 
 The script does not install or start the candidate. An unsigned installer is not
 platform signing approval or proof of operating-system trust prompts. Native
