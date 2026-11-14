@@ -2,7 +2,7 @@
 set -euo pipefail
 case "${1:-}" in fetch|contract|desktop|seed) phase=$1;; *) echo 'Expected fetch, contract, desktop or seed' >&2; exit 2;; esac
 if [[ $phase == seed ]]; then
-  [[ ${XNEXUS_RESOURCE_PROFILE:-} == contract-reduced ]] || exit 2
+  [[ ${XNEXUS_RESOURCE_PROFILE:-} == contract-reduced || ${XNEXUS_RESOURCE_PROFILE:-} == contract-low-headroom ]] || exit 2
   exec python3 /tools/seed_cache.py
 fi
 [[ ! -e /work/seed.pending.json ]] || { echo 'Incomplete cache seed; preserve it and use a new volume' >&2; exit 2; }
@@ -10,10 +10,10 @@ mkdir -p /work/cargo /work/home
 export HOME=/work/home CARGO_HOME=/work/cargo CARGO_TARGET_DIR=/work/target
 case "${XNEXUS_RESOURCE_PROFILE:-standard}" in
   standard) jobs=2 ;;
-  desktop-reduced)
+  desktop-reduced|desktop-low-headroom)
     [[ $phase == desktop ]] || { echo 'Reduced profile requires desktop phase' >&2; exit 2; }
     jobs=1 ;;
-  contract-reduced)
+  contract-reduced|contract-low-headroom)
     [[ $phase == contract ]] || { echo 'Reduced contract profile requires contract phase' >&2; exit 2; }
     jobs=1 ;;
   *) echo 'Unknown resource profile' >&2; exit 2 ;;

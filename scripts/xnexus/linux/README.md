@@ -167,6 +167,39 @@ This tooling change has host Python fixture coverage. The disposable Linux shell
 fixture, real seed and updated-source checks still require their own execution
 receipts; creating a seed is not a contract or desktop pass.
 
+### Explicit alternative admission for the held 0d attempt
+
+The first 0d admission stopped before creating any container: physical headroom
+was 7.69 GiB, below the original 8 GiB threshold. That hold remains recorded in
+`xnexus-linux-evidence-0d01248b/evidence/admission-hold-20261114T205726Z.json`.
+No cache copy, compiler or fixture ran in that attempt.
+
+A separately selected `contract-low-headroom` (seed/contract) or
+`desktop-low-headroom` (desktop) profile requires **7 GiB available physical RAM
+and 8 GiB available Windows commit**, measured fresh before starting. Unknown
+commit or less than either bound refuses admission. The change is an explicit
+reviewed admission tradeoff, not an automatic fallback: it preserves the 4 GiB
+container and RAM-plus-swap limit, one job, two CPU maximum, network-none and
+both 2 GiB running floors. It strengthens the available-commit gate while
+reducing physical admission by 1 GiB. Existing 8/6 GiB profiles and historic
+receipts are unchanged.
+
+At the observed 7.69 GiB physical headroom, fully using the 4 GiB cap would leave
+about 3.69 GiB before other host changes, above the 2 GiB running floor. The
+Docker VM is already running, and the earlier bounded d206 check completed;
+neither observation guarantees that this updated workload fits or that host
+headroom stays constant. The higher commit reserve and existing runtime guards
+make this one bounded attempt measurable. They do not justify widening memory,
+adding swap, closing applications or bypassing an interruption. Record the
+actual fresh physical **and commit** readings; the earlier 7.69 reading cannot
+authorize a later start.
+
+After explicit review/release, use the same separate seed/contract/desktop
+commands above, replacing only `contract-reduced` with `contract-low-headroom`
+and `desktop-reduced` with `desktop-low-headroom`. Run the disposable tooling
+fixture under the same admission policy and no greater resource limits first.
+No phase automatically retries or changes profiles on admission/resource failure.
+
 `NODE_OPTIONS=--max-old-space-size=4096` gives TypeScript a 4 GiB V8 heap inside
 the unchanged 6 GiB container budget. The initial default-heap run passed all
 58 SDK and eight policy tests, then exhausted Node's approximately 2 GiB heap

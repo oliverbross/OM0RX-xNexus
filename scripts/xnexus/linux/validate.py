@@ -59,6 +59,11 @@ def resource_profile(name, phase):
         return {"name": name, "memory": "4g", "jobs": 1,
                 "admission_physical_bytes": 8 * 1024 ** 3,
                 "admission_commit_bytes": 6 * 1024 ** 3, "guard_commit": True}
+    if ((name == "desktop-low-headroom" and phase == "desktop")
+            or (name == "contract-low-headroom" and phase in ("contract", "seed"))):
+        return {"name": name, "memory": "4g", "jobs": 1,
+                "admission_physical_bytes": 7 * 1024 ** 3,
+                "admission_commit_bytes": 8 * 1024 ** 3, "guard_commit": True}
     raise ValueError("Resource profile does not match its phase")
 
 
@@ -84,7 +89,7 @@ def run_args(image, phase, job, volume, cidfile=None, profile_name="standard"):
     cid_args = ["--cidfile", str(cidfile)] if cidfile else []
     return ["docker", "run", "--rm", *cid_args, "--platform", "linux/amd64", "--pull", "never",
             "--cpus", "2", "--memory", profile["memory"], "--memory-swap", profile["memory"], "--pids-limit", "256", *profile_args,
-            "--env", "NODE_OPTIONS=--max-old-space-size=" + ("2560" if profile_name == "contract-reduced" else "4096"),
+            "--env", "NODE_OPTIONS=--max-old-space-size=" + ("2560" if profile_name in ("contract-reduced", "contract-low-headroom") else "4096"),
             "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
             "--network", "bridge" if phase == "fetch" else "none",
             "--mount", f"type=volume,src={volume},dst=/work",
@@ -184,7 +189,7 @@ def main():
     parser.add_argument("--source", required=True, help="Exact 40-character committed source SHA")
     parser.add_argument("--job", type=Path, required=True, help="Dedicated evidence directory outside source")
     parser.add_argument("--phase", choices=("image", "fetch", "contract", "desktop", "seed"), default="contract")
-    parser.add_argument("--resource-profile", choices=("standard", "desktop-reduced", "contract-reduced"), default="standard")
+    parser.add_argument("--resource-profile", choices=("standard", "desktop-reduced", "contract-reduced", "desktop-low-headroom", "contract-low-headroom"), default="standard")
     parser.add_argument("--donor-job", type=Path, help="Retained successful donor job; seed only")
     parser.add_argument("--donor-receipt", type=Path, help="Exact successful desktop receipt; seed only")
     parser.add_argument("--execute", action="store_true", help="Without this flag, only print the plan")
@@ -211,8 +216,8 @@ def main():
     print(json.dumps(plan, indent=2), flush=True)
     if not args.execute:
         return 0
-    if args.phase == "seed" and (not args.donor_job or not args.donor_receipt or args.resource_profile != "contract-reduced"):
-        parser.error("Seed requires donor job, desktop receipt and contract-reduced profile")
+    if args.phase == "seed" and (not args.donor_job or not args.donor_receipt or args.resource_profile not in ("contract-reduced", "contract-low-headroom")):
+        parser.error("Seed requires donor job, desktop receipt and explicit bounded contract profile")
     if args.phase != "seed" and (args.donor_job or args.donor_receipt):
         parser.error("Donor arguments are only valid for seed")
     headroom = None

@@ -90,6 +90,36 @@ class ContainerIsolationTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 validate.seed_mounts(command, image, invalid, new, Path("donor/input"))
 
+    def test_explicit_low_headroom_profiles_trade_admission_only_not_container_bounds(self):
+        gib = 1024 ** 3
+        for name, phases in (("contract-low-headroom", ("contract", "seed")),
+                             ("desktop-low-headroom", ("desktop",))):
+            for phase in phases:
+                profile = validate.resource_profile(name, phase)
+                self.assertEqual(profile["jobs"], 1)
+                self.assertTrue(profile["guard_commit"])
+                validate.check_admission(profile, 7 * gib, 8 * gib)
+                for physical, commit in ((7 * gib - 1, 20 * gib), (20 * gib, 8 * gib - 1),
+                                         (20 * gib, None), (8 * gib, 6 * gib)):
+                    with self.assertRaises(ValueError):
+                        validate.check_admission(profile, physical, commit)
+                args = validate.run_args("sha256:" + "a" * 64, phase, Path("job"), "volume", profile_name=name)
+                for flag, value in (("--cpus", "2"), ("--memory", "4g"),
+                                    ("--memory-swap", "4g"), ("--network", "none")):
+                    self.assertEqual(args[args.index(flag) + 1], value)
+                self.assertIn("XNEXUS_RESOURCE_PROFILE=" + name, args)
+                if phase in ("contract", "seed"):
+                    self.assertIn("NODE_OPTIONS=--max-old-space-size=2560", args)
+            for wrong_phase in set(("image", "fetch", "contract", "seed", "desktop")) - set(phases):
+                with self.assertRaises(ValueError):
+                    validate.resource_profile(name, wrong_phase)
+        # Existing profiles still refuse 7 GiB physical and retain their 6 GiB commit gate.
+        for name, phase in (("contract-reduced", "contract"), ("desktop-reduced", "desktop")):
+            profile = validate.resource_profile(name, phase)
+            validate.check_admission(profile, 8 * gib, 6 * gib)
+            with self.assertRaises(ValueError):
+                validate.check_admission(profile, 7 * gib, 8 * gib)
+
     def test_commit_pressure_stops_only_owned_container_even_when_ram_is_ample(self):
         cid, image, volume = "b" * 64, "sha256:" + "a" * 64, "xnexus-test"
         details = {"Id": cid, "Config": {"Image": image,
