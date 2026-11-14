@@ -1,7 +1,12 @@
 # Candidate 1.24.1-xlog.3 — profile construction repair
 
-This is a candidate reservation and build recipe, not a release or acceptance
-claim. The exact source before version preparation is
+This records a local candidate and build recipe, not a public release.
+Exact packaged source is `d206b880216543af2142e600ea6b8e5ac6bdd1b2`.
+Mac artifact audit, native A→B→A isolation and core paired synthetic acceptance
+passed; exact-source Linux contract and desktop checks passed. Windows `.3`
+packaging was skipped. Detailed hashes and qualification boundaries are in
+[the checkpoint](QUALIFICATION_2026-11-14.md).
+The exact source before version preparation is
 `e52fffc26e1b42889996f015240d6e74506478e4`. Runtime correction
 `907ee0369604e63481bfd98a369152c580571559` is its only application-code change
 relative to the rejected `.2` source `c2c917b6f748366fbf6b3960876d9f98ba1854c9`.
@@ -39,7 +44,7 @@ Do not substitute this document's pre-version source or package a worktree.
 
 The Mac pre-version native all-targets check passed, together with four
 construction unit tests and eight fork-policy checks. Windows native checking
-of the same correction is being completed before canonical promotion. The
+of the same correction also passed before canonical promotion. The
 constructor tests do not establish actual WebView storage isolation.
 
 ## Required native gate
@@ -52,7 +57,7 @@ queue and RX acceptance resume. A failure preserves evidence and stops the
 sequence; there is no default-profile fallback.
 
 Windows UI automation still awaits desktop availability clarification. Linux
-passed the exact `.2` SDK/UI contract, but full native desktop validation remains
-pending for corrected source. Physical FLEX slice A/DAX reception, radio/rotor
+passed the exact `.3` SDK/UI contract and offline native desktop all-targets
+check. Physical FLEX slice A/DAX reception, radio/rotor
 operation, decoded-call need lookup and transmission remain separate unfinished
 work. Nothing in this reservation closes those gates or publishes a release.

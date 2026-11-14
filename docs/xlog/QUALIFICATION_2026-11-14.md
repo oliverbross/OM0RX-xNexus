@@ -11,6 +11,42 @@ same-profile persistence test did not prove cross-profile isolation. See
 
 ## Sources and artifacts
 
+The current candidate is **1.24.1-xlog.3**, source
+`d206b880216543af2142e600ea6b8e5ac6bdd1b2`. Its Mac archive contains 56,669,037
+bytes, SHA-256 `6b21b34b2562819cf0d7daa49ea0bd0278ad2ba8ae3eef566fc42ab2963db28e`;
+executable SHA-256 is
+`056d6b2a5d7524a4f1698886bbb67d06811984e89b1da7c475265ae545d23af6`.
+The actual downloaded CLI process/path/hash was verified before acceptance.
+Artifact audit and native A→B→A profile isolation passed, including distinct
+actual WebKit stores, exact draft identifier restoration, ordinary Quit and
+unchanged default storage. The isolation-summary SHA-256 is
+`4446bd5a4ee306d3979a3ca8dd26f724c9a04156469ccf581372bc4e6e781016`.
+Core paired synthetic acceptance passed; no hardware, signing, notarization
+or installation is claimed. Mac production transport lacks `audio.rx`, so these
+checks cannot establish Mac receive start/stop behavior.
+
+The paired run verified native pairing, W1AW needed score 100, simulated Tune
+(already at 14.074 MHz), rotor 45→90 and Stop, history, and a queued synthetic
+QSO retained through ordinary Quit and explicit relaunch. Pairing was forgotten
+and unpaired submission disabled; explicit pairing/resubmission then produced
+one applied create receipt with stable request identity and matching unique
+history comment. This is a synthetic owner receipt, not a production SQL write.
+Both app processes and the fixture owner exited normally. Paired summary SHA-256
+is `20e867d9f188d0937efe4abaa87661174a2d7125730ae44032d9c18bfbd207e2`;
+the allowlisted evidence catalog is
+`835e26ef44067e352b3a67a78eceb935fd3596af33e12fe0ea62c63bf6efba0f`.
+Raw pairing credentials and fixture streams are excluded from that catalog.
+
+Exact `.3` Linux contract and offline all-targets desktop validation also passed;
+see [the measured source and resource receipts](../../scripts/xnexus/linux/PROVISIONING.md).
+The desktop receipt SHA-256 is
+`2bc258e797d298c1552b7b259ea045c3a142cbe0df7bfc72cc645862fdafffac`.
+No Linux package or native GUI was exercised. Windows `.3` packaging was skipped;
+the next unique candidate must include the reviewed installer guards and the
+decoded-needs slice after its source and native gates. No next version is reserved.
+
+The following artifacts are retained historical evidence, not current candidates.
+
 | Component | Exact source | Evidence at this checkpoint |
 | --- | --- | --- |
 | Windows xNexus `1.24.1-xlog.2` | `c2c917b6f748366fbf6b3960876d9f98ba1854c9` | Installer and static audit complete; not launched/installed, rejected for shared profile-construction defect. |
@@ -93,12 +129,14 @@ fixture was left idle rather than force-quit.
 
 ## Linux and hosted checks
 
-The pinned Linux image and locked dependency provisioning succeeded. An offline
+The initial pinned Linux image and locked dependency provisioning succeeded. An offline
 contract run passed 58 SDK tests and eight fork-policy checks before TypeScript
 exhausted Node's default 2 GB heap. The failed receipt is preserved. A retry with
 an explicit 4 GB Node heap stays inside the same 6 GB container, two CPU limit
-and network isolation; it waits for at least 10 GiB host memory. No retry or full
-Linux desktop pass is claimed. The exact `.2` source snapshot is prepared.
+and network isolation. That retry subsequently passed for exact `.2`. Exact `.3`
+then passed both contract checks and the 19m36s native desktop check under the
+reviewed 4 GiB reduced profile, with source integrity and host headroom verified.
+The earlier failure is retained separately from these successful results.
 
 GitHub Actions validation remains blocked before execution by billing. Inherited
 publishing workflows remain disabled and repository guarded. Local evidence does

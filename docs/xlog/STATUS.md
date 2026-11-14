@@ -3,16 +3,25 @@
 The integration remains in qualification. Source, synthetic tests, packaged
 binaries and physical station acceptance are separate evidence levels.
 
-**Native acceptance blocker:** the fresh Mac `.2` profile displayed a draft from
+**Preserved isolation failure:** the fresh Mac `.2` profile displayed a draft from
 the prior `.1` test before pairing. Both processes exited normally and no station
 action occurred. The locked Tauri configuration conversion drops the requested
-WebView storage fields; the shared construction path is being corrected.
+WebView storage fields; explicit window construction now repairs that path.
 Do not launch or distribute `.1`/`.2` as isolated-profile candidates. See
 [the incident and regression gates](PROFILE_ISOLATION_2026-11-14.md).
 
-The explicit window-construction repair is integrated and
-[candidate `.3` is being prepared](CANDIDATE_1.24.1-xlog.3.md). It requires fresh
-native two-profile isolation acceptance before paired testing resumes.
+The repaired [candidate `.3`](CANDIDATE_1.24.1-xlog.3.md), exact source
+`d206b880216543af2142e600ea6b8e5ac6bdd1b2`, passed its Mac artifact audit and
+native A→B→A isolation checks: two blank starting profiles retained different
+drafts in their actual requested WebKit stores, and reopening A restored its
+exact identifiers. Three ordinary Quits completed; default-store bytes remained
+unchanged. Core paired synthetic acceptance also passed: native pairing,
+needed board, simulated Tune/Point/Stop, history and a durable native queue
+across Quit/relaunch, followed by exactly one applied synthetic create receipt.
+Both app runs and the synthetic owner exited normally. The actual Mac
+owner transport does not advertise `audio.rx`; this verifies absent-capability
+handling, not Mac receive qualification. The candidate freeze is released;
+new implementation still requires its own source tests and candidate qualification.
 
 | Milestone | Current evidence | Remaining acceptance |
 |---|---|---|
@@ -23,8 +32,8 @@ native two-profile isolation acceptance before paired testing resumes.
 | M4 | Owner-mediated tune/point and independent Stop; connection-bound Stop fix merged after 95 focused and 1,164 full native tests | Accepted xLog package containing the fix; paired UI and physical control qualification |
 | M5 | Durable outbox and atomic owner write/receipt; restart, replay and edit-conflict tests | Paired native GUI acceptance; queue archive/export design |
 | M6 | Explicit FLEX slice A/DAX mapping, bounded owner PCM, client, FIR/period assembler, threaded native FT8/FT4 decoder and receive UI | Active DAX reception and clock/route qualification; TX contract and supervised qualification |
-| M7 | Distinct app/update identity, pinned assets and exact-source .2 Windows installer | Correct profile construction, new candidate, isolated application and installer acceptance |
-| M8 | Mac .1/.2 archives and exact .2 all-targets check; native .2 acceptance exposed shared draft storage | Corrected profile isolation and paired UI, Linux desktop, signing and distribution qualification |
+| M7 | Distinct identity, repaired profile construction, reviewed installer ownership/payload guards and bounded build supervisor | New unique Windows candidate; isolated application and installer acceptance |
+| M8 | Mac .3 artifact and A→B→A isolation passed; exact .3 Linux contract and desktop all-targets check passed | Complete paired UI, Linux native lifecycle, signing and distribution qualification |
 
 RX runtime integration source is `e3ae1534ade5c34dd4e2d3a81bfbe3a72be15d5c`.
 Windows candidate `1.24.1-xlog.2` adds candidate manifests and these records;
@@ -40,8 +49,12 @@ receipt are retained. The Mac .1 build remains frozen at that original source.
 See [RX_CLIENT_VERIFICATION.md](RX_CLIENT_VERIFICATION.md),
 [RX_DESKTOP.md](RX_DESKTOP.md) and [VERIFICATION.md](VERIFICATION.md).
 The [contact publication verification](CONTACT_PUBLICATION_VERIFICATION.md)
-records 41 passing owner tests and 23 actual worker-response projection cases,
-including intentional row absence and stale classification becoming Unknown.
+records 42 passing owner tests and replay of 23 publication plus six independent
+classification exports through the actual Rust projector. They include row
+absence, stale classification becoming Unknown, band/mode differences and
+paper/LoTW/eQSL confirmation cases. This is worker-to-projector evidence, not
+installed HTTP/UI propagation. Canonical xLog is at `72c4f00956b4eeaa3f4addb1ed8dfa5ee525c0d5`;
+these latest commits do not change its installed application.
 RX evidence includes 58 SDK tests, 40 distinct companion UI tests, TypeScript
 and Vite builds, 14 browser viewport/theme cases, 14 pure DSP/assembler tests,
 five native adapter tests including both modes at five rates, two actual owner
@@ -100,14 +113,14 @@ Source review found an incoming serial-port alias mismatch that can incorrectly
 clear a stuck-CW warning in independent mode. Promotion awaits a fix and runtime
 checks; see [the upstream review](UPSTREAM_REVIEW_2026-11-14.md).
 
-Linux provisioning and the initial 58 SDK/eight policy tests passed. TypeScript
-then exhausted Node's default 2 GB heap. A 4 GB retry is prepared inside the same
-6 GB isolated container. Exact `.2` dependency fetching passed with all 5,445
-tracked source entries verified before and after; its offline contract retry is
-passed after the memory gate passed: 58 client tests, eight policy tests,
-TypeScript/Vite and 40 UI tests. Full desktop checking has not run.
-Eleven tooling tests now verify exact committed archive/cache bytes,
-before/after source integrity, and failure on interrupted memory protection.
+Exact `.3` Linux validation passed 58 SDK, eight policy and 40 UI tests plus
+TypeScript/Vite, followed by an offline Rust 1.93.1 all-targets desktop check
+in 19m36s. All 5,472 source entries matched before and after. The reviewed
+reduced profile used 4 GiB RAM, no extra swap, one Cargo/CMake job and no network;
+host memory floors remained satisfied. The container exited. Original Node
+heap failure and earlier admission holds remain preserved. See
+[the Linux evidence](../../scripts/xnexus/linux/PROVISIONING.md) for exact receipts
+and limitations.
 
 ## Operational boundaries
 
@@ -119,8 +132,11 @@ probe found ten active inputs and none DAX. No DAX utility or stream was started
 Receive timing reports host endpoint clock calibration, not a measured global
 UTC accuracy or endpoint-to-RF delay. Both latter values remain explicitly
 unknown. Generated-message tests do not establish physical reception.
-Decoded rows do not yet have authoritative batch need classification. The
-needed-station board continues to use xLog's classified cluster observations.
+Decoded-row classification is being implemented in isolated owner, SDK and
+native branches under [the agreed contract](NEEDS_QUERY_CONTRACT.md). One bounded
+read mailbox attaches only to an existing ordinary xLog cluster poll; it creates
+no query writer, poller or station connection. New facts are not shipped yet.
+The needed-station board continues to use xLog's classified cluster observations.
 Transmission is unavailable in companion mode.
 
 The native outbox retains up to 10,000 operations, including terminal receipts.
