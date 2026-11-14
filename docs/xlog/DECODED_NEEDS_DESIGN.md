@@ -3,9 +3,11 @@
 Status: proposed bounded extension, not implemented. Reviewed against xNexus
 `e3ae1534ade5c34dd4e2d3a81bfbe3a72be15d5c` (worker runtime introduced by
 `531a6ec50`) and xLog owner `5efffc1a23af68157e3c564eb2aa345256bea90a`.
-This document changes no runtime or candidate version. Implement only after
-paired native UI acceptance; physical FLEX/DAX and timing qualification remain
-separate gates. The frozen `1.24.1-xlog.1` core candidate has no RX extension.
+This document changes no runtime or candidate version. The later
+[concrete query contract](NEEDS_QUERY_CONTRACT.md) permits isolated owner/SDK
+development while native acceptance runs; canonical promotion still requires
+paired native UI acceptance. Physical FLEX/DAX and timing qualification remain
+separate gates. The historical `1.24.1-xlog.1` core candidate has no RX extension.
 
 ## Existing authority and reuse
 
