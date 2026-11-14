@@ -86,7 +86,7 @@ impl ReceiveContext {
             || !(1..=16).contains(&owner.source_channels)
             || owner.selected_channel >= owner.source_channels
             || owner.slice != "A"
-            || owner.dax_channel == 0
+            || !(1..=8).contains(&owner.dax_channel)
             || owner.frequency_hz == 0
             || owner.mapping_generation == 0
         {
@@ -627,6 +627,15 @@ mod tests {
                 .unwrap_err(),
             RxError::InvalidContext
         );
+    }
+
+    #[test]
+    fn owner_dax_channel_matches_the_bounded_transport_contract() {
+        let mut context = context(48_000, RxMode::Ft8);
+        for channel in 0..=u8::MAX {
+            context.owner.dax_channel = channel;
+            assert_eq!(context.validate().is_ok(), (1..=8).contains(&channel));
+        }
     }
 
     #[test]
