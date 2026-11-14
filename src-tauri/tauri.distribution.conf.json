@@ -1,0 +1,13 @@
+{
+  "bundle": {
+    "resources": {
+      "../scripts/xnexus/nsis/LICENSE-MIT.tauri": "resources/installer/LICENSE-MIT.tauri"
+    },
+    "windows": {
+      "nsis": {
+        "template": "../scripts/xnexus/nsis/installer.nsi",
+        "installerHooks": "../scripts/xnexus/nsis/ownership.nsh"
+      }
+    }
+  }
+}
