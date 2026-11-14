@@ -1,4 +1,41 @@
-# Foundation verification — 14 November 2026
+# Integration verification — 14 November 2026
+
+Latest native client source: `3a0686ee8`. Windows Rust 1.99.1 MSVC.
+All 43 native client tests pass with the locked offline dependency graph, followed
+by Clippy (`--all-targets -- -D warnings`) and rustfmt. This covers observation,
+control receipts, independent Stop, durable file outbox recovery, explicit retry,
+owner geography, and bounded selected-call history/confirmation reads. The
+history tests prove portable-call URL encoding, no request without capability,
+workspace fencing and refusal of invalid edit revisions.
+
+The actual production bridge module from the isolated xLog source was compiled
+with the actual production client in a temporary paired harness. Five tests
+passed: the four then-current bridge transport cases plus authenticated pairing,
+wrong-token refusal, tune receipt lookup, independent Stop, and revocation.
+Its provider was synthetic: no physical device or production log was used.
+The harness resides in the xLog workspace `.build/xnexus-paired-e2e`; eight
+subsequent owner transport/projection cases are reported by the owner agent.
+
+Fork identity/workflow policy: six tests pass on canonical xNexus. Upstream jobs
+require the upstream repository identity, inherited workflows are disabled via
+GitHub, and the fork updater cannot install upstream binaries. Windows GNU
+toolchain and pinned libvpx, Hamlib and DeepCW assets are prepared. Native desktop
+compilation is in progress; the first CMake attempt exposed a Windows verbatim
+path issue, with a source correction awaiting the coordinated next build.
+
+Desktop agent evidence: initial eight UI tests, then four QSO queue cases,
+focused TypeScript validation, and two browser probe runs covering fourteen
+viewport/theme combinations. Full desktop qualification and installed-app
+acceptance remain open; browser mocks do not prove the Tauri/native wiring.
+
+Hosted validation did not execute: GitHub run 43586230218 reports the account's
+payment/spending restriction on every job. No macOS/Linux build is claimed.
+No radio transmission, rotator movement, production log mutation or installation
+has been performed by these verification tests.
+
+## Archived foundation evidence
+
+The following describes the earlier bootstrap, not current integration status.
 
 Scope: `integrations/xlog`, a standalone read-only reference client. This is not
 a compiled Nexus desktop or a qualified live xLog integration.
@@ -35,9 +72,9 @@ The full upstream desktop/DSP/browser/platform suites have NOT run. No UI was
 changed, launched, observed or packaged. No real xLog data, credentials, radio,
 rotator, cluster, audio or production profile was accessed by these tests.
 
-Release blockers remain M1b–M8 in PROJECT_PLAN.md. In particular, upstream
+At that bootstrap, release blockers remained M1b–M8. In particular, upstream
 identity, data directories, stable/beta updater and hosted services are still
-present in the copied desktop. Do not call this a usable integrated build.
+present in the copied desktop. The current isolation status is recorded above.
 
 The upstream helper passed PowerShell parser validation and a real report-only
 fetch. It detected upstream advancing to
