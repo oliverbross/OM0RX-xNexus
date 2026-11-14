@@ -275,7 +275,8 @@ fn establish(shared: &Shared, generation: u64, pairing: Pairing) -> Result<View,
 
 #[tauri::command]
 fn xlog_status(state: State<'_, Shared>) -> Result<View, String> {
-    Ok(view(&lock(&state)?, None))
+    let session = lock(&state)?;
+    Ok(view(&session, None))
 }
 
 #[tauri::command]

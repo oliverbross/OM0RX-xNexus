@@ -10,8 +10,8 @@ export interface Spot {
   source: string
   country?: string | null
   adif?: number | null
-  lat?: number | null
-  lon?: number | null
+  latitude?: number | null
+  longitude?: number | null
   band?: string | null
   call_status?: string | null
   dxcc_status?: string | null

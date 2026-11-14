@@ -11,7 +11,7 @@ export default function StationMap({ spots, selectedId, select }: { spots: Spot[
     const path = geoPath(projection)
     return { projection, land: path(basemap()) ?? '', grid: path(graticule()) ?? '', ocean: path({ type: 'Sphere' }) ?? '' }
   }, [])
-  const positioned = spots.filter(spot => typeof spot.lat === 'number' && Number.isFinite(spot.lat) && Math.abs(spot.lat) <= 90 && typeof spot.lon === 'number' && Number.isFinite(spot.lon) && Math.abs(spot.lon) <= 180)
+  const positioned = spots.filter(spot => typeof spot.latitude === 'number' && Number.isFinite(spot.latitude) && Math.abs(spot.latitude) <= 90 && typeof spot.longitude === 'number' && Number.isFinite(spot.longitude) && Math.abs(spot.longitude) <= 180)
   return <section className="xn-world" aria-label="World map of xLog stations">
     <h2>Stations around the world</h2>
     <p className="xn-hint">Nexus’s offline geography with positions supplied by xLog. Select a station to inspect its evidence. {spots.length - positioned.length} observations have no supplied position.</p>
@@ -20,7 +20,7 @@ export default function StationMap({ spots, selectedId, select }: { spots: Spot[
       <path className="xn-world-land" d={geometry.land} />
       <path className="xn-world-grid" d={geometry.grid} />
       {positioned.map(spot => {
-        const [x, y] = geometry.projection([spot.lon!, spot.lat!])!
+        const [x, y] = geometry.projection([spot.longitude!, spot.latitude!])!
         return <g key={spot.id} role="button" tabIndex={0} aria-label={`Inspect mapped station ${spot.callsign}`} className={`xn-world-spot xn-world-${spot.need.status}${selectedId === spot.id ? ' selected' : ''}`} onClick={() => select(spot)} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); select(spot) } }}>
           <title>{spot.callsign} · {spot.country ?? 'Country unavailable'} · {(spot.frequency_hz / 1e6).toFixed(6)} MHz · {spot.need.reasons.join(' · ') || 'Need status unknown'}</title>
           <circle cx={x} cy={y} r={selectedId === spot.id ? 8 : 5} />

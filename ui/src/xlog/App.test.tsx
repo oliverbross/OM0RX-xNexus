@@ -49,6 +49,16 @@ describe('xLog-owned desktop', () => {
     expect(screen.getByRole('button', { name: 'Point through xLog' })).toHaveProperty('disabled', true)
     expect(screen.getByRole('button', { name: 'Stop rotator' })).toHaveProperty('disabled', true)
   })
+  it.each([true, null])('holds tuning when transmit state is %s and labels unknown rotor motion', async transmitting => {
+    const value = connected(); value.snapshot!.station.transmitting = transmitting; value.snapshot!.rotor.moving = null
+    const native = api(value)
+    render(<App api={native} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Inspect W1AW' }))
+    expect(screen.getByRole('button', { name: 'Tune through xLog' })).toHaveProperty('disabled', true)
+    expect(screen.getByText('Motion unknown')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Tune through xLog' }))
+    expect(native.command).not.toHaveBeenCalled()
+  })
   it('invalidates stale observations while keeping the separate stop route visible', async () => {
     vi.useFakeTimers()
     const v = connected(); v.snapshot!.max_age_ms = 500
@@ -100,6 +110,16 @@ describe('xLog-owned desktop', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Open xLog pairing file' }))
     expect(screen.getByRole('button', { name: 'Stop rotator' })).toHaveProperty('disabled', true)
     expect(screen.queryByRole('button', { name: 'Inspect W1AW' })).toBeNull()
+  })
+  it('does not show an old Stop result under a replacement pairing', async () => {
+    let resolve!: (receipt: Awaited<ReturnType<Bridge['command']>>) => void
+    const native = api(connected()); vi.mocked(native.command).mockReturnValue(new Promise(r => { resolve = r }))
+    render(<App api={native} />)
+    await screen.findByText('Connected to xLog')
+    fireEvent.click(screen.getByRole('button', { name: 'Stop rotator' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Open xLog pairing file' }))
+    await act(async () => { await Promise.resolve(); resolve({ request_id: 'old-stop', server_instance: 'old-server', workspace_id: 'old-workspace', status: 'observed', message: 'Old station stopped' }) })
+    expect(screen.queryByText(/Old station stopped/)).toBeNull()
   })
   it('refuses browser HTTP fallback when the native bridge is absent', async () => {
     const fetch = vi.spyOn(window, 'fetch')
