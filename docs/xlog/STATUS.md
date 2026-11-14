@@ -3,6 +3,13 @@
 The integration remains in qualification. Source, synthetic tests, packaged
 binaries and physical station acceptance are separate evidence levels.
 
+**Native acceptance blocker:** the fresh Mac `.2` profile displayed a draft from
+the prior `.1` test before pairing. Both processes exited normally and no station
+action occurred. The locked Tauri configuration conversion drops the requested
+WebView storage fields; the shared construction path is being corrected.
+Do not launch or distribute `.1`/`.2` as isolated-profile candidates. See
+[the incident and regression gates](PROFILE_ISOLATION_2026-11-14.md).
+
 | Milestone | Current evidence | Remaining acceptance |
 |---|---|---|
 | M0 | Complete: full upstream history, private fork, fetch-only upstream, nine tracked milestones | Maintain upstream review and patch inventory |
