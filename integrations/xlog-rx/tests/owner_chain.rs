@@ -64,7 +64,7 @@ fn context(descriptor: &AudioDescriptor, bridge: &Bridge, mode: RxMode) -> Recei
     }
 }
 
-fn run_chain(mode: RxMode) {
+fn run_chain(mode: RxMode, _worker: bool) {
     const RATE: u32 = 48_000;
     let kind = match mode {
         RxMode::Ft8 => ModeKind::Ft8,
@@ -176,6 +176,11 @@ fn run_chain(mode: RxMode) {
         }
     }));
     let deadline = start + Duration::from_micros(end_us - origin_us) + Duration::from_secs(2);
+    #[cfg(xnexus_rx_worker)]
+    if _worker {
+        run_worker(&mut client, audio, &bridge, mode, target_slot, deadline);
+        return;
+    }
     let mut assembler = RxAssembler::default();
     let mut observed_context = None;
     let mut target = None;
@@ -251,9 +256,90 @@ fn run_chain(mode: RxMode) {
 
 #[test]
 fn complete_ft8_owner_http_chain() {
-    run_chain(RxMode::Ft8);
+    run_chain(RxMode::Ft8, false);
 }
 #[test]
 fn complete_ft4_owner_http_chain() {
-    run_chain(RxMode::Ft4);
+    run_chain(RxMode::Ft4, false);
+}
+
+#[cfg(xnexus_rx_worker)]
+fn run_worker(
+    client: &mut BridgeClient,
+    audio: xnexus_xlog_client::audio::AudioClient,
+    bridge: &Bridge,
+    mode: RxMode,
+    target_slot: u64,
+    deadline: Instant,
+) {
+    use xlog_rx_worker::{Mode, Worker};
+    let mode = match mode {
+        RxMode::Ft8 => Mode::FT8,
+        RxMode::Ft4 => Mode::FT4,
+    };
+    let worker = Worker::start(
+        audio,
+        bridge.server_instance.clone(),
+        bridge.workspace_id.clone(),
+        mode,
+    )
+    .unwrap();
+    let mut found = false;
+    while Instant::now() < deadline {
+        let view = worker.view().unwrap();
+        assert!(view.enabled, "worker stopped: {}", view.reason);
+        if let Some(row) = view.rows.iter().find(|row| {
+            row.host_period_start_unix_us == target_slot && row.message.contains("K1ABC")
+        }) {
+            assert_eq!(row.clock.utc_sync_accuracy_us, None);
+            assert_eq!(row.clock.remote_rf_latency_us, None);
+            assert_eq!(view.route.as_ref().unwrap().selected_channel, 1);
+            found = true;
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    assert!(
+        found,
+        "actual worker did not publish the paced decoded message: {}",
+        worker.view().unwrap().reason
+    );
+    worker.stop();
+    for _ in 0..5 {
+        let view = worker.view().unwrap();
+        assert!(!view.enabled && view.rows.is_empty() && view.route.is_none());
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    // The old polling/decoder threads must release their exclusive lease before
+    // a fresh worker can start. A restart must not inherit any old decoded row.
+    let restart_deadline = Instant::now() + Duration::from_secs(3);
+    let restarted = loop {
+        match Worker::start(
+            client.audio_handle().unwrap(),
+            bridge.server_instance.clone(),
+            bridge.workspace_id.clone(),
+            mode,
+        ) {
+            Ok(worker) => break worker,
+            Err(error) => {
+                assert!(
+                    Instant::now() < restart_deadline,
+                    "worker lease not released: {error}"
+                );
+                std::thread::sleep(Duration::from_millis(20));
+            }
+        }
+    };
+    let view = restarted.view().unwrap();
+    assert!(view.enabled && view.rows.is_empty());
+    restarted.stop();
+    assert!(!restarted.view().unwrap().enabled);
+    assert!(worker.view().unwrap().rows.is_empty());
+    println!("Actual Worker::start decoded CQ K1ABC FN42; Stop cleared rows; exclusive lease released and restart had no old result");
+}
+
+#[cfg(xnexus_rx_worker)]
+#[test]
+fn complete_ft4_worker_owner_http_lifecycle() {
+    run_chain(RxMode::Ft4, true);
 }

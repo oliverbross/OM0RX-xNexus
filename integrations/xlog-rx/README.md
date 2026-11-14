@@ -66,11 +66,18 @@ capture through the production buffer, authenticated HTTP, client, assembler
 and modem, while actual endpoint capture and desktop IPC remain separate gates.
 
 Optional `-WorkerSource <file> -WorkerSha256 <exact hash> -WorkerOnly` compiles
-the desktop worker source as well and selects its two authority tests. The
+the desktop worker source as well and selects its two authority tests plus a
+paced FT4 owner HTTP lifecycle test. The
 receipt preserves its source hash, worktree base and whether the worktree was
 dirty, allowing a tested precommit file to be tied to the later identical commit.
 These tests passed with a real loopback SDK response: current authority accepts
 results; old epochs, reset and Stop reject them; revocation clears rows and route.
-They typecheck the entire worker but do not execute `Worker::start` or qualify
-its thread/mailbox lifecycle. The original owner chain tests remain separately
-recorded and are not claimed by a worker-only run.
+The lifecycle test executes actual `Worker::start` polling, assembly, bounded
+mailbox and decoding threads, observes a decoded row with retained clock facts,
+then verifies Stop clears rows and route, the exclusive worker lease releases,
+and restart contains no old result. All three passed in 14.44 seconds against
+worker source SHA256 `45A627F75521F17827FA0DE7B50D0C76BD86BCED8BF0769D76D069E52DFC56E3`
+(desktop commit `531a6ec50`). Thread overload and a physical endpoint are not
+qualified by this normal-load lifecycle case. The original two direct owner
+chain cases remain separately recorded. Full Tauri IPC and installed application
+acceptance remain pending.
