@@ -83,6 +83,74 @@ fn server(replies: Vec<String>) -> (BridgeClient, thread::JoinHandle<Vec<String>
 }
 
 const REQUEST_ID: &str = "00000000-0000-4000-8000-000000000001";
+fn history_fixture() -> Value {
+    json!({"protocol_version":1,"server_instance":"synthetic-server","workspace_id":"synthetic-workspace","callsign":"OM0RX/P","generated_at_unix_ms":now_ms().unwrap(),
+        "contacts":[{"contact_id":REQUEST_ID,"callsign":"OM0RX/P","band":"20m","mode":"FT8","started_at_unix_ms":1_790_000_000_000u64,"frequency_hz":14074000,"rst_sent":"-10","rst_received":"-11","grid":"JN88","comment":"Synthetic\nmultiline history","contact_revision":null}],
+        "matrix":[{"band":"20m","mode":"FT8","worked":true,"confirmed":false}]})
+}
+fn history_hello() -> Value {
+    let mut h = hello();
+    h["capabilities"] = json!(["snapshot.read", "logbook.read"]);
+    h
+}
+#[test]
+fn explicit_history_preserves_owner_facts_and_encodes_portable_calls() {
+    let (mut c, s) = server(vec![
+        json_response(history_hello()),
+        json_response(history_fixture()),
+    ]);
+    c.connect().unwrap();
+    let history = c.history("om0rx/p").unwrap();
+    assert_eq!(history.contacts[0].contact_revision, None);
+    assert!(history.matrix[0].worked);
+    assert!(!history.matrix[0].confirmed);
+    let requests = s.join().unwrap();
+    assert!(requests[1].starts_with("GET /xlog/v1/history?callsign=OM0RX%2FP HTTP/1.1"));
+}
+#[test]
+fn history_does_not_send_without_capability_or_valid_call() {
+    let (mut c, s) = server(vec![json_response(hello())]);
+    c.connect().unwrap();
+    assert_eq!(c.history("W1AW").unwrap_err(), Error::Capability);
+    assert_eq!(c.history("W1AW&secret=true").unwrap_err(), Error::Invalid);
+    assert_eq!(s.join().unwrap().len(), 1);
+}
+#[test]
+fn history_refuses_foreign_workspace_and_wrong_call() {
+    for (field, value, error) in [
+        ("workspace_id", "foreign", Error::IdentityChanged),
+        ("callsign", "W1AW", Error::Invalid),
+    ] {
+        let mut h = history_fixture();
+        h[field] = json!(value);
+        let (mut c, s) = server(vec![json_response(history_hello()), json_response(h)]);
+        c.connect().unwrap();
+        assert_eq!(c.history("OM0RX/P").unwrap_err(), error);
+        if error == Error::IdentityChanged {
+            assert!(c.hello().is_none());
+        }
+        s.join().unwrap();
+    }
+}
+#[test]
+fn history_bounds_rows_and_never_invents_edit_revision() {
+    let mut cases = Vec::new();
+    let mut h = history_fixture();
+    h["contacts"] = json!(vec![h["contacts"][0].clone(); 26]);
+    cases.push(h);
+    let mut h = history_fixture();
+    h["contacts"][0]["contact_revision"] = json!(0);
+    cases.push(h);
+    let mut h = history_fixture();
+    h["matrix"] = json!(vec![h["matrix"][0].clone(); 2]);
+    cases.push(h);
+    for h in cases {
+        let (mut c, s) = server(vec![json_response(history_hello()), json_response(h)]);
+        c.connect().unwrap();
+        assert_eq!(c.history("OM0RX/P").unwrap_err(), Error::Invalid);
+        s.join().unwrap();
+    }
+}
 fn control_hello() -> Value {
     let mut h = hello();
     h["capabilities"] = json!(["snapshot.read", "station.tune", "rotor.point", "rotor.stop"]);
