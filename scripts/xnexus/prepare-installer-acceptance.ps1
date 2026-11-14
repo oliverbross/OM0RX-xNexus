@@ -1,9 +1,9 @@
 # SPDX-License-Identifier: GPL-3.0-only
 <#
 Prepares evidence for WINDOWS_INSTALLER_ACCEPTANCE_PLAN.md. Never installs or
-launches a process. -Execute deliberately fails until ordinary NSIS child-handoff
-tracking has its own reviewed inert test; the build Job force-kill policy is not
-suitable here. A prepared report is not installation acceptance or an approval.
+launches a process. -Execute deliberately fails until the separately tested
+observer is wired into a reviewed candidate transaction; the build Job force-kill
+policy is not suitable here. A prepared report is not installation acceptance.
 #>
 [CmdletBinding()]
 param(
@@ -17,7 +17,7 @@ param(
 )
 $ErrorActionPreference='Stop'
 . (Join-Path $PSScriptRoot 'installer-acceptance-lib.ps1')
-if ($Execute) { throw 'Execution is not implemented: ordinary NSIS uninstall temporary-child identity/retirement requires a separately reviewed observer. No process or installation was started.' }
+if ($Execute) { throw 'Execution is not implemented: the inert-tested observer is not wired into a reviewed candidate-specific install/uninstall transaction. No process or installation was started.' }
 $repo='C:\Projects\OM0RX-xNexus'
 $null=Assert-XnLocalPath $EvidenceParent -NoSpaces
 if (!(Test-Path -LiteralPath $EvidenceParent -PathType Container)) { throw 'Create/review the private evidence parent separately; preparation never creates arbitrary ancestors.' }
@@ -118,7 +118,7 @@ try {
     Assert-XnHash $AuditReceipt $ExpectedAuditSha256; Assert-XnHash $BuildReceipt $buildHash
     $report.transactionPlan=@{install=@{executable=$audit.installer.path;arguments="/S /NS /D=$target"};uninstall=@{executable=(Join-Path $target 'uninstall.exe');arguments='/S'};marker=@{file='.om0rx-xnexus-owner.ini';Product='sk.om0rx.xnexus';Format='1';Root=$target};sentinels=@('app\qualification-unknown.txt','app\qualification-nested\retained.txt','profiles\synthetic-a\draft.json','profiles\synthetic-b\outbox.json');sentinelCreation='Only after verified owned installation; never seed the fresh target';retention='Preserve all evidence, unknown files and external profiles; never recursive-delete or force-kill'}
     $report.status='prepared-not-executed'
-    $report.executionBlockers=@('Ordinary NSIS temporary uninstaller handoff observer needs inert parent/child/timeout tests with no force-termination.', 'Generated uninstall.exe is absent from static extraction: record its exact identity only after a verified audited install, then reverify before its ordinary /S launch.', 'Final immediate registry/process/profile/runtime recheck and post-install/uninstall comparisons belong to that reviewed transaction; preparation does not reserve the namespace.')
+    $report.executionBlockers=@('Inert observer tests passed; candidate-specific ordinary NSIS handoff and complete historical process identities are not yet qualified or wired into an execution transaction.', 'Generated uninstall.exe is absent from static extraction: record its exact identity only after a verified audited install, then reverify before its ordinary /S launch.', 'Final immediate registry/process/profile/runtime recheck and post-install/uninstall comparisons belong to that reviewed transaction; preparation does not reserve the namespace.')
     Save-Report
     Write-Output "Preparation only: $receipt"
 } catch {
