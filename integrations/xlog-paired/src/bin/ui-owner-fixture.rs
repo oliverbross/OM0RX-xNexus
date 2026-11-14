@@ -4,6 +4,9 @@
 #![allow(dead_code)]
 include!(concat!(env!("OUT_DIR"), "/owner_transport.rs"));
 use companion_bridge::Bridge;
+#[cfg(feature = "owner-audio")]
+#[path = "../ui_fixture_audio.rs"]
+mod ui_fixture_audio;
 use serde_json::{json, Value};
 use std::{
     collections::HashMap,
@@ -77,6 +80,20 @@ fn main() {
     let marker: Value = serde_json::from_slice(&std::fs::read(&marker_path).unwrap()).unwrap();
     assert_eq!(marker["schema"], 1);
     assert_eq!(marker["synthetic"], true);
+    let synthetic_audio = marker
+        .get("synthetic_audio")
+        .map(|v| v.as_str().expect("synthetic audio kind"))
+        .unwrap_or("off");
+    assert!(
+        matches!(synthetic_audio, "off" | "silence48k"),
+        "known synthetic audio kind required"
+    );
+    let has_audio = synthetic_audio == "silence48k";
+    #[cfg(not(feature = "owner-audio"))]
+    assert_eq!(
+        synthetic_audio, "off",
+        "rebuild with owner-audio for synthetic PCM"
+    );
     let id = uuid::Uuid::parse_str(marker["id"].as_str().unwrap()).unwrap();
     assert_eq!(
         root.file_name().unwrap().to_str().unwrap(),
@@ -92,6 +109,14 @@ fn main() {
             && !root.join("STOP").exists(),
         "fresh fixture required"
     );
+    assert!(
+        !root.join("STOP_AUDIO").exists(),
+        "fresh audio fixture required"
+    );
+    #[cfg(feature = "owner-audio")]
+    let mut audio = (synthetic_audio == "silence48k").then(ui_fixture_audio::Audio::start);
+    #[cfg(feature = "owner-audio")]
+    let audio_buffer = audio.as_ref().map(|audio| audio.buffer.clone());
     let owner = Arc::new(Mutex::new(Owner {
         revision: 0,
         frequency: 14074000,
@@ -104,6 +129,8 @@ fn main() {
         use std::io::Write;
         let mut state=owner.lock().unwrap();
         if let Some(request)=request{
+            #[cfg(feature = "owner-audio")]
+            if let (Some(after), Some(buffer)) = (request["audio_after"].as_u64(), audio_buffer.as_ref()) { return Ok(buffer.lock().unwrap().response(after, now())); }
             if let Some(after)=request["audio_after"].as_u64(){return Ok(json!({"generated_at_unix_ms":now(),"max_age_ms":1000,"state":"stopped","reason":"Synthetic control fixture has no audio capture","descriptor":null,"oldest_sequence":1,"next_sequence":after+1,"gap":false,"chunks":[]}));}
             if let Some(id)=request["receipt_lookup"].as_str(){return Ok(state.receipts.get(id).cloned().unwrap_or(Value::Null));}
             if let Some(call)=request["history_lookup"].as_str(){
@@ -114,7 +141,10 @@ fn main() {
             let mut event=std::fs::OpenOptions::new().create(true).append(true).open(&evidence).unwrap();
             writeln!(event,"{}",request).unwrap();event.sync_all().unwrap();
             let result=match cmd["kind"].as_str().unwrap(){
-                "station.tune"=>{state.frequency=cmd["frequency_hz"].as_u64().unwrap();json!({"status":"observed","message":"Synthetic radio only"})},
+                "station.tune"=>{
+                    #[cfg(feature = "owner-audio")]
+                    if let Some(buffer) = audio_buffer.as_ref() { buffer.lock().unwrap().stop("Synthetic QSY"); }
+                    state.frequency=cmd["frequency_hz"].as_u64().unwrap();json!({"status":"observed","message":"Synthetic radio only"})},
                 "rotor.point"=>{state.azimuth=cmd["azimuth_deg"].as_f64().unwrap();json!({"status":"observed","message":"Synthetic rotor only"})},
                 "rotor.stop"=>json!({"status":"observed","message":"Synthetic rotor stopped"}),
                 "logbook.create"|"logbook.update"=>{
@@ -132,7 +162,7 @@ fn main() {
         }
         state.revision+=1;
         Ok(json!({"revision":state.revision,"generated_at_unix_ms":now(),"max_age_ms":3000,
-            "station":{"connected":true,"radio_id":"synthetic-radio","frequency_hz":state.frequency,"mode":"FT8","transmitting":false},
+            "station":{"connected":true,"radio_id":if has_audio {"radio1"} else {"synthetic-radio"},"frequency_hz":state.frequency,"mode":if has_audio {"DIGU"} else {"FT8"},"transmitting":false},
             "rotor":{"connected":true,"rotor_id":"synthetic-rotor","azimuth_deg":state.azimuth,"moving":false},
             "spots":[{"id":"fixture-W1AW","callsign":"W1AW","frequency_hz":14074000,"mode":"FT8","observed_at_unix_ms":now(),"source":"Disposable synthetic cluster","country":"United States","adif":291,"latitude":41.7,"longitude":-72.7,"band":"20m","call_status":"New Call","dxcc_status":"ATNO","need":{"status":"needed","score":100,"reasons":["Synthetic new entity for acceptance"]}}]}))
     })).unwrap();
@@ -147,6 +177,12 @@ fn main() {
         root.join("pairing.json").display()
     );
     while !root.join("STOP").exists() {
+        #[cfg(feature = "owner-audio")]
+        if root.join("STOP_AUDIO").exists() {
+            if let Some(audio) = audio.as_mut() {
+                audio.stop();
+            }
+        }
         std::thread::sleep(Duration::from_millis(200));
     }
     bridge.revoke();

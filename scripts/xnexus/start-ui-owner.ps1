@@ -2,7 +2,8 @@
 # SPDX-License-Identifier: GPL-3.0-only
 # Launches only the synthetic HTTP owner, never either application or a device.
 param([Parameter(Mandatory)][string]$Executable,
-      [Parameter(Mandatory)][ValidatePattern('^[A-Fa-f0-9]{64}$')][string]$ExpectedSha256)
+      [Parameter(Mandatory)][ValidatePattern('^[A-Fa-f0-9]{64}$')][string]$ExpectedSha256,
+      [switch]$SyntheticAudio)
 $ErrorActionPreference='Stop'
 if (!$IsWindows) { throw 'Windows fixture launcher required.' }
 $exe=(Resolve-Path -LiteralPath $Executable).Path
@@ -20,7 +21,7 @@ foreach ($sid in @($user,[Security.Principal.SecurityIdentifier]::new('S-1-5-18'
     $acl.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new($sid,'FullControl','ContainerInherit, ObjectInherit','None','Allow'))
 }
 [IO.FileSystemAclExtensions]::Create([IO.DirectoryInfo]::new($root),$acl) | Out-Null
-@{schema=1;synthetic=$true;id=$id.ToString()} | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $root '.xnexus-ui-fixture.json') -Encoding utf8NoBOM
+@{schema=1;synthetic=$true;id=$id.ToString();synthetic_audio=$(if($SyntheticAudio){'silence48k'}else{'off'})} | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $root '.xnexus-ui-fixture.json') -Encoding utf8NoBOM
 $argument="--fixture-root=$root"
 $process=Start-Process -FilePath $exe -ArgumentList ('"'+$argument+'"') -WorkingDirectory $root -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $root 'stdout.log') -RedirectStandardError (Join-Path $root 'stderr.log')
 $deadline=[DateTime]::UtcNow.AddSeconds(15)
