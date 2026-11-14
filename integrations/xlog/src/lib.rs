@@ -142,10 +142,13 @@ pub struct Snapshot {
     pub station: Station,
     pub rotor: Rotor,
     pub spots: Vec<Spot>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub needs: Option<needs::NeedsMetadata>,
 }
 
 pub mod audio;
 mod commands;
+pub mod needs;
 pub use commands::{Command, CommandReceipt, CommandStatus, StopClient};
 mod history;
 pub mod outbox;
@@ -271,6 +274,7 @@ pub struct BridgeClient {
     hello: Option<Hello>,
     observation: Option<Observation>,
     audio_session: Arc<AtomicBool>,
+    needs_authority: Arc<std::sync::Mutex<needs::AuthorityState>>,
 }
 
 impl Drop for BridgeClient {
@@ -321,6 +325,7 @@ impl BridgeClient {
             hello: None,
             observation: None,
             audio_session: Arc::new(AtomicBool::new(false)),
+            needs_authority: Arc::new(std::sync::Mutex::new(needs::AuthorityState::default())),
         })
     }
 
@@ -334,7 +339,10 @@ impl BridgeClient {
     }
 
     pub fn hello(&self) -> Option<&Hello> {
-        self.hello.as_ref()
+        self.audio_session
+            .load(Ordering::Acquire)
+            .then_some(())
+            .and(self.hello.as_ref())
     }
 
     /// Explicitly establishes a new identity. Failure leaves no prior session usable.
@@ -356,13 +364,14 @@ impl BridgeClient {
         }
         self.hello = Some(hello);
         self.audio_session = Arc::new(AtomicBool::new(true));
+        self.needs_authority = Arc::new(std::sync::Mutex::new(needs::AuthorityState::default()));
         Ok(self.hello.as_ref().expect("stored hello"))
     }
 
     /// No automatic reconnect/retry: a failed request invalidates session authority.
     pub fn poll(&mut self) -> Result<&Snapshot, Error> {
         let result = (|| {
-            let hello = self.hello.as_ref().ok_or(Error::Disconnected)?;
+            let hello = self.hello().ok_or(Error::Disconnected)?;
             let snapshot: Snapshot = self.get("/xlog/v1/snapshot", MAX_BYTES)?;
             let remaining = snapshot.validate(hello, now_ms()?)?;
             let received = Instant::now();
@@ -389,6 +398,20 @@ impl BridgeClient {
         })();
         match result {
             Ok(observation) if !observation.remaining.is_zero() => {
+                // Optional missing metadata clears only needs authority. Other
+                // observation and receive capabilities remain usable.
+                let metadata = observation.snapshot.needs.as_ref();
+                let update = self
+                    .needs_authority
+                    .lock()
+                    .map_err(|_| Error::Disconnected)
+                    .and_then(|mut state| state.observe(metadata, now_ms()?));
+                if update.is_err() {
+                    // Needs has its own short freshness window. Expired,
+                    // backwards or invalid optional metadata must not retire
+                    // otherwise fresh station/audio/control observations.
+                    self.invalidate_needs();
+                }
                 self.observation = Some(observation)
             }
             Ok(_) => {
@@ -404,6 +427,9 @@ impl BridgeClient {
     }
 
     pub fn snapshot(&self) -> Result<&Snapshot, Error> {
+        if !self.audio_session.load(Ordering::Acquire) {
+            return Err(Error::Disconnected);
+        }
         let observation = self.observation.as_ref().ok_or(Error::Disconnected)?;
         if observation.received.elapsed() >= observation.remaining {
             return Err(Error::Stale);
@@ -412,8 +438,18 @@ impl BridgeClient {
     }
     pub fn disconnect(&mut self) {
         self.audio_session.store(false, Ordering::Release);
+        self.invalidate_needs();
         self.hello = None;
         self.observation = None;
+    }
+
+    /// Clear needs facts immediately for a local pending/uncertain write fence.
+    /// Only a subsequent fresh owner snapshot can restore query authority.
+    pub fn invalidate_needs(&self) {
+        self.needs_authority
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .invalidate();
     }
 }
 

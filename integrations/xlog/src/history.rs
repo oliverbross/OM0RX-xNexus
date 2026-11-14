@@ -100,7 +100,7 @@ impl BridgeClient {
         }
         let callsign = callsign.to_ascii_uppercase();
         let result = (|| {
-            let hello = self.hello.as_ref().ok_or(Error::Disconnected)?;
+            let hello = self.hello().ok_or(Error::Disconnected)?;
             if !hello.capabilities.iter().any(|c| c == "logbook.read") {
                 return Err(Error::Capability);
             }
@@ -109,6 +109,7 @@ impl BridgeClient {
                 256 * 1024,
             )?;
             history.validate(hello, &callsign)?;
+            self.hello().ok_or(Error::Disconnected)?;
             Ok(history)
         })();
         if matches!(
