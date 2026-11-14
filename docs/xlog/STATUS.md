@@ -10,6 +10,10 @@ WebView storage fields; the shared construction path is being corrected.
 Do not launch or distribute `.1`/`.2` as isolated-profile candidates. See
 [the incident and regression gates](PROFILE_ISOLATION_2026-11-14.md).
 
+The explicit window-construction repair is integrated and
+[candidate `.3` is being prepared](CANDIDATE_1.24.1-xlog.3.md). It requires fresh
+native two-profile isolation acceptance before paired testing resumes.
+
 | Milestone | Current evidence | Remaining acceptance |
 |---|---|---|
 | M0 | Complete: full upstream history, private fork, fetch-only upstream, nine tracked milestones | Maintain upstream review and patch inventory |
@@ -97,7 +101,8 @@ Linux provisioning and the initial 58 SDK/eight policy tests passed. TypeScript
 then exhausted Node's default 2 GB heap. A 4 GB retry is prepared inside the same
 6 GB isolated container. Exact `.2` dependency fetching passed with all 5,445
 tracked source entries verified before and after; its offline contract retry is
-now running after the memory gate passed. Full desktop checking has not run.
+passed after the memory gate passed: 58 client tests, eight policy tests,
+TypeScript/Vite and 40 UI tests. Full desktop checking has not run.
 Eleven tooling tests now verify exact committed archive/cache bytes,
 before/after source integrity, and failure on interrupted memory protection.
 
