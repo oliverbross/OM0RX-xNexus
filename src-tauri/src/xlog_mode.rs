@@ -15,6 +15,8 @@ use std::{
     sync::{Arc, Mutex},
 };
 use tauri::State;
+#[path = "xlog_window.rs"]
+mod private_window;
 #[cfg(target_os = "macos")]
 #[path = "xlog_profile_store.rs"]
 mod profile_store;
@@ -526,6 +528,24 @@ fn startup_failure(reason: &str) -> ! {
     std::process::exit(1)
 }
 
+// Keep the real framework adapter here; the small construction helper can be
+// tested without opening any native window or depending on mock runtime internals.
+impl<'a, R: tauri::Runtime, M: tauri::Manager<R>> private_window::Builder
+    for tauri::WebviewWindowBuilder<'a, R, M>
+{
+    type Output = tauri::WebviewWindow<R>;
+    type Error = tauri::Error;
+    fn data_directory(self, directory: std::path::PathBuf) -> Self {
+        tauri::WebviewWindowBuilder::data_directory(self, directory)
+    }
+    fn data_store_identifier(self, identifier: [u8; 16]) -> Self {
+        tauri::WebviewWindowBuilder::data_store_identifier(self, identifier)
+    }
+    fn build(self) -> Result<Self::Output, Self::Error> {
+        tauri::WebviewWindowBuilder::build(self)
+    }
+}
+
 pub(crate) fn run() {
     let root = data_root().unwrap_or_else(|error| startup_failure(&error));
     // Acquire ownership BEFORE opening the WebView: its persistent draft and the
@@ -536,28 +556,37 @@ pub(crate) fn run() {
     #[cfg(target_os = "macos")]
     let store =
         profile_store::for_current_system(&root).unwrap_or_else(|error| startup_failure(&error));
+    #[cfg(target_os = "macos")]
+    let store = Some(store);
+    #[cfg(not(target_os = "macos"))]
+    let store = None;
     let mut context = tauri::generate_context!();
-    context
-        .config_mut()
+    let mut window = context
+        .config()
         .app
         .windows
-        .retain(|window| window.label == "main");
-    for window in &mut context.config_mut().app.windows {
-        window.url = tauri::WebviewUrl::App("xlog.html".into());
-        window.title = "OM0RX-xNexus · xLog companion".into();
-        window.visible = true;
-        window.min_width = Some(780.0);
-        window.min_height = Some(438.0);
-        window.data_directory = Some(root.join("webview"));
-        #[cfg(target_os = "macos")]
-        {
-            window.data_store_identifier = Some(store);
-        }
-    }
+        .iter()
+        .find(|window| window.label == "main")
+        .cloned()
+        .unwrap_or_else(|| startup_failure("Companion main window configuration is missing"));
+    // No automatic WebView may be created from configuration: the locked Tauri
+    // conversion drops both storage fields. Preserve the window options, then
+    // apply storage using the explicit builder setters in setup.
+    context.config_mut().app.windows.clear();
+    window.url = tauri::WebviewUrl::App("xlog.html".into());
+    window.title = "OM0RX-xNexus · xLog companion".into();
+    window.visible = true;
+    window.min_width = Some(780.0);
+    window.min_height = Some(438.0);
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .manage(Shared::default())
         .manage(queue)
+        .setup(move |app| {
+            let builder = tauri::WebviewWindowBuilder::from_config(app, &window)?;
+            private_window::build(builder, root.join("webview"), store)?;
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             xlog_status,
             xlog_import_pairing,
