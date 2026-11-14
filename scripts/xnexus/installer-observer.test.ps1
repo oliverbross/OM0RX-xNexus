@@ -2,6 +2,7 @@
 # Small finite-lived inert processes only; no candidate install or GUI launch.
 $ErrorActionPreference='Stop'
 . (Join-Path $PSScriptRoot 'installer-observer.ps1')
+. (Join-Path $PSScriptRoot 'installer-transaction.ps1')
 $repo=Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
 $evidence=Join-Path $repo ('target\installer-observer-tests\'+[guid]::NewGuid().ToString('N'))
 [IO.Directory]::CreateDirectory($evidence) | Out-Null
@@ -21,14 +22,21 @@ $rejected=$false
 try { Get-XnHash (Join-Path $alias 'Au_.exe') -ObservedImage | Out-Null } catch { $rejected=$true }
 if (!$rejected) { throw 'Observed executable accepted a reparse alias' }
 $cases=@()
-foreach ($case in @(@{name='ordinary';timeout=20},@{name='timeout';timeout=2})) {
+foreach ($case in @(@{name='ordinary';timeout=20;childExit=0},@{name='timeout';timeout=2;childExit=0},@{name='child-error';timeout=20;childExit=1})) {
     $directory=Join-Path $evidence $case.name;[IO.Directory]::CreateDirectory($directory) | Out-Null
     [IO.File]::WriteAllText((Join-Path $directory 'inert-observer-fixture.marker'),'Finite inert qualification process fixture')
-    $result=Invoke-XnProcessObservation -Executable $exe -ExpectedSha256 $hash -Arguments "parent `"$directory`"" -WorkingDirectory $directory -ReceiptPath (Join-Path $directory 'observation.json') -TimeoutSeconds $case.timeout
+    $result=Invoke-XnProcessObservation -Executable $exe -ExpectedSha256 $hash -Arguments "parent `"$directory`" $($case.childExit)" -WorkingDirectory $directory -ReceiptPath (Join-Path $directory 'observation.json') -TimeoutSeconds $case.timeout
     if (!$result.atomicMembership -or $result.limitFlags -ne 0 -or $result.memoryLimit -ne 0 -or $result.terminatedByObserver) { throw 'Observer changed process policy' }
     if ($result.identities.Count -ne 2 -or @($result.identities | Where-Object { $_.executable -ine $exe -or $_.sha256 -ine $hash }).Count) { throw 'Did not observe exact two fixture identities' }
-    if ($case.name -eq 'ordinary') {
+    if ($case.name -ne 'timeout') {
         if ($result.status -ne 'retired-identities-observed' -or !$result.rootExited -or $result.activeProcesses -ne 0 -or $result.rootExitCode -ne 0) { throw 'Normal retirement not verified' }
+        if ($case.name -eq 'ordinary') { Assert-XnObservedRetirement $result $hash }
+        else {
+            $nonzero=@($result.identities | Where-Object { $_.exited -and $_.exitCode -eq 1 -and $_.pid -ne $result.rootPid })
+            if ($nonzero.Count -ne 1) { throw 'Did not retain exact child exit1 after root exit0' }
+            $refused=$false;try { Assert-XnObservedRetirement $result $hash } catch { $refused=$true }
+            if (!$refused) { throw 'Transaction accepted nonzero child exit' }
+        }
     } else {
         if ($result.status -ne 'timeout-unresolved' -or !$result.rootExited -or $result.activeProcesses -ne 1) { throw 'Root-before-child timeout control did not fire' }
         $childId=[int](Get-Content -LiteralPath (Join-Path $directory 'child.pid'))
@@ -51,4 +59,4 @@ foreach ($case in @(@{name='ordinary';timeout=20},@{name='timeout';timeout=2})) 
     $cases+=@{name=$case.name;status='passed';rootExited=$true;activeProcesses=0;observationStatus=$result.status}
 }
 @{status='passed';cases=$cases;observedImagePathControls=2;fixtureExecutable=$exe;fixtureSha256=$hash;candidateLaunched=$false;installed=$false;forceTerminated=$false;completedUtc=[DateTime]::UtcNow.ToString('o')} | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $evidence 'receipt.json') -Encoding utf8
-Write-Output "2 inert process lifecycle cases passed; all roots/children exited naturally: $evidence"
+Write-Output "3 inert process lifecycle cases passed; all roots/children exited naturally: $evidence"

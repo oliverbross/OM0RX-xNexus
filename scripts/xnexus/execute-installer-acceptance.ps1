@@ -23,6 +23,8 @@ $null=Assert-XnLocalPath $evidence -NoSpaces;Assert-XnFreshTarget $plan.target
 Assert-XnHash $plan.artifacts.auditReceipt $ExpectedAuditSha256
 Assert-XnHash $plan.artifacts.buildReceipt $plan.artifacts.buildReceiptSha256
 if (!$Execute) { Write-Output 'Review inputs verified; no process, installation or registry mutation. Pass -Execute only after package-owner release.'; return }
+Assert-XnPrivateEvidence (Split-Path -Parent $evidence) -RequireProtected
+Assert-XnPrivateEvidence $evidence
 $receiptPath=Join-Path $evidence 'transaction.json'
 if (Test-Path -LiteralPath $receiptPath) { throw 'A transaction already exists; preserve it, never resume or retry automatically.' }
 # An exclusive CreateNew journal prevents accidental duplicate invocation. The
@@ -94,6 +96,7 @@ try {
         [pscustomobject]@{registry=@(Get-XnRegistrySnapshot);productProcesses=$productProcesses;profiles=$profiles;shortcuts=$shortcuts;runtime=(Get-CurrentRuntime);otherRegistry=$other;forkShellMetadata=$shell;defaultInstallAbsent=$plan.defaultInstallAbsent}
     }
     function Verify-Inputs([string]$Stage) {
+        Assert-XnPrivateEvidence $evidence
         Assert-XnHash $PreparedReceipt $ExpectedPreparationSha256
         Assert-XnHash $plan.artifacts.auditReceipt $ExpectedAuditSha256
         Assert-XnHash $plan.artifacts.buildReceipt $plan.artifacts.buildReceiptSha256

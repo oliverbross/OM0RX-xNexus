@@ -43,6 +43,9 @@ compares it with the reviewed state, and rechecks namespace, profiles, shortcuts
 runtime and artifact identity immediately before dispatch. The target remains
 the original reviewed absent `app` child; the repeat preparation's unused target
 is never installed. A failed transaction cannot automatically resume or retry.
+The original nonce directory's owner and allowed ACL principals are rechecked
+before its claim is created and before each dispatch; creating a fresh sibling
+preflight does not substitute for checking the retained transaction directory.
 
 It invokes only `/S /NS /D=<exact target>` and, following a verified owned install,
 the generated ordinary `uninstall.exe /S`. Exact payload destination hashes,
@@ -52,10 +55,18 @@ Successful uninstall requires removed owned payload/registration, preserved
 unknown and external synthetic sentinels, unchanged protected state and a retired
 process tree. Any intermediate failure retains its journal and partial state;
 there is no rollback, force termination, recursive delete or application launch.
+Receipts distinguish `installedVerified`/`uninstalledVerified` from dispatch.
+After either process dispatch, state is explicitly unknown until its complete
+postconditions pass; a thrown partial operation never implies no mutation occurred.
+Owned product/uninstall registry snapshots retain every bounded value and its
+native type, and refuse subkeys. Changing `REG_SZ` to `REG_EXPAND_SZ` with identical
+text therefore invalidates the retained registration fence.
 
-A non-terminating observer library has two passing finite-lived fixture cases:
-parent exit before child retirement, and timeout preserving a live child until its
-ordinary completion. The build Job supervisor is intentionally unsuitable because
+A non-terminating observer library has three passing finite-lived fixture cases:
+parent exit before child retirement, timeout preserving a live child until its
+ordinary completion, and root exit zero followed by child exit one. The last case
+proves the transaction rejects a failed child even when the root succeeded.
+The build Job supervisor is intentionally unsuitable because
 disposal terminates its children.
 The installed uninstaller is generated at installation time and is absent from
 the static 7-Zip extraction; the future transaction must record its identity
@@ -71,19 +82,22 @@ registry inventory completeness, runtime minimums, destination mapping, marker
 identity and retained-file hashes. They do not install/uninstall the product,
 qualify native application startup, or exercise an NSIS child process.
 
-`installer-transaction.test.ps1` covers 21 injected inert transaction cases,
+`installer-transaction.test.ps1` covers 24 injected inert transaction cases,
 including success, namespace and artifact refusal, partial/failed installation,
 timeout, missing process identity, unexpected helper, changed payload or marker,
 replaced registration/uninstaller, and retained profile/sentinel loss. These
 controls prove orchestration ordering and refusal, not actual NSIS behavior.
 Two additional cases invoke the actual executor's non-mutating default and
-wrong-review-hash refusal, for 23 checks in that suite.
+wrong-review-hash refusal. Seven more exercise the actual typed registry
+projection and ACL descriptor validator, for 33 checks in that suite.
 
 `installer-observer.test.ps1` compiles only a tiny inert fixture. The observer uses
 [atomic Job-list assignment](https://learn.microsoft.com/windows/win32/api/processthreadsapi/nf-processthreadsapi-updateprocthreadattribute)
 at process creation, verifies actual zero limit flags and memory limit, and has
 no termination API. It records live PID, creation time, executable/hash and full
-arguments. Closing its handles leaves processes alive; timeout is unresolved,
+arguments. Query/synchronize handles retain each observed member's exact creation
+identity and exit code after PID retirement; every member must exit zero for
+transaction success. Closing its handles leaves processes alive; timeout is unresolved,
 never successful cleanup. Each fixture is finite and the test waits for ordinary
 exit, then positively verifies no owned process remains.
 

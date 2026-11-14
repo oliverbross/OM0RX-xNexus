@@ -41,6 +41,8 @@ namespace Xnexus.InstallerObservation {
         [DllImport("kernel32.dll",SetLastError=true)] static extern bool IsProcessInJob(IntPtr process,IntPtr job,out bool result);
         [DllImport("kernel32.dll",SetLastError=true)] static extern uint WaitForSingleObject(IntPtr handle,uint milliseconds);
         [DllImport("kernel32.dll",SetLastError=true)] static extern bool GetExitCodeProcess(IntPtr process,out uint code);
+        [DllImport("kernel32.dll",SetLastError=true)] static extern IntPtr OpenProcess(uint access,bool inherit,uint pid);
+        [DllImport("kernel32.dll",SetLastError=true)] static extern bool GetProcessTimes(IntPtr process,out long created,out long exited,out long kernel,out long user);
         [DllImport("kernel32.dll",CharSet=CharSet.Unicode,SetLastError=true)] static extern bool QueryFullProcessImageNameW(IntPtr process,uint flags,StringBuilder path,ref uint size);
         [DllImport("kernel32.dll",SetLastError=true)] static extern bool CloseHandle(IntPtr handle);
         [DllImport("kernel32.dll",CharSet=CharSet.Unicode,SetLastError=true)] static extern IntPtr CreateFileW(string path,uint access,uint share,IntPtr security,uint disposition,uint flags,IntPtr template);
@@ -64,6 +66,30 @@ namespace Xnexus.InstallerObservation {
             get { if(process==IntPtr.Zero) throw new ObjectDisposedException("Observer"); uint s=WaitForSingleObject(process,0); if(s==0xffffffff) throw new Win32Exception(Marshal.GetLastWin32Error()); return s==0; }
         }
         public uint RootExitCode { get { if(!RootExited) throw new InvalidOperationException("Root still alive"); uint code; Check(GetExitCodeProcess(process,out code)); return code; } }
+        public sealed class Member : IDisposable {
+            IntPtr handle;
+            public uint Pid { get; private set; }
+            public DateTime CreatedUtc { get; private set; }
+            public string Executable { get; private set; }
+            internal Member(uint pid,IntPtr job) {
+                try {
+                    handle=OpenProcess(0x100000|0x1000,false,pid);Check(handle!=IntPtr.Zero);
+                    bool belongs;Check(IsProcessInJob(handle,job,out belongs));
+                    if(!belongs) throw new InvalidOperationException("Observed PID is not an owned member");
+                    long created,exited,kernel,user;Check(GetProcessTimes(handle,out created,out exited,out kernel,out user));
+                    Pid=pid;CreatedUtc=DateTime.FromFileTimeUtc(created);
+                    uint size=32768;StringBuilder path=new StringBuilder((int)size);
+                    Check(QueryFullProcessImageNameW(handle,0,path,ref size));Executable=path.ToString();
+                } catch { Dispose();throw; }
+            }
+            public bool Exited { get { if(handle==IntPtr.Zero) throw new ObjectDisposedException("Member");uint state=WaitForSingleObject(handle,0);if(state==0xffffffff) throw new Win32Exception(Marshal.GetLastWin32Error());return state==0; } }
+            public uint ExitCode { get { if(!Exited) throw new InvalidOperationException("Member still alive");uint code;Check(GetExitCodeProcess(handle,out code));return code; } }
+            public void Dispose() { if(handle!=IntPtr.Zero) { CloseHandle(handle);handle=IntPtr.Zero; } }
+        }
+        public Member Capture(uint pid) {
+            if(job==IntPtr.Zero) throw new ObjectDisposedException("Observer");
+            return new Member(pid,job);
+        }
         public static string CanonicalFilePath(string path) {
             IntPtr file=CreateFileW(path,0,7,IntPtr.Zero,3,0,IntPtr.Zero);
             if(file==new IntPtr(-1)) throw new Win32Exception(Marshal.GetLastWin32Error());

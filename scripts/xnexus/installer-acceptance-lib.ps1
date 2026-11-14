@@ -78,6 +78,44 @@ function Assert-XnNamespaceEmpty($Rows) {
     }
 }
 
+function Get-XnOwnedRegistryValues($Key) {
+    # Shared by the real registry reader and inert RegistryKey-shaped controls.
+    # Never truncate: both content and native registry type fence later deletion.
+    if ($Key.SubKeyCount -ne 0) { throw 'Unexpected owned registry subkey; preserve it.' }
+    $names=@($Key.GetValueNames() | Sort-Object)
+    if ($names.Count -gt 128) { throw 'Owned registry value count bound exceeded.' }
+    $values=[ordered]@{};$kinds=[ordered]@{}
+    foreach ($name in $names) {
+        if ($name.Length -gt 128) { throw 'Owned registry name bound exceeded.' }
+        $kind=$Key.GetValueKind($name).ToString()
+        $value=$Key.GetValue($name,$null,[Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
+        switch ($kind) {
+            { $_ -in 'String','ExpandString' } { if ($value -isnot [string] -or $value.Length -gt 4096) { throw 'Owned string registry bound/type mismatch.' } }
+            'DWord' { if ($value -isnot [int]) { throw 'Owned DWORD type mismatch.' } }
+            'QWord' { if ($value -isnot [long]) { throw 'Owned QWORD type mismatch.' } }
+            { $_ -in 'Binary','None' } { if ($value -isnot [byte[]] -or $value.Length -gt 4096) { throw 'Owned binary registry bound/type mismatch.' } }
+            'MultiString' { if ($value -isnot [string[]] -or $value.Count -gt 64 -or ($value -join '').Length -gt 4096) { throw 'Owned multi-string registry bound/type mismatch.' } }
+            default { throw 'Unknown owned registry type.' }
+        }
+        $values[$name]=$value;$kinds[$name]=$kind
+    }
+    @{values=$values;valueKinds=$kinds;subKeyCount=0}
+}
+
+function Assert-XnEvidenceDescriptor($Descriptor,[switch]$RequireProtected) {
+    if (!$Descriptor.ownerIsCurrentUser -or ($RequireProtected -and !$Descriptor.protected)) { throw 'Private evidence owner/inheritance mismatch.' }
+    foreach ($sid in $Descriptor.allowedSids) {
+        if ($sid -notin $Descriptor.currentUserSid,'S-1-5-18','S-1-5-32-544') { throw 'Private evidence grants access outside its reviewed principals.' }
+    }
+}
+function Assert-XnPrivateEvidence([string]$Path,[switch]$RequireProtected) {
+    $null=Assert-XnLocalPath $Path -NoSpaces
+    $identity=[Security.Principal.WindowsIdentity]::GetCurrent()
+    $acl=Get-Acl -LiteralPath $Path
+    $descriptor=@{ownerIsCurrentUser=($acl.Owner -in $identity.User.Value,$identity.Name);currentUserSid=$identity.User.Value;protected=$acl.AreAccessRulesProtected;allowedSids=@($acl.Access | Where-Object AccessControlType -eq 'Allow' | ForEach-Object { $_.IdentityReference.Translate([Security.Principal.SecurityIdentifier]).Value })}
+    Assert-XnEvidenceDescriptor $descriptor -RequireProtected:$RequireProtected
+}
+
 function Get-XnRegistrySnapshot {
     $paths = @{ product='Software\OM0RX\OM0RX-xNexus'; uninstall='Software\Microsoft\Windows\CurrentVersion\Uninstall\OM0RX-xNexus'; run='Software\Microsoft\Windows\CurrentVersion\Run' }
     foreach ($hive in 'CurrentUser','LocalMachine') {
@@ -89,17 +127,15 @@ function Get-XnRegistrySnapshot {
                     try {
                         $present = if ($kind -eq 'run') { $null -ne $key -and @($key.GetValueNames()) -contains 'OM0RX-xNexus' } else { $null -ne $key }
                         # Only bounded relevant values; never dump unrelated Run entries.
-                        $values = @{}
+                        $values = @{};$kinds=@{}
                         if ($present) {
-                            $names = if ($kind -eq 'run') { @('OM0RX-xNexus') } else { @($key.GetValueNames()) }
-                            if ($names.Count -gt 128 -or ($kind -ne 'run' -and $key.SubKeyCount -ne 0)) { throw 'Unreviewed fork registry shape.' }
-                            foreach ($name in $names) {
-                                $value = $key.GetValue($name,$null,[Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
-                                if ($name.Length -gt 128 -or ([string]$value).Length -gt 4096) { throw 'Fork registry value bound exceeded; never truncate identity.' }
-                                if ($null -ne $value) { $values[$name] = $value }
-                            }
+                            if ($kind -eq 'run') {
+                                $value=$key.GetValue('OM0RX-xNexus',$null,[Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
+                                if (([string]$value).Length -gt 4096) { throw 'Fork Run value bound exceeded.' }
+                                $values['OM0RX-xNexus']=$value;$kinds['OM0RX-xNexus']=$key.GetValueKind('OM0RX-xNexus').ToString()
+                            } else { $projection=Get-XnOwnedRegistryValues $key;$values=$projection.values;$kinds=$projection.valueKinds }
                         }
-                        [pscustomobject]@{hive=$hive;view=$view;kind=$kind;present=[bool]$present;values=$values}
+                        [pscustomobject]@{hive=$hive;view=$view;kind=$kind;present=[bool]$present;values=$values;valueKinds=$kinds}
                     } finally { if ($key) { $key.Dispose() } }
                 }
             } finally { $base.Dispose() }

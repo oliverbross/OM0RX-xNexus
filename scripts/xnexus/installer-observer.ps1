@@ -18,7 +18,13 @@ function Invoke-XnProcessObservation {
     $receipt=[ordered]@{schema=1;scope='ordinary CreateProcess tree membership only';status='starting';executable=$Executable;sha256=$ExpectedSha256;arguments=$Arguments;cwd=$WorkingDirectory;timeoutSeconds=$TimeoutSeconds;startedUtc=[DateTime]::UtcNow.ToString('o');identities=@();terminatedByObserver=$false}
     function Save-Observation { $receipt | ConvertTo-Json -Depth 9 | Set-Content -LiteralPath $ReceiptPath -Encoding utf8 }
     Save-Observation
-    $observer=$null;$known=@{};$timer=[Diagnostics.Stopwatch]::StartNew()
+    $observer=$null;$known=@{};$handles=@{};$timer=[Diagnostics.Stopwatch]::StartNew()
+    function Update-MemberExitCodes {
+        foreach ($key in $handles.Keys) {
+            $known[$key].exited=$handles[$key].Exited
+            $known[$key].exitCode=if ($handles[$key].Exited) { $handles[$key].ExitCode } else { $null }
+        }
+    }
     try {
         $observer=[Xnexus.InstallerObservation.Observer]::new($Executable,$Arguments,$WorkingDirectory)
         $receipt.rootPid=$observer.Pid;$receipt.actualRootExecutable=$observer.Executable
@@ -33,13 +39,19 @@ function Invoke-XnProcessObservation {
                 if (!$process.ExecutablePath -or !$process.CommandLine -or !$process.CreationDate) { throw "Live process identity unavailable: $member" }
                 $key="$member/$($process.CreationDate.ToUniversalTime().ToString('o'))"
                 if (!$known.ContainsKey($key)) {
-                    # Recheck membership after querying CIM: PID reuse cannot import an unrelated process.
-                    if (@($observer.ActivePids()) -notcontains [uint32]$member) { continue }
-                    $known[$key]=[ordered]@{pid=[uint32]$member;parentPid=$process.ParentProcessId;createdUtc=$process.CreationDate.ToUniversalTime().ToString('o');executable=$process.ExecutablePath;arguments=$process.CommandLine;sha256=(Get-XnHash $process.ExecutablePath -ObservedImage)}
+                    # Retain a query/synchronize handle: PID reuse cannot import
+                    # an unrelated process and child exit codes survive PID retirement.
+                    $handle=$observer.Capture([uint32]$member)
+                    try {
+                        if ($handle.Executable -ine $process.ExecutablePath -or [Math]::Abs(($handle.CreatedUtc-$process.CreationDate.ToUniversalTime()).TotalMilliseconds) -ge 1) { throw 'Observed process creation identity changed.' }
+                        $known[$key]=[ordered]@{pid=[uint32]$member;parentPid=$process.ParentProcessId;createdUtc=$process.CreationDate.ToUniversalTime().ToString('o');handleCreatedUtc=$handle.CreatedUtc.ToString('o');executable=$process.ExecutablePath;arguments=$process.CommandLine;sha256=(Get-XnHash $process.ExecutablePath -ObservedImage);exited=$false;exitCode=$null}
+                        $handles[$key]=$handle;$handle=$null
+                    } finally { if ($handle) { $handle.Dispose() } }
                 }
             }
             $counts=$observer.Counts
             $receipt.rootExited=$observer.RootExited;$receipt.activeProcesses=$counts.ActiveProcesses;$receipt.totalProcesses=$counts.TotalProcesses
+            Update-MemberExitCodes
             $receipt.identities=@($known.Values);$receipt.activePids=@($observer.ActivePids())
             if ($receipt.rootExited) { $receipt.rootExitCode=$observer.RootExitCode }
             Save-Observation
@@ -58,10 +70,11 @@ function Invoke-XnProcessObservation {
         if ($observer) {
             try {
                 $receipt.rootExited=$observer.RootExited;$receipt.activeProcesses=$observer.Counts.ActiveProcesses
-                $receipt.activePids=@($observer.ActivePids());$receipt.identities=@($known.Values)
+                $receipt.activePids=@($observer.ActivePids());Update-MemberExitCodes;$receipt.identities=@($known.Values)
             } catch { $receipt.finalSnapshotError=$_.Exception.Message }
             $observer.Dispose() # Close handles only; live descendants are deliberately left to retire normally.
         }
+        foreach ($handle in $handles.Values) { $handle.Dispose() }
         $receipt.elapsedSeconds=$timer.Elapsed.TotalSeconds;$receipt.finishedUtc=[DateTime]::UtcNow.ToString('o');Save-Observation
     }
     [pscustomobject]$receipt

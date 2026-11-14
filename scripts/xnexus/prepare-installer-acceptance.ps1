@@ -21,15 +21,7 @@ if ($Execute) { throw 'Use execute-installer-acceptance.ps1 with the exact revie
 $repo='C:\Projects\OM0RX-xNexus'
 $null=Assert-XnLocalPath $EvidenceParent -NoSpaces
 if (!(Test-Path -LiteralPath $EvidenceParent -PathType Container)) { throw 'Create/review the private evidence parent separately; preparation never creates arbitrary ancestors.' }
-$identity=[Security.Principal.WindowsIdentity]::GetCurrent().User.Value
-$acl=Get-Acl -LiteralPath $EvidenceParent
-if ($acl.Owner -notin $identity,[Security.Principal.WindowsIdentity]::GetCurrent().Name -or !$acl.AreAccessRulesProtected) {
-    throw 'Evidence parent must be owned by the current user with inheritance disabled.'
-}
-foreach ($rule in $acl.Access) {
-    $sid=$rule.IdentityReference.Translate([Security.Principal.SecurityIdentifier]).Value
-    if ($rule.AccessControlType -eq 'Allow' -and $sid -notin $identity,'S-1-5-18','S-1-5-32-544') { throw 'Evidence parent grants access outside current user, SYSTEM and Administrators.' }
-}
+Assert-XnPrivateEvidence $EvidenceParent -RequireProtected
 $nonce=[guid]::NewGuid().ToString('N');$evidence=Join-Path $EvidenceParent "acceptance-$nonce";$target=Join-Path $evidence 'app'
 Assert-XnFreshTarget $evidence; Assert-XnFreshTarget $target
 $report=[ordered]@{schema=1;kind='xnexus-installer-preparation';id=$nonce;source=$ExpectedCommit;version=$Version;preparedUtc=[DateTime]::UtcNow.ToString('o');status='preparing';installed=$false;applicationLaunched=$false;target=$target;executionReady=$false}
