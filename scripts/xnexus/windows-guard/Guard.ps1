@@ -56,8 +56,10 @@ function Invoke-XnexusGuardedChild {
         minimumPhysicalBytes = [ulong]::MaxValue; minimumCommitBytes = [ulong]::MaxValue
         peakJobBytes = [ulong]0; processExitCode = $null; effectiveExitCode = 125
         memoryLimitNotificationObserved = $false
+        cleanupConfirmed = $false; finalActiveProcesses = $null; rootTerminationConfirmed = $false
     }
     $job = $null
+    $launchAttempted = $false
     $receiptPath = Join-Path $EvidenceDirectory 'guard.json'
     $telemetryPath = Join-Path $EvidenceDirectory 'telemetry.jsonl'
     if (Test-Path $receiptPath) { throw 'Evidence receipt already exists; choose a fresh directory.' }
@@ -67,6 +69,7 @@ function Invoke-XnexusGuardedChild {
         Assert-XnexusHeadroom $memory.AvailablePhysical $memory.AvailableCommit
         $receipt.admission = @{physicalBytes=$memory.AvailablePhysical; commitBytes=$memory.AvailableCommit}
         $receipt | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $receiptPath -Encoding utf8
+        $launchAttempted = $true
         $job = [Xnexus.Guard.NativeJob]::new($Executable, $Arguments, $WorkingDirectory, $JobLimitBytes)
         $receipt.pid = $job.Pid; $receipt.assignedBeforeResume = $job.AssignedBeforeResume
         $receipt.verifiedJobLimitBytes = $job.Limit
@@ -106,7 +109,27 @@ function Invoke-XnexusGuardedChild {
         $receipt.status='guard-failed'; $receipt.error=$_.Exception.Message
         if ($job) { $job.Stop() }
     } finally {
-        if ($job) { $job.Dispose() }
+        if ($job) {
+            try {
+                # TerminateJobObject is asynchronous. Retain the controlling handle
+                # until both the Job accounting and root process signal prove exit.
+                $job.Stop()
+                $receipt.cleanupConfirmed = $job.WaitForTermination(5000)
+                $receipt.finalActiveProcesses = $job.ActiveProcesses
+                $receipt.rootTerminationConfirmed = $job.RootExited
+                if ($receipt.rootTerminationConfirmed -and $null -eq $receipt.processExitCode) { $receipt.processExitCode = $job.ExitCode }
+            } catch {
+                $receipt.cleanupConfirmed = $false
+                $receipt.cleanupError = $_.Exception.Message
+            } finally { $job.Dispose() }
+        } elseif (!$launchAttempted) {
+            $receipt.cleanupConfirmed = $true
+            $receipt.finalActiveProcesses = 0
+        }
+        if (!$receipt.cleanupConfirmed) {
+            $receipt.status = 'cleanup-unconfirmed'
+            $receipt.effectiveExitCode = 125
+        }
         $receipt.finishedUtc=[DateTime]::UtcNow.ToString('o')
         $receipt | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $receiptPath -Encoding utf8
     }

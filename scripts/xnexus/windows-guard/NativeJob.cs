@@ -126,6 +126,15 @@ namespace Xnexus.Guard {
             finally { CloseHandle(candidate); }
         }
         public void Stop() { if(job!=IntPtr.Zero) Check(TerminateJobObject(job,125)); }
+        public bool WaitForTermination(int milliseconds) {
+            if(milliseconds<0 || milliseconds>10000) throw new ArgumentOutOfRangeException("milliseconds");
+            var clock=System.Diagnostics.Stopwatch.StartNew();
+            do {
+                if(ActiveProcesses==0 && RootExited) return true;
+                if(clock.ElapsedMilliseconds>=milliseconds) return false;
+                System.Threading.Thread.Sleep(25);
+            } while(true);
+        }
         public void Dispose() {
             if(job!=IntPtr.Zero) { TerminateJobObject(job,125); CloseHandle(job); job=IntPtr.Zero; }
             if(thread!=IntPtr.Zero) { CloseHandle(thread); thread=IntPtr.Zero; }

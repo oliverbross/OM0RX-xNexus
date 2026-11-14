@@ -55,6 +55,7 @@ try {
     $body = '@{pid=$PID; priority=[Diagnostics.Process]::GetCurrentProcess().PriorityClass.ToString()} | ConvertTo-Json | Set-Content -LiteralPath ' + (ConvertTo-XnexusPsLiteral $marker)
     $normal = Invoke-XnexusGuardedChild -Executable $pwsh -Arguments (Args $body) -WorkingDirectory $root -EvidenceDirectory (Join-Path $root 'normal') -JobLimitBytes 512MB -ReadHeadroom $good -PollMilliseconds 50 -MaximumSeconds 20
     Assert ($normal.status -eq 'passed') "Normal child failed: $($normal | ConvertTo-Json -Compress)"
+    Assert ($normal.cleanupConfirmed -and $normal.finalActiveProcesses -eq 0 -and $normal.rootTerminationConfirmed) 'Normal cleanup lacks positive confirmation.'
     Assert $normal.assignedBeforeResume 'Child was not proven assigned before execution.'
     $observed = Get-Content -Raw -LiteralPath $marker | ConvertFrom-Json
     Assert ($observed.priority -eq 'BelowNormal') 'Job priority did not reach child.'
@@ -69,6 +70,7 @@ try {
         $memory = { $counter.calls++; if ($counter.calls -eq 1) { & $good } elseif ($kind -eq 'physical') { [pscustomobject]@{AvailablePhysical=[ulong]1GB;AvailableCommit=[ulong]12GB} } else { [pscustomobject]@{AvailablePhysical=[ulong]12GB;AvailableCommit=[ulong]1GB} } }.GetNewClosure()
         $stopped = Invoke-XnexusGuardedChild -Executable $pwsh -Arguments (Args 'Start-Sleep -Seconds 30') -WorkingDirectory $root -EvidenceDirectory (Join-Path $root $kind) -JobLimitBytes 512MB -ReadHeadroom $memory -PollMilliseconds 50
         Assert ($stopped.status -eq 'interrupted' -and $stopped.effectiveExitCode -ne 0) "$kind pressure was reported as success."
+        Assert ($stopped.cleanupConfirmed -and $stopped.finalActiveProcesses -eq 0 -and $stopped.rootTerminationConfirmed) "$kind stop did not confirm cleanup."
         Wait-Exited $stopped.pid
     }
 
@@ -87,6 +89,14 @@ try {
         Wait-Exited $descendant
         Assert (!$other.RootExited) 'Owned cleanup affected unrelated positive control.'
     } finally { if ($family) { $family.Dispose() }; if ($other) { $other.Dispose() } }
+
+    $stoppedChildFile = Join-Path $root 'stopped-descendant.pid'
+    $stoppedNestedArgs = Args ('Set-Content -LiteralPath ' + (ConvertTo-XnexusPsLiteral $stoppedChildFile) + ' -Value $PID; Start-Sleep -Seconds 30')
+    $stoppedFamilyBody = 'Start-Process -FilePath ' + (ConvertTo-XnexusPsLiteral $pwsh) + ' -ArgumentList ' + (ConvertTo-XnexusPsLiteral $stoppedNestedArgs) + ' -WindowStyle Hidden; Start-Sleep -Seconds 30'
+    $stoppedFamily = Invoke-XnexusGuardedChild -Executable $pwsh -Arguments (Args $stoppedFamilyBody) -WorkingDirectory $root -EvidenceDirectory (Join-Path $root 'descendant-stop') -JobLimitBytes 512MB -ReadHeadroom $good -MaximumSeconds 3 -PollMilliseconds 50
+    Assert (Test-Path $stoppedChildFile) 'Descendant-stop fixture did not actually spawn a child.'
+    Assert ($stoppedFamily.status -eq 'interrupted' -and $stoppedFamily.cleanupConfirmed -and $stoppedFamily.finalActiveProcesses -eq 0 -and $stoppedFamily.rootTerminationConfirmed) 'Descendant family cleanup not confirmed while Job open.'
+    Wait-Exited ([uint](Get-Content -LiteralPath $stoppedChildFile))
 
     $closePidFile = Join-Path $root 'kill-on-close.pid'
     $nativeSource = Join-Path $PSScriptRoot 'windows-guard\NativeJob.cs'

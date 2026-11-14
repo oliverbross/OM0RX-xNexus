@@ -29,6 +29,13 @@ The internal testable guard has these boundaries:
   an observed Job memory-limit notification, or the twelve-hour watchdog stops
   only that owned Job. Probe/telemetry errors also fail the attempt and dispose
   the owned Job. A root that exits with surviving descendants is a failed attempt.
+- Termination is asynchronous. Before closing its Job handle, the guard waits
+  up to five seconds for both zero active Job processes and root termination.
+  It records `finalActiveProcesses`, `rootTerminationConfirmed` and
+  `cleanupConfirmed`. Failure to prove cleanup changes the result to
+  `cleanup-unconfirmed`; callers must not announce the resource slot released.
+  A constructor failure after launch was attempted also remains unconfirmed,
+  since the PowerShell supervisor never received a usable Job handle.
 - The Job cap rejects excess memory commitments independently of polling. Windows
   hard-limit completion-port messages are best-effort, so absence of a notification
   is **not** evidence that an allocation was never denied. The child exit status,
@@ -73,7 +80,8 @@ only into this internal fixture seam; the production wrapper always uses the
 real Windows counters and fixed 4 GiB limit. Test allocations use smaller Job
 caps. These tests are neither package compilation nor optimized peak evidence.
 
-The source-matched Windows fixture run passed **25 assertions**. Its retained
-evidence is `C:/Projects/OM0RX-xLog/.build/xnexus-windows-guard-evidence/fixture-40b548c1fb0545acbaf6eb527c386f58/`.
+The source-matched Windows fixture run passed **30 assertions**, including
+positive post-stop root/descendant exit confirmation before handle closure.
+Its retained evidence is `C:/Projects/OM0RX-xLog/.build/xnexus-windows-guard-evidence/fixture-cb6bcb1bf6e94a18bf299753fc25ad2e/`.
 `tests.json` contains all four executable/test source hashes; each child case
 retains its own guard receipt and telemetry. No actual package attempt was run.
