@@ -63,7 +63,9 @@ repeat. `GET /xlog/v1/receipt/{UUID}` returns a matching receipt or HTTP 404.
 `BridgeClient::stop_handle` creates an independent StopClient at pairing time.
 The desktop keeps it outside the ordinary poll mutex; Stop neither waits for a
 fresh poll nor takes its queue slot. Revocation/workspace changes still refuse
-the action at the host. Desktop disconnect drops this handle.
+the action at the host. Forget and a new pairing/reconnect drop this handle.
+An ordinary disconnect or failed poll can retain the explicitly labelled last
+paired Stop route, so loss of observations does not remove emergency Stop.
 
 ## Explicit selected-call history
 
@@ -98,9 +100,15 @@ desktop senders. Lost replies and process interruption leave `NeedsReceipt`;
 ordinary submission then performs receipt lookup only. Missing receipts require
 a separate explicit retry action, which checks receipt absence again and sends
 the same operation UUID and payload. Only applied/observed/rejected receipts are
-terminal; accepted and uncertain are never displayed as saved. Foreign workspace
+terminal; accepted and uncertain are never displayed as saved. Applied/observed
+QSO receipts must identify the queued contact and a positive owner revision.
+Foreign workspace
 records cannot be submitted. Corrupt records and partial temporary writes are
 preserved for diagnosis. Queue files remain private to the xNexus profile.
+Publication syncs file contents, then uses a same-directory rename and parent
+directory sync on Unix, or non-replacing MoveFileExW with WRITE_THROUGH on
+Windows. Tests cover process interruption and injected persistence failures;
+storage-device power-loss behavior is not claimed as empirically qualified.
 
 Client tests use synthetic owners; actual availability requires an xLog build
 advertising the durable contract. Audio and TX remain separate ungranted

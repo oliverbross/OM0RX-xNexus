@@ -157,7 +157,7 @@ fn control_hello() -> Value {
     h
 }
 fn receipt(status: &str) -> Value {
-    json!({"request_id":REQUEST_ID,"server_instance":"synthetic-server","workspace_id":"synthetic-workspace","status":status,"message":null})
+    json!({"request_id":REQUEST_ID,"server_instance":"synthetic-server","workspace_id":"synthetic-workspace","status":status,"message":null,"contact_id":REQUEST_ID,"contact_revision":1})
 }
 fn tune() -> Command {
     Command::StationTune {
@@ -401,6 +401,30 @@ fn crash_after_dispatch_recovers_by_receipt_without_second_post() {
     let requests = s.join().unwrap();
     assert_eq!(requests.len(), 2);
     assert!(requests[1].starts_with("GET /xlog/v1/receipt/"));
+}
+#[test]
+fn receipt_auth_or_identity_failure_revokes_prior_snapshot() {
+    let mut foreign = receipt("applied");
+    foreign["workspace_id"] = json!("foreign");
+    for (reply, error) in [
+        (
+            "HTTP/1.1 401 Unauthorized\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".into(),
+            Error::Http(401),
+        ),
+        (json_response(foreign), Error::IdentityChanged),
+    ] {
+        let (mut c, s) = server(vec![
+            json_response(control_hello()),
+            json_response(snapshot()),
+            reply,
+        ]);
+        c.connect().unwrap();
+        c.poll().unwrap();
+        assert_eq!(c.receipt(REQUEST_ID).unwrap_err(), error);
+        assert!(c.hello().is_none());
+        assert_eq!(c.snapshot().unwrap_err(), Error::Disconnected);
+        s.join().unwrap();
+    }
 }
 #[test]
 fn missing_receipt_needs_separate_explicit_retry_using_same_operation() {
