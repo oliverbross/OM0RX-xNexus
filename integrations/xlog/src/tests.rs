@@ -8,24 +8,24 @@ use std::{
     thread,
 };
 
-fn hello() -> Value {
+pub(crate) fn hello() -> Value {
     json!({"application":"OM0RX-xLog","protocol_version":1,"server_instance":"synthetic-server","workspace_id":"synthetic-workspace","capabilities":["snapshot.read"]})
 }
-fn snapshot() -> Value {
+pub(crate) fn snapshot() -> Value {
     json!({"protocol_version":1,"server_instance":"synthetic-server","workspace_id":"synthetic-workspace","revision":5,"generated_at_unix_ms":now_ms().unwrap(),"max_age_ms":10000,
         "station":{"connected":true,"radio_id":"fake-radio","frequency_hz":14074000,"mode":"USB","transmitting":false},
         "rotor":{"connected":true,"rotor_id":"fake-rotor","azimuth_deg":123.0,"moving":false},
         "spots":[{"id":"synthetic-1","callsign":"W1AW","frequency_hz":14074000,"mode":"FT8","observed_at_unix_ms":now_ms().unwrap(),"source":"synthetic-cluster","need":{"status":"needed","score":100,"reasons":["New entity on 20m"]}}]})
 }
-fn json_response(body: Value) -> String {
+pub(crate) fn json_response(body: Value) -> String {
     let body = body.to_string();
     format!("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",body.len())
 }
 // The generated marker is synthetic authentication test data, never an operator token.
-fn token() -> String {
+pub(crate) fn token() -> String {
     "synthetic-pairing-marker-".repeat(3)
 }
-fn server(replies: Vec<String>) -> (BridgeClient, thread::JoinHandle<Vec<String>>) {
+pub(crate) fn server(replies: Vec<String>) -> (BridgeClient, thread::JoinHandle<Vec<String>>) {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let address = listener.local_addr().unwrap();
     listener.set_nonblocking(true).unwrap();
@@ -394,7 +394,7 @@ fn log_hello() -> Value {
     h["capabilities"] = json!(["snapshot.read", "logbook.write"]);
     h
 }
-fn queued_draft() -> outbox::LogbookMutation {
+pub(crate) fn queued_draft() -> outbox::LogbookMutation {
     outbox::LogbookMutation::Create {
         qso: outbox::QsoDraft {
             contact_id: REQUEST_ID.into(),
