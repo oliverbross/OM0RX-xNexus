@@ -95,6 +95,11 @@ digital TX/audio and platform release work add 15–30 days, depending on findin
 M7 receive/control beta deliberately excludes unqualified transmission. Full product
 completion includes M6 and M8; the bootstrap does not meet those gates.
 
+M6's remaining transmit boundary is recorded in the
+[owner-reviewed TX design draft](TX_DESIGN_DRAFT.md). It is not implemented or
+enabled; offline implementation gates and supervised station acceptance remain
+separate requirements.
+
 ### M1b xLog implementation checklist
 
 - Obtain owner agreement after the current worker-startup fix is committed/released.
