@@ -16,6 +16,10 @@ use std::{
     collections::HashSet,
     fmt,
     io::Read,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
@@ -140,6 +144,7 @@ pub struct Snapshot {
     pub spots: Vec<Spot>,
 }
 
+pub mod audio;
 mod commands;
 pub use commands::{Command, CommandReceipt, CommandStatus, StopClient};
 mod history;
@@ -265,6 +270,13 @@ pub struct BridgeClient {
     http: Client,
     hello: Option<Hello>,
     observation: Option<Observation>,
+    audio_session: Arc<AtomicBool>,
+}
+
+impl Drop for BridgeClient {
+    fn drop(&mut self) {
+        self.audio_session.store(false, Ordering::Release);
+    }
 }
 
 impl BridgeClient {
@@ -308,6 +320,7 @@ impl BridgeClient {
             http,
             hello: None,
             observation: None,
+            audio_session: Arc::new(AtomicBool::new(false)),
         })
     }
 
@@ -342,6 +355,7 @@ impl BridgeClient {
             return Err(Error::Invalid);
         }
         self.hello = Some(hello);
+        self.audio_session = Arc::new(AtomicBool::new(true));
         Ok(self.hello.as_ref().expect("stored hello"))
     }
 
@@ -397,6 +411,7 @@ impl BridgeClient {
         Ok(&observation.snapshot)
     }
     pub fn disconnect(&mut self) {
+        self.audio_session.store(false, Ordering::Release);
         self.hello = None;
         self.observation = None;
     }

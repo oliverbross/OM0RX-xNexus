@@ -83,6 +83,71 @@ fn server(replies: Vec<String>) -> (BridgeClient, thread::JoinHandle<Vec<String>
 }
 
 const REQUEST_ID: &str = "00000000-0000-4000-8000-000000000001";
+#[test]
+fn audio_native_handle_is_capability_gated_and_revoke_is_terminal() {
+    let (mut no_audio, server1) = server(vec![json_response(hello())]);
+    no_audio.connect().unwrap();
+    assert!(matches!(no_audio.audio_handle(), Err(Error::Capability)));
+    assert_eq!(server1.join().unwrap().len(), 1);
+
+    let mut h = hello();
+    h["capabilities"] = json!(["snapshot.read", "audio.rx"]);
+    let (mut bridge, server2) = server(vec![
+        json_response(h),
+        json_response(audio::tests::fixture(now_ms().unwrap())),
+        "HTTP/1.1 401 Unauthorized\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".into(),
+    ]);
+    bridge.connect().unwrap();
+    let mut audio = bridge.audio_handle().unwrap();
+    let batch = audio.poll().unwrap();
+    assert_eq!(batch.chunks[0].samples, [-32768, 0, 32767]);
+    assert!(batch.is_fresh());
+    assert!(matches!(audio.poll(), Err(Error::Http(401))));
+    assert!(!batch.is_fresh());
+    assert!(matches!(audio.poll(), Err(Error::Disconnected)));
+    let requests = server2.join().unwrap();
+    assert_eq!(requests.len(), 3);
+    assert!(requests[1].starts_with("GET /xlog/v1/audio?after=0 "));
+    assert!(requests[2].starts_with("GET /xlog/v1/audio?after=1 "));
+    assert!(requests[1].contains(&format!("Bearer {}", token())));
+}
+
+#[test]
+fn audio_rejects_oversized_and_foreign_responses_without_retry() {
+    let mut foreign = audio::tests::fixture(now_ms().unwrap());
+    foreign["workspace_id"] = json!("foreign-workspace");
+    let oversized="HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 524289\r\nConnection: close\r\n\r\n".to_owned();
+    for (reply, expected) in [
+        (json_response(foreign), Error::IdentityChanged),
+        (oversized, Error::TooLarge),
+    ] {
+        let mut h = hello();
+        h["capabilities"] = json!(["snapshot.read", "audio.rx"]);
+        let (mut bridge, server) = server(vec![json_response(h), reply]);
+        bridge.connect().unwrap();
+        let mut audio = bridge.audio_handle().unwrap();
+        assert!(matches!(audio.poll(),Err(e) if e==expected));
+        assert!(matches!(audio.poll(), Err(Error::Disconnected)));
+        assert_eq!(server.join().unwrap().len(), 2);
+    }
+}
+
+#[test]
+fn local_pairing_disconnect_and_replacement_invalidate_audio_handles() {
+    let mut h = hello();
+    h["capabilities"] = json!(["snapshot.read", "audio.rx"]);
+    let (mut bridge, server) = server(vec![json_response(h.clone()), json_response(h)]);
+    bridge.connect().unwrap();
+    let mut old = bridge.audio_handle().unwrap();
+    bridge.disconnect();
+    assert!(matches!(old.poll(), Err(Error::Disconnected)));
+    bridge.connect().unwrap();
+    let mut current = bridge.audio_handle().unwrap();
+    assert!(matches!(old.poll(), Err(Error::Disconnected)));
+    drop(bridge);
+    assert!(matches!(current.poll(), Err(Error::Disconnected)));
+    assert_eq!(server.join().unwrap().len(), 2);
+}
 fn history_fixture() -> Value {
     json!({"protocol_version":1,"server_instance":"synthetic-server","workspace_id":"synthetic-workspace","callsign":"OM0RX/P","generated_at_unix_ms":now_ms().unwrap(),
         "contacts":[{"contact_id":REQUEST_ID,"callsign":"OM0RX/P","band":"20m","mode":"FT8","started_at_unix_ms":1_790_000_000_000u64,"frequency_hz":14074000,"rst_sent":"-10","rst_received":"-11","grid":"JN88","comment":"Synthetic\nmultiline history","contact_revision":null}],
