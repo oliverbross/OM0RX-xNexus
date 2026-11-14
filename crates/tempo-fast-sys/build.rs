@@ -27,10 +27,12 @@ mod manifest_gate;
 
 fn main() {
     let manifest = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
-    let libtempo_src = manifest
-        .join("../../libtempo")
-        .canonicalize()
-        .expect("locate tempo/libtempo");
+    let libtempo_src = compiler_path(
+        manifest
+            .join("../../libtempo")
+            .canonicalize()
+            .expect("locate tempo/libtempo"),
+    );
     check_state_manifest(&libtempo_src);
     let out = PathBuf::from(env::var("OUT_DIR").unwrap());
 
@@ -155,6 +157,42 @@ fn main() {
     println!("cargo:rustc-link-lib=dylib=m");
 
     emit_rerun(&libtempo_src);
+}
+
+/// Rust canonicalization uses Windows verbatim paths. CMake changes their backslashes
+/// into `//?/C:/...`, which gfortran then misreads as a UNC path. Native compilers
+/// require the ordinary absolute spelling; UNC shares retain their server prefix.
+fn compiler_path(path: PathBuf) -> PathBuf {
+    let text = path.to_string_lossy();
+    if let Some(unc) = text.strip_prefix(r"\\?\UNC\") {
+        PathBuf::from(format!(r"\\{unc}"))
+    } else if let Some(local) = text.strip_prefix(r"\\?\") {
+        PathBuf::from(local)
+    } else {
+        path
+    }
+}
+
+#[cfg(test)]
+mod compiler_path_tests {
+    use super::compiler_path;
+    use std::path::PathBuf;
+
+    #[test]
+    fn windows_verbatim_paths_become_compiler_paths() {
+        assert_eq!(
+            compiler_path(PathBuf::from(r"\\?\C:\Projects\OM0RX-xNexus\libtempo")),
+            PathBuf::from(r"C:\Projects\OM0RX-xNexus\libtempo")
+        );
+        assert_eq!(
+            compiler_path(PathBuf::from(r"\\?\UNC\server\share\libtempo")),
+            PathBuf::from(r"\\server\share\libtempo")
+        );
+        assert_eq!(
+            compiler_path(PathBuf::from("/home/build/libtempo")),
+            PathBuf::from("/home/build/libtempo")
+        );
+    }
 }
 
 /// Emit `rustc-link-search` entries for the gfortran and FFTW3f runtimes on macOS.
