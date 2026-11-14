@@ -575,6 +575,8 @@ mod tests {
             server_instance: "server".into(),
             status: CommandStatus::Applied,
             message: None,
+            contact_id: None,
+            contact_revision: None,
         }
     }
     #[test]

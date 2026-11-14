@@ -81,6 +81,10 @@ pub struct CommandReceipt {
     pub workspace_id: String,
     pub status: CommandStatus,
     pub message: Option<String>,
+    #[serde(default)]
+    pub contact_id: Option<String>,
+    #[serde(default)]
+    pub contact_revision: Option<u64>,
 }
 impl CommandReceipt {
     fn validate(&self, hello: &Hello, request_id: &str) -> Result<(), Error> {
@@ -90,7 +94,15 @@ impl CommandReceipt {
         {
             return Err(Error::IdentityChanged);
         }
-        if self.message.as_ref().is_some_and(|s| !bounded(s, 512)) {
+        if self.message.as_ref().is_some_and(|s| !bounded(s, 512))
+            || self
+                .contact_id
+                .as_ref()
+                .is_some_and(|s| !valid_request_id(s))
+            || self
+                .contact_revision
+                .is_some_and(|v| v > 9_007_199_254_740_990)
+        {
             return Err(Error::Invalid);
         }
         Ok(())
