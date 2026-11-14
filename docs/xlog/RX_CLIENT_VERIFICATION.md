@@ -1,7 +1,9 @@
 # Receive client development evidence — 14 November 2026
 
-This extension is separate from the frozen first candidate `5e56be94c`, version
-`1.24.1-xlog.1`. It is not a packaged or physically qualified audio receiver.
+This extension is integrated into `1.24.1-xlog.2` source. The earlier Mac core
+candidate remains frozen at `5e56be94c`, version `1.24.1-xlog.1`. The records
+below identify individual test sources; they do not establish package or
+physical receive qualification.
 
 Client source `591348991c8c2935f95297e3e373bac497f70de4` passed 58 tests,
 Clippy with warnings denied, formatting and whitespace checks on Windows with
@@ -9,7 +11,8 @@ the installed Rust 1.99.1 MSVC toolchain. The tests cover owner capability,
 selected-channel PCM, sequence/frame gaps and repeats, route changes, bounds,
 unknown UTC/RF timing, HTTP authentication/revocation, oversized/foreign replies,
 local session replacement, queued expiry and receiver shutdown. Pinned 1.93.1
-desktop compilation and complete receive-path qualification remain separate.
+desktop compilation later passed at `e3ae1534` as recorded in
+[RX_DESKTOP.md](RX_DESKTOP.md); physical receive qualification remains separate.
 
 The additive base64 dependency reuses version 0.23.1 already in the lockfiles.
 Only its client dependency edges changed; unrelated desktop dependency edges
@@ -34,9 +37,10 @@ The local evidence directory identifier is
 
 The operator confirmed FLEX slice A with DAX receive audio. The actual DAX channel
 must come from observed FLEX metadata and explicit stable endpoint binding; the
-example channel number is not a default. The separate xLog audio owner branch,
-period assembler and desktop worker still need integrated transport/decoder/UI
-checks. Real DAX input, endpoint-to-RF delay and UTC synchronization have not been
+example channel number is not a default. Subsequent actual owner HTTP, SDK,
+assembler, native decoder and threaded worker tests passed as recorded in
+[RX_DESKTOP.md](RX_DESKTOP.md). The owner is now in canonical xLog at `5efffc1a`.
+Real DAX input, endpoint-to-RF delay and UTC synchronization have not been
 measured. No TX capability is provided by this client.
 
 The new opt-in owner-audio harness passed 26 checks against xLog receive branch

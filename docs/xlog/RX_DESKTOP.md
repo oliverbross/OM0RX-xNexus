@@ -1,8 +1,8 @@
 # Receive-only desktop extension
 
-This source lives on the separate RX development branch. It is not part of the
-frozen `1.24.1-xlog.1` core package, and has no installed or physical-station
-acceptance yet.
+This receive extension is integrated into the source for `1.24.1-xlog.2`.
+It is absent from the frozen Mac `1.24.1-xlog.1` core candidate. Installed
+application and physical-station acceptance remain pending.
 
 1. In xLog, explicitly select and confirm the FLEX slice A / DAX input route,
    choose its native format and channel, and start RX sharing in Normal Logging.
@@ -42,6 +42,12 @@ authority acceptance, stale epoch rejection and revoke/Stop clearing. A paced
 48 kHz generated FT4 fixture then passed through the real owner HTTP endpoint,
 threaded `Worker::start` polling/assembly/mailbox and native decoder. Stop cleared
 the route/rows, the worker lease released, and restart exposed no old result.
-The three tests passed in 14.44 seconds. Full desktop compilation, Tauri IPC,
-native GUI and physical DAX reception remain required before a new RX candidate
-is packaged. Generated fixture reception does not qualify the physical station.
+The three tests passed in 14.44 seconds. Full Windows GNU desktop all-targets
+compilation subsequently passed on exact runtime source
+`e3ae1534ade5c34dd4e2d3a81bfbe3a72be15d5c` with Rust 1.93.1, locked dependencies
+and one build job. The isolated check took 16m32s; its receipt verified source
+identity and the original focused-test dependency hashes before and after.
+Only the existing `capture_bounded` dead-code warning remained. Build log SHA-256:
+`2491daa8dc8829ab529650b0b39ec90688a1898d68e0a86f4538ce4d89bbac1c`.
+Tauri IPC, native GUI, packaged lifecycle and physical DAX acceptance remain
+pending. Generated fixture reception does not qualify the physical station.

@@ -86,12 +86,31 @@ The queue currently retains up to 10,000 operations, including terminal receipts
 It has no automatic deletion or archival UI. Do not delete queue files to recover
 an uncertain write; resolve its owner receipt first.
 
+## Receive FT8 or FT4 through xLog
+
+In a bridge-enabled Windows xLog, select and explicitly confirm the FLEX slice A
+and DAX input mapping in companion settings. The channel must match the radio's
+observed DAX channel and the active Windows endpoint; do not assume RX 1. Select
+the native input format/channel and start RX sharing in Normal Logging.
+
+Pair xNexus, choose FT8 or FT4 under **Receive decoder**, then **Start receiving**.
+The decoder mode is separate from the radio's DIGU setting. Wait for a complete
+uninterrupted period. A gap, changed route, expired connection or decoder backlog
+discards the partial period. **Stop receiving** stops the companion consumer;
+xLog retains control of capture/sharing. Stop before changing decoder mode.
+
+The receive panel retains up to 200 decoded rows. They are observations and do
+not automatically tune, classify need, transmit or create a QSO. Need badges on
+the station board still come from xLog's classified cluster spots. Timing uses
+the host audio endpoint clock; global UTC accuracy and radio-to-endpoint delay
+have not been measured. See [RX_DESKTOP.md](RX_DESKTOP.md) for qualification.
+
 ## Current boundaries
 
-This connected view has no audio capture, automatic decoder sequence or transmit
-control. Qualified owner PCM and TX ownership are separate milestones. Closing
-xLog leaves xNexus open with unavailable station actions and its retained queue;
-it never falls back to a second hardware or cluster connection.
+Companion mode has no automatic QSO sequence or transmit control. Physical DAX
+receive qualification is still pending. Closing xLog leaves xNexus open with
+unavailable station actions and its retained queue; it never falls back to a
+second hardware or cluster connection.
 
 The optional developer `--independent-mode` launch uses the retained upstream
 application path. It is a separate operating mode, not connection recovery, and

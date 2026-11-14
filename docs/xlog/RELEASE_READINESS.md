@@ -1,8 +1,22 @@
 # OM0RX-xNexus release readiness
 
-Candidate `1.24.1-xlog.1` is reserved for the first integrated fork candidate. The
-pre-version source is `9252c72336c6fa824a4e928820ed90171584669e`. This reservation
-is not a claim that a binary has been built, signed, installed, or qualified.
+Candidate `1.24.1-xlog.2` contains the integrated receive path. Its exact
+pre-version runtime source is `e3ae1534ade5c34dd4e2d3a81bfbe3a72be15d5c`;
+the paired xLog owner source is `5efffc1a23af68157e3c564eb2aa345256bea90a`.
+This preparation is not a claim that a binary has been built or qualified.
+
+The previous Windows `.1` build at `5e56be94c7ede2099d5b8ed6d1a4d0d1ad12134b`
+was deliberately stopped before the application build to include completed RX
+work. It produced no Windows application or installer; its aborted receipt and
+log remain preserved. The Mac core `.1` application compiled at that original
+source; its archive is held at the native symbol audit. It is not the RX candidate. Do not reuse `.1` for changed source.
+
+The `.2` Windows recipe remains Rust 1.93.1 GNU, Tauri CLI 2.11.5, pinned native
+and model assets, two build jobs, release profile and unsigned NSIS packaging.
+Only canonical source may be packaged. The build receipt records the release
+commit, upstream pin, tool versions, dependency/model hashes and artifact hashes.
+The xLog owner is included in the separate combined 1.6.25 release owned by the
+“xlog work” chat; it is not packaged by this script.
 The final source SHA must be the clean canonical checkout HEAD recorded by
 `scripts/xnexus/build-windows.ps1 -ExpectedCommit <full-sha>` when packaging.
 Changing packaged source requires a new visible version, including failed
@@ -87,10 +101,10 @@ compiles all desktop targets on the same platforms. Compilation is not GUI,
 installer, signing or hardware qualification. It installs dependencies in hosted
 ephemeral runners and uses public checksum-pinned Hamlib/libvpx assets on Windows.
 
-Repository Actions were disabled with user approval pending this review. The
-owner may enable Actions after these guards and the dedicated workflow land;
-do not enable an inherited publishing workflow or remove its repository guard.
-Actual hosted results must be recorded separately, never inferred from this file.
+Repository Actions were enabled with operator approval after review. Inherited
+publishing workflows remain individually disabled in addition to their repository
+guards. The reviewed validation run was blocked before execution by billing;
+no billing settings were changed. Local evidence does not imply hosted success.
 
 The fork's macOS minimum is 14.0. WKWebView ignores `data_directory`; connected
 mode therefore uses a persistent custom store identified by a domain-separated
@@ -106,7 +120,9 @@ bundle qualification and does not establish support for older macOS releases.
 
 `scripts/xnexus/build-macos.sh <full-reviewed-SHA> <candidate-version>` builds
 only clean `main` matching the authorized fork's freshly fetched `origin/main`.
-The expected SHA and version must be the same reviewed pair used for Windows.
+For a matched release, the expected SHA and version must be the same reviewed
+pair used for Windows. An older in-progress platform candidate retains its
+original pair and receipt; it does not qualify the newer Windows source.
 `--preflight-only` checks prerequisites without building or packaging. A version
 claim prevents a later source from reusing an existing candidate version.
 

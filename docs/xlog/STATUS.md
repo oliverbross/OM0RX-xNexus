@@ -1,59 +1,80 @@
 # Execution ledger — 14 November 2026
 
-The full plan is being executed in separate desktop, xLog-owner and release
-worktrees. This ledger distinguishes implemented source from release acceptance.
+The integration remains in qualification. Source, synthetic tests, packaged
+binaries and physical station acceptance are separate evidence levels.
 
 | Milestone | Current evidence | Remaining acceptance |
 |---|---|---|
-| M0 | Complete: full upstream history, private origin, fetch-only upstream, nine issues/milestones | Keep patch inventory and upstream review process current |
-| M1 | 49 native client tests, Clippy/format pass; owner bridge compiles; actual HTTP/client and separate actual SQLite-owner restart test pass | Canonical xLog integration after its startup release; paired application acceptance |
-| M2 | Separate default companion entry, native pairing and private data root; no local Engine, hardware, log or feeds; native all-targets check passed | Final native execution, packaging and isolated GUI acceptance |
-| M3 | Authoritative owner needs, geography, band/world maps and selected-call history; shared Rust/TypeScript contract | Canonical integration and paired application classification/lifecycle acceptance |
-| M4 | Owner-mediated tune/point/independent Stop; identity/revision fences; saturation tests | Final native fake-owner UI and physical receive/control qualification |
-| M5 | Durable outbox plus atomic SQLite write/receipt, restart reconciliation, edit-conflict test; recoverable workspace-bound draft | Final paired native GUI acceptance and operational queue archival design |
-| M6 | Dormant FT8/FT4 decoder adapter; actual generated-message round trips passed | Mapped/calibrated xLog PCM, RX qualification, TX lease/watchdog and supervised qualification |
-| M7 | Distinct app/profile/update identity, pinned native assets, exact-source packaging/provenance tooling | Unique-version package and isolated installer/application acceptance; native tests passed |
-| M8 | Mac native check,49 client tests,8 policy checks,full UI build and36 UI tests passed | Mac packaging/native lifecycle,Linux builds,signing and distribution qualification |
+| M0 | Complete: full upstream history, private fork, fetch-only upstream, nine tracked milestones | Maintain upstream review and patch inventory |
+| M1 | 58 client tests; actual owner HTTP and SQLite restart/receipt tests; bridge merged into canonical xLog | Paired installed-application acceptance |
+| M2 | Separate companion startup, native pairing and private profile; no local station services | Final candidate native GUI and lifecycle acceptance |
+| M3 | xLog-authoritative needed spots, band/world maps, selected-call history | Paired application classification/lifecycle acceptance; decoded-call batch classification |
+| M4 | Owner-mediated tune/point and independent rotator Stop; identity/revision/freshness checks | Native UI acceptance and physical control qualification |
+| M5 | Durable outbox and atomic owner write/receipt; restart, replay and edit-conflict tests | Paired native GUI acceptance; queue archive/export design |
+| M6 | Explicit FLEX slice A/DAX mapping, bounded owner PCM, client, FIR/period assembler, threaded native FT8/FT4 decoder and receive UI | Active DAX reception and clock/route qualification; TX contract and supervised qualification |
+| M7 | Distinct app/profile/update identity, pinned assets and exact-source packaging scripts | Windows .2 package, isolated application and installer acceptance |
+| M8 | Core Mac native checks passed; core .1 app compiled; bundle audit held | Mac bundle/lifecycle, Linux builds, signing and distribution qualification |
 
-Windows runtime source `43e305f1d` passed all-targets compilation and11 executed
-native tests; Mac runtime source `1e456a30c` passed all-targets compilation and the
-full companion UI/client checks. The common candidate adds the tested Mac build
-helper and these records. The first package remains reserved as
-`1.24.1-xlog.1`; its exact source is recorded when each build starts. No package
-or installed-app acceptance is claimed at this checkpoint.
-See [VERIFICATION.md](VERIFICATION.md) for exact evidence and limits.
+RX runtime integration source is `e3ae1534ade5c34dd4e2d3a81bfbe3a72be15d5c`.
+Windows candidate `1.24.1-xlog.2` adds candidate manifests and these records;
+its packaging receipt records the exact final commit. The earlier Windows .1
+build at `5e56be94c7ede2099d5b8ed6d1a4d0d1ad12134b` was stopped before the
+application build and produced no application or installer. Its logs and aborted
+receipt are retained. The Mac .1 build remains frozen at that original source.
 
-## Coordination
+See [RX_CLIENT_VERIFICATION.md](RX_CLIENT_VERIFICATION.md),
+[RX_DESKTOP.md](RX_DESKTOP.md) and [VERIFICATION.md](VERIFICATION.md).
+RX evidence includes 58 SDK tests, 40 distinct companion UI tests, TypeScript
+and Vite builds, 14 browser viewport/theme cases, 14 pure DSP/assembler tests,
+five native adapter tests including both modes at five rates, two actual owner
+HTTP-to-native-decoder tests, and three threaded worker/authority tests.
+These sets cover different boundaries and are not a combined coverage claim.
 
-The “xlog work” chat retains canonical xLog for startup corrections. Its1.6.21
-and1.6.22 candidates failed live acceptance and were not installed. Version1.6.23
-is reserved for its corrected startup candidate; installed xLog remains1.6.20.
-The bridge stays isolated at `codex/xnexus-bridge` (tested9ec35b9e), with no bridge
-release version reserved. Canonical integration waits for the owner's explicit
-successful installed-acceptance boundary. Long Windows packaging is held while
-that timed check runs; the Mac is a separate physical build machine.
+## xLog coordination
 
-GitHub Actions was initially disabled with operator approval. Following audit,
-the operator approved the validation workflow. Actions is enabled; inherited
-release/deployment workflows remain individually disabled and guarded by exact
-upstream repository identity. No billing setting changed.
+Canonical xLog contains the bridge and receive owner at
+`5efffc1a23af68157e3c564eb2aa345256bea90a`. Validation includes 1,154 native
+tests, 30 selected Swift tests, 33 focused bridge/audio checks, six actual
+isolated FLEX metadata checks and three receive UI checks. Detailed receipts
+are retained in the xLog audio worktree. No production device was captured.
+
+The installed accepted xLog remains 1.6.23. The “xlog work” chat owns canonical
+source and the combined 1.6.25 package/install, incorporating its settings,
+performance and UI fixes alongside this integration. The unused 1.6.24
+reservation was released. xNexus does not independently package or install xLog.
+
+## CI and upstream
+
+Actions is enabled following the operator's approval of the reviewed validation
+workflow. Inherited release/deployment workflows remain individually disabled
+and guarded by exact upstream repository identity. No billing setting changed.
 [Run 43586230218](https://github.com/oliverbross/OM0RX-xNexus/actions/runs/43586230218)
-was blocked before execution by payment/spending restrictions. Local Windows
-verification continues; the connected Mac provides an alternative for macOS.
+was blocked before execution by payment/spending restrictions. Local checks
+provide recorded evidence, not a hosted CI success.
 
-The upstream helper completed a real isolated merge rehearsal from pin
-`c88740a94` to available upstream `3885df0fe`, preserving a separate review
-worktree and leaving main unchanged. That pending merge is not a qualified
-upstream upgrade; the shipped source pin remains unchanged.
+A real isolated upstream merge rehearsal from pin `c88740a94` to available
+`3885df0fe` remains preserved for review. It has not been promoted; the shipped
+source pin remains unchanged.
 
-## Audio and operational boundaries
+## Operational boundaries
 
-xLog's existing recorder has neither authoritative radio/receiver mapping nor a
-calibrated sample-zero UTC bound. No `audio.rx` capability is advertised. The
-remaining work is explicit owner mapping, capture-clock calibration, bounded
-PCM export and continuous normal-logging ownership. Transmission is unavailable
-in companion mode. No on-air acceptance is implied by synthetic tests.
+The operator confirmed FLEX slice A and DAX receive audio. The DAX channel comes
+from actual FLEX metadata and explicit stable endpoint selection; channel 1 is
+not a default. DAX devices are registered locally, but a read-only active-input
+probe found ten active inputs and none DAX. No DAX utility or stream was started.
 
-The native outbox retains up to 10,000 operations. It deliberately does not delete
-terminal receipts automatically. An operator archive/export flow is a remaining
-long-term operational item; keep this limit visible in the beta guide.
+Receive timing reports host endpoint clock calibration, not a measured global
+UTC accuracy or endpoint-to-RF delay. Both latter values remain explicitly
+unknown. Generated-message tests do not establish physical reception.
+Decoded rows do not yet have authoritative batch need classification. The
+needed-station board continues to use xLog's classified cluster observations.
+Transmission is unavailable in companion mode.
+
+The native outbox retains up to 10,000 operations, including terminal receipts.
+An archive/export flow remains a long-term operational item.
+
+Full Windows GNU all-targets compilation passed on exact RX runtime `e3ae1534`
+with pinned Rust 1.93.1 and locked dependencies. The isolated receipt verified
+original dependency hashes and unchanged runtime source. The Mac core application
+compiled and bundled at `5e56be94c`, but its archive remains held at the existing
+Hamlib/system-symbol allowlist audit; no portable bundle acceptance is claimed.
