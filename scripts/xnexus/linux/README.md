@@ -150,7 +150,11 @@ correctness. Allow disk capacity for an independent complete cache copy.
 
 The destination must be empty. A failed partial copy remains marked and unusable;
 there is no automatic overwrite, recursive cleanup or retry. Contract extracts
-fresh source and installs locked npm dependencies offline from the copied cache,
+fresh source only after a successful seed. Volume identity is deterministic from
+source and image, so choosing another evidence directory does not bypass a
+partial volume. Any partial-cache recovery requires a separately reviewed manual
+plan; this attempt does not provide a nonce-volume retry option. Contract installs
+locked npm dependencies offline from the copied cache,
 then rebuilds/tests the new frontend. Missing cache content fails without enabling
 network. Cargo retains its ordinary dependency fingerprint checks. A seeded
 desktop check additionally records Cargo JSON and requires a successful
