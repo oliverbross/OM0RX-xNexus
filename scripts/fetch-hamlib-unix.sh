@@ -34,6 +34,10 @@
 #   ./scripts/fetch-hamlib-unix.sh        # idempotent; skips if already staged
 set -euo pipefail
 
+# Fork builds can bound CPU use without changing the upstream default.
+JOBS="${NEXUS_BUILD_JOBS:-$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 2)}"
+[[ "$JOBS" =~ ^[1-9][0-9]*$ ]] || { echo "NEXUS_BUILD_JOBS must be a positive integer" >&2; exit 1; }
+
 VER=4.7.1
 TARBALL="hamlib-${VER}.tar.gz"
 URL="https://github.com/Hamlib/Hamlib/releases/download/${VER}/${TARBALL}"
@@ -149,7 +153,7 @@ if [ "$HOST" = macos ]; then
   fetch_pinned "$LIBUSB_URL" "$tmp/libusb.tar.bz2" "$LIBUSB_SHA256"
   tar xjf "$tmp/libusb.tar.bz2" -C "$tmp"
   ( cd "$tmp/libusb-${LIBUSB_VER}" && ./configure --prefix="$pfx" --disable-static >"$tmp/libusb.log" 2>&1 \
-      && make -j"$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 2)" >>"$tmp/libusb.log" 2>&1 \
+      && make -j"$JOBS" >>"$tmp/libusb.log" 2>&1 \
       && make install >>"$tmp/libusb.log" 2>&1 ) \
     || { echo "libusb build FAILED — see $tmp/libusb.log" >&2; tail -25 "$tmp/libusb.log" >&2; exit 1; }
   export PKG_CONFIG_PATH="$pfx/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
@@ -192,7 +196,7 @@ echo "Configuring Hamlib $VER ($HOST)…"
     >"$tmp/configure.log" 2>&1 ) || { echo "configure FAILED — see $tmp/configure.log" >&2; tail -25 "$tmp/configure.log" >&2; exit 1; }
 
 echo "Building…"
-( cd "$src" && make -j"$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 2)" >"$tmp/build.log" 2>&1 && make install >>"$tmp/build.log" 2>&1 ) \
+( cd "$src" && make -j"$JOBS" >"$tmp/build.log" 2>&1 && make install >>"$tmp/build.log" 2>&1 ) \
   || { echo "build FAILED — see $tmp/build.log" >&2; tail -25 "$tmp/build.log" >&2; exit 1; }
 
 mkdir -p "$DEST"
