@@ -15,6 +15,9 @@ use std::{
     sync::{Arc, Mutex},
 };
 use tauri::State;
+#[cfg(target_os = "macos")]
+#[path = "xlog_profile_store.rs"]
+mod profile_store;
 use xnexus_xlog_client::outbox::{LogbookMutation, Outbox, OutboxEntry};
 use xnexus_xlog_client::{
     BridgeClient, Command, CommandReceipt, Hello, History, Snapshot, StopClient,
@@ -470,6 +473,9 @@ pub(crate) fn run() {
     let outbox = Outbox::open(root.join("xlog-outbox"))
         .unwrap_or_else(|error| startup_failure(&error.to_string()));
     let queue: Queue = Arc::new(Mutex::new(Some(outbox)));
+    #[cfg(target_os = "macos")]
+    let store =
+        profile_store::for_current_system(&root).unwrap_or_else(|error| startup_failure(&error));
     let mut context = tauri::generate_context!();
     context
         .config_mut()
@@ -483,6 +489,10 @@ pub(crate) fn run() {
         window.min_width = Some(780.0);
         window.min_height = Some(438.0);
         window.data_directory = Some(root.join("webview"));
+        #[cfg(target_os = "macos")]
+        {
+            window.data_store_identifier = Some(store);
+        }
     }
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())

@@ -78,3 +78,13 @@ Repository Actions were disabled with user approval pending this review. The
 owner may enable Actions after these guards and the dedicated workflow land;
 do not enable an inherited publishing workflow or remove its repository guard.
 Actual hosted results must be recorded separately, never inferred from this file.
+
+The fork's macOS minimum is 14.0. WKWebView ignores `data_directory`; connected
+mode therefore uses a persistent custom store identified by a domain-separated
+hash of its canonical companion root. Different roots and independent mode do
+not share drafts. The native macOS version check fails before WebView creation
+on older systems rather than falling back to the default shared store. Moving
+the root to a different path selects a different WebView store; keep the original
+root available when recovering an unqueued draft. Native queue files remain in
+the explicitly selected root. Mac build validation is separate from signed
+bundle qualification and does not establish support for older macOS releases.
