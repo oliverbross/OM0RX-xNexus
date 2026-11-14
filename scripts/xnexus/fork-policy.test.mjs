@@ -18,6 +18,29 @@ test('identity guard detects upstream updater and identity regressions', () => {
   assert.throws(() => identity({...config, identifier:'com.kd9taw.tempo'}));
   assert.throws(() => identity({...config, plugins:{updater:{endpoints:['https://example.com']}}}));
 });
+function macPrivateStore(c, companion, store) {
+  const minimum = c.bundle.macOS.minimumSystemVersion;
+  assert.match(minimum, /^\d+(?:\.\d+)*$/);
+  assert.ok(Number(minimum.split('.')[0]) >= 14, 'private WKWebView stores require macOS 14');
+  assert.match(companion, /#\[path = "xlog_profile_store\.rs"\]\s*mod profile_store;/);
+  assert.match(companion, /profile_store::for_current_system\(&root\)\.unwrap_or_else\(\|error\| startup_failure\(&error\)\)/);
+  assert.match(companion, /window\.data_store_identifier = Some\(store\);/);
+  assert.match(store, /require_supported_version\(version\.majorVersion\)\?;/);
+  assert.match(store, /if major < 14\s*\{\s*return Err\(/);
+}
+test('macOS companion uses a guarded private persistent WebView store', () => {
+  macPrivateStore(config, read('src-tauri/src/xlog_mode.rs'), read('src-tauri/src/xlog_profile_store.rs'));
+});
+test('private store guard detects OS downgrade and shared-store fallback', () => {
+  const companion = read('src-tauri/src/xlog_mode.rs');
+  const store = read('src-tauri/src/xlog_profile_store.rs');
+  const older = structuredClone(config);
+  older.bundle.macOS.minimumSystemVersion = '13.0';
+  assert.throws(() => macPrivateStore(older, companion, store));
+  assert.throws(() => macPrivateStore(config, companion.replace('window.data_store_identifier = Some(store);', ''), store));
+  assert.throws(() => macPrivateStore(config, companion.replace('profile_store::for_current_system(&root)', 'profile_store::identifier(&root)'), store));
+  assert.throws(() => macPrivateStore(config, companion, store.replace('require_supported_version(version.majorVersion)?;', '')));
+});
 test('versions agree across desktop and UI manifests', () => {
   const version = config.version;
   assert.match(version, /^\d+\.\d+\.\d+-xlog\.\d+$/);
