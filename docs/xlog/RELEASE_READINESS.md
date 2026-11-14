@@ -1,31 +1,44 @@
 # OM0RX-xNexus release readiness
 
-Candidate `1.24.1-xlog.2` contains the integrated receive path. Its exact
-pre-version runtime source is `e3ae1534ade5c34dd4e2d3a81bfbe3a72be15d5c`;
-the paired xLog owner source is `5efffc1a23af68157e3c564eb2aa345256bea90a`.
-This preparation is not a claim that a binary has been built or qualified.
+The next Windows candidate is **not version-reserved or authorized to build**.
+It must include the reviewed profile repair, installer hardening and completed
+SDK/native/UI integration, with its own exact source and paired-owner evidence.
+Source tests, an artifact audit, native lifecycle checks and physical station
+qualification remain separate gates; see the maintained [execution ledger](STATUS.md).
+
+The `.2` Windows and Mac builds completed at
+`c2c917b6f748366fbf6b3960876d9f98ba1854c9`. Their artifacts passed static audits,
+but Mac qualification exposed shared WebView storage across private profiles.
+Neither `.1` nor `.2` is qualified for isolated-profile use. Preserve the
+[incident evidence](PROFILE_ISOLATION_2026-11-14.md); do not launch or distribute
+those candidates as repaired applications.
+
+The repaired [`.3` candidate](CANDIDATE_1.24.1-xlog.3.md), source
+`d206b880216543af2142e600ea6b8e5ac6bdd1b2`, passed Mac artifact, A→B→A profile
+isolation and core paired synthetic checks. Its Windows package was deferred
+in favor of the next reviewed candidate. Those Mac checks do not qualify later
+decoded-needs changes, active DAX reception, Windows installation or distribution.
 
 The previous Windows `.1` build at `5e56be94c7ede2099d5b8ed6d1a4d0d1ad12134b`
 was deliberately stopped before the application build to include completed RX
 work. It produced no Windows application or installer; its aborted receipt and
 log remain preserved. The Mac core `.1` application compiled at that original
-source; its archive passed the supplemental native symbol audit and private
-draft/lifecycle checks. Its historical CLI executable path remains unproven;
+source; its archive passed the supplemental native symbol audit and initial
+draft/lifecycle checks, which did not catch the later isolation failure. Its
+historical CLI executable path remains unproven;
 do not claim the downloaded official CLI was used. It is not the RX candidate.
 Do not reuse `.1` for changed source.
 
-The `.2` Windows recipe remains Rust 1.93.1 GNU, Tauri CLI 2.11.5, pinned native
-and model assets, two build jobs, release profile and unsigned NSIS packaging.
-Only canonical source may be packaged. The build receipt records the release
-commit, upstream pin, tool versions, dependency/model hashes and artifact hashes.
-The xLog owner is included in installed 1.6.26, whose packaging/acceptance is
-owned by the “xlog work” chat. A subsequent retained-rotor-Stop connection fix
-still needs native integration and an accepted xLog candidate. xLog is not
-packaged by this script.
-The final source SHA must be the clean canonical checkout HEAD recorded by
-`scripts/xnexus/build-windows.ps1 -ExpectedCommit <full-sha>` when packaging.
-Changing packaged source requires a new visible version, including failed
-qualification candidates that were already distributed or installed.
+The current Windows recipe uses Rust 1.93.1 GNU, Tauri CLI 2.11.5, pinned native
+and model assets, **one Cargo/CMake build job**, the unchanged release profile and
+unsigned NSIS packaging. The reviewed outer supervisor applies a 4 GiB aggregate
+Job Object limit and records admission, telemetry and confirmed process cleanup.
+This is a bounded build attempt, not evidence that final fat LTO fits that limit.
+Only clean canonical `main` may be packaged. Build receipts bind the exact source,
+upstream pin, configuration, tools, dependencies and artifacts. xLog packaging and
+installed acceptance remain owned by the “xlog work” chat; an SDK/owner source
+test does not establish that those changes are installed. Changing packaged
+source requires a new visible version, including failed qualification candidates.
 
 The fork retains KD9TAW attribution, COPYING, NOTICE, and third-party notices.
 Its product/binary is OM0RX-xNexus, app identifier `sk.om0rx.xnexus`, default
@@ -49,17 +62,114 @@ Boost, CMake, Ninja, pkg-config, make, tar, curl, unzip, nasm, Node, Rust
 `1.93.1-x86_64-pc-windows-gnu`, and Tauri CLI `2.11.5`. Use explicit toolchain
 arguments; do not change the user's default MSVC Rust toolchain.
 
-1. Install missing MSYS2 UCRT64 packages. Run
-   `bash scripts/xnexus/prepare-windows-deps.sh` from that environment. It builds
-   checksum-pinned libvpx 1.17.0 and stages checksum-pinned Hamlib 4.7.1. The system
-   libvpx package is not a substitute for this pinned build.
-2. Run `scripts/xnexus/build-windows.ps1 -CheckOnly` for desktop compilation.
-3. Integrate and commit all source into canonical `C:\Projects\OM0RX-xNexus`,
-   advance/reserve the version, run proportionate tests, push, and verify clean HEAD.
-4. Package with the full expected SHA. The script verifies both DeepCW resources,
-   records version/SHA/toolchain/model hashes before building and installer SHA256
-   afterward under ignored `target/xnexus-provenance`. Preserve that receipt with
-   the release. It refuses version reuse for different recorded source.
+Missing native dependencies can be prepared with
+`bash scripts/xnexus/prepare-windows-deps.sh` in MSYS2 UCRT64. It builds pinned
+libvpx 1.17.0 and stages pinned Hamlib 4.7.1; the system libvpx package is not a
+substitute. Do not rerun dependency preparation merely because a new candidate
+uses the existing verified cache. Schedule compilation separately from the
+xLog owner's acceptance/resource window.
+
+### Verified retained artifacts and inputs
+
+Read-only verification on 14 November 2026 used clean canonical source
+`1b4ddbcbdcf763e791e2062e3092d650d65f0c15`. No compiler, Node process, application,
+installer or dependency preparation ran during that check; no cache was changed.
+All 13 entries in the `.2` retention receipt matched their recorded lengths and
+SHA-256 hashes. The retained application and installer each have only their own
+hardlink path, independent of the reusable canonical build outputs.
+
+The retained root is
+`C:\Projects\OM0RX-xLog\.build\xnexus-worktrees\release\target\retained-candidates\1.24.1-xlog.2`.
+Its `retention-receipt.json` binds source
+`c2c917b6f748366fbf6b3960876d9f98ba1854c9` and status
+`retained-rejected-isolation-candidate`. It includes the standalone application,
+installer, WebView loader, build/static-audit receipts, initial failed audit,
+actual CLI process evidence and logs. Generated installer source is also retained.
+Do not remove that worktree or its evidence as temporary cleanup without first
+preserving and verifying this unique record.
+
+| Retained artifact | Bytes | SHA-256 |
+|---|---:|---|
+| Standalone `OM0RX-xNexus.exe` | 114630669 | `CB44BA10D28FC819290165135B059788196AC4DF6DA3A8F4E1E00A94228B3BF7` |
+| `.2` x64 NSIS installer | 268932507 | `3ACF27223D19C6B6E135BDD4DFE5D354076F1E9CEA6E573196A41391A04DF4D2` |
+
+Both DeepCW model files, all eight Hamlib executables/DLLs and the libvpx archive
+match the dependency hashes in the retained `.2` build receipt. All 11 base
+resource mappings resolve to files, and the installer MIT notice is present for
+the reviewed 12-entry distribution merge. GNU 1.93.1, UCRT64 GCC/G++/GFortran,
+FFTW, CMake, Ninja, objdump, Windows SDK `mt.exe`, 7-Zip and cached NSIS tools
+are present. These presence/hash checks do not replace final-source compilation.
+
+The cached Tauri CLI 2.11.5 native module has SHA-256
+`CF1426421FAFFEE1460CDE828A97D4DDEC387F276549280CC8530F7EA04124F8`.
+The cached 215116512-byte Microsoft offline WebView2 installer has SHA-256
+`D3CBE8FEDB104282D745FFF106993EFEAD51AE94F5595A4E75804446A974F9C3`
+and a valid Microsoft Corporation Authenticode signature. Recheck the actual
+inputs selected for the next package; a cache entry is not proof it was used.
+The release dependency cache remains available, but new source/version require
+a new optimized application build. No reliable `.2` peak-memory measurement
+justifies a higher limit. `npm ci` and pinned CLI installation still require
+registry availability; this is not an offline reproducibility claim.
+
+### Next-candidate sequence — no version reserved
+
+1. Complete and review SDK/native/UI integration and owner lifecycle gates.
+   Record exact pre-version Nexus commit `P`, paired xLog owner commit `O`,
+   test receipts and remaining acceptance boundaries. Schedule final-source
+   desktop checks and focused native tests within the agreed resource limits.
+2. Check both platform ledgers, version receipts and release tags for unique
+   next version `V`. Only then update the five version files:
+   `src-tauri/Cargo.toml`, `src-tauri/Cargo.lock`, `src-tauri/tauri.conf.json`,
+   `ui/package.json` and `ui/package-lock.json`. Record `P` and `O` in candidate
+   documentation, commit and push final source `C`. The build receipt records
+   `C`; do not attempt to embed a commit's own hash in its contents.
+3. Fetch and fast-forward canonical `C:\Projects\OM0RX-xNexus` only. Verify
+   branch `main`, clean tracked/untracked source and freshly verified
+   `origin/main` equal to full SHA `C`. Confirm all five version files use `V`
+   and no prior receipt claims `V` for different source. Freeze through packaging
+   and static audit. The wrapper's exact-HEAD/path checks do not replace explicit
+   branch/remote verification.
+4. Recheck retained `.2` evidence and native inputs. Run applicable fork,
+   NSIS-template, installer-policy, distribution-merge and documentation gates
+   after resource-slot release. Preflight must preserve every base resource and
+   add only the installer license. Inherited `TAURI_CONFIG`,
+   `NEXUS_ALLOW_MISSING_AICW` and unreviewed platform config files are rejected.
+   Never delete cache/source/receipt evidence to make a preflight pass.
+5. After explicit package clearance, invoke the canonical outer supervisor:
+
+   ```powershell
+   pwsh -NoProfile -File scripts/xnexus/run-windows-guarded.ps1 -ExpectedCommit <C-full-sha> -MsysRoot C:\msys64 -EvidenceRoot C:\Projects\OM0RX-xLog\.build\xnexus-windows-packages
+   ```
+
+   Fresh admission requires at least 8 GiB physical and 6 GiB available Windows
+   commit. The private 4 GiB aggregate Job is assigned before child resume,
+   uses BelowNormal priority and one Cargo/CMake job, and stops at either 2 GiB
+   host floor, an owned memory-limit notification or the 12-hour deadline. No
+   retry or widening is automatic. Preserve failure/cleanup evidence and obtain
+   a new reviewed decision before another attempt; unconfirmed termination is
+   not resource release. Release optimization remains fat LTO, one codegen unit
+   and `strip = "debuginfo"`.
+6. Capture actual owned CLI process/module path and hash during the build.
+   Require root termination and zero active descendants. The supervisor preserves
+   before/after copies of `V.json`, `V.distribution.json` and
+   `V.distribution.config.json`; the inner receipt binds configuration/template/
+   guard/license hashes, assets, source and outputs. Audit unchanged canonical `C`:
+
+   ```powershell
+   pwsh -NoProfile -File scripts/xnexus/audit-windows.ps1 -Version <V> -ExpectedCommit <C-full-sha> -CliProcessReceipt <fresh-process-receipt>
+   ```
+
+   Preserve standalone and installer hashes separately: the supported Tauri
+   bundle-marker transformation is not byte equality. The audit checks version,
+   Common-Controls v6, imports, embedded assets/licenses, distribution policy and
+   signed Microsoft WebView2 input. Retain the new artifacts and receipts
+   independently before later target reuse.
+
+The [installer hardening record](WINDOWS_DISTRIBUTION_HARDENING.md) describes
+tested ownership, payload-completion, ordinary-close and data-retention guards.
+Its inert executable NSIS tests do not qualify a real install, upgrade or uninstall.
+Actual merged-config bundling, static audit and isolated installer/application
+acceptance remain required for the new candidate.
 
 The script does not install or start the candidate. An unsigned installer is not
 platform signing approval or proof of operating-system trust prompts. Native
@@ -145,7 +255,7 @@ qualification for every macOS 14 machine. Rust 1.93.1's actual binaries are firs
 on the child process PATH, and Tauri CLI 2.11.5 is downloaded by its pinned
 archive hash and invoked directly by its verified absolute executable path.
 Earlier helpers used Cargo subcommand lookup, which prioritizes an installed
-Cargo-home CLI over PATH. The current `.2` Mac build's actual locally installed
+Cargo-home CLI over PATH. The historical `.2` Mac build's actual locally installed
 Tauri 2.11.5 path/hash and install metadata are recorded in a supplemental
 provenance correction; its application compiler is verified as Rust 1.93.1.
 Release debug information is retained explicitly for compatibility
