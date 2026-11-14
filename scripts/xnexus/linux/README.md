@@ -1,7 +1,8 @@
 # Isolated Linux qualification
 
-This is a **prepared, scoped validation harness**, not evidence that Linux
-compilation has already passed. It does not package, install or launch xNexus.
+This is a **scoped validation harness**, not evidence that Linux compilation has
+already passed. Image provisioning and dependency fetch have passed; see
+[the retained preparation record](PROVISIONING.md). It does not package, install or launch xNexus.
 Keep the fork's canonical package guards and inherited publishing restrictions.
 
 The recipe follows `.github/workflows/xnexus-ci.yml`: Ubuntu 24.04, Rust 1.93.1,
@@ -72,7 +73,7 @@ to the network to conceal it. Add a separately pinned fetch if necessary.
 
 The image build itself uses Docker's configured builder resources; it has no
 application compile workload. Actual checks are explicitly resource-limited.
-The source-only scripts were checked with Python unit tests, a dry plan, Bash
-syntax validation and the fork policy tests. Actual container dependency
-installation, Linux compilation, GUI, package and physical-radio validation
-remain unexecuted until receipts establish otherwise.
+The scripts were checked with Python unit tests, a dry plan, Bash syntax
+validation and the fork policy tests. Image provisioning and locked dependency
+fetch subsequently passed. Linux compilation, GUI, package and physical-radio
+validation remain unexecuted until receipts establish otherwise.
