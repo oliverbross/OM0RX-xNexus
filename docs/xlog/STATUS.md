@@ -26,9 +26,9 @@ new implementation still requires its own source tests and candidate qualificati
 | Milestone | Current evidence | Remaining acceptance |
 |---|---|---|
 | M0 | Complete: full upstream history, private fork, fetch-only upstream, nine tracked milestones | Maintain upstream review and patch inventory |
-| M1 | 58 client tests; actual owner HTTP and SQLite restart/receipt tests; bridge merged into canonical xLog | Paired installed-application acceptance |
+| M1 | 80 client tests plus exact replay of 40 Swift needs replies; actual owner HTTP and SQLite restart/receipt tests; base bridge merged into canonical xLog | Paired installed-application acceptance |
 | M2 | Separate companion startup, native pairing and private profile; no local station services | Final candidate native GUI and lifecycle acceptance |
-| M3 | xLog-authoritative call/DXCC needs, band/world maps, selected-call history; actual owner mutation and serialized projector matrix passed | Installed UI classification propagation; decoded-call batch lookup; richer confirmation/award policy evidence |
+| M3 | xLog-authoritative call/DXCC needs, band/world maps, selected-call history; actual owner mutation/projector matrix; decoded-call owner/SDK/native tests passed | Integrated decoded-call build and native UI; installed classification propagation; richer confirmation/award policy evidence |
 | M4 | Owner-mediated tune/point and independent Stop; connection-bound Stop fix merged after 95 focused and 1,164 full native tests | Accepted xLog package containing the fix; paired UI and physical control qualification |
 | M5 | Durable outbox and atomic owner write/receipt; restart, replay and edit-conflict tests | Paired native GUI acceptance; queue archive/export design |
 | M6 | Explicit FLEX slice A/DAX mapping, bounded owner PCM, client, FIR/period assembler, threaded native FT8/FT4 decoder and receive UI | Active DAX reception and clock/route qualification; TX contract and supervised qualification |
@@ -107,11 +107,13 @@ provide recorded evidence, not a hosted CI success.
 A new isolated upstream merge rehearsal from exact `.2` source to
 `3885df0fe0d992a52f51ff5481025f860b2322f5` had no conflicts across 29 files.
 Eight policy checks passed and all 44 inherited workflow jobs remain guarded.
-The uncommitted merge and earlier rehearsal remain preserved; no upgrade was
-promoted and the upstream base remains `c88740a94`.
+The original uncommitted merge and earlier rehearsal remain preserved; no upgrade
+was promoted and the upstream base remains `c88740a94`.
 Source review found an incoming serial-port alias mismatch that can incorrectly
-clear a stuck-CW warning in independent mode. Promotion awaits a fix and runtime
-checks; see [the upstream review](UPSTREAM_REVIEW_2026-11-14.md).
+clear a stuck-CW warning in independent mode. A separate review branch at
+`50a5f1840` now repairs it: two added assertions failed before the fix and all
+19 targeted real-library fake-port tests passed after it. Full incoming update
+gates remain pending; see [the upstream review](UPSTREAM_REVIEW_2026-11-14.md).
 
 Exact `.3` Linux validation passed 58 SDK, eight policy and 40 UI tests plus
 TypeScript/Vite, followed by an offline Rust 1.93.1 all-targets desktop check
@@ -132,10 +134,13 @@ probe found ten active inputs and none DAX. No DAX utility or stream was started
 Receive timing reports host endpoint clock calibration, not a measured global
 UTC accuracy or endpoint-to-RF delay. Both latter values remain explicitly
 unknown. Generated-message tests do not establish physical reception.
-Decoded-row classification is being implemented in isolated owner, SDK and
-native branches under [the agreed contract](NEEDS_QUERY_CONTRACT.md). One bounded
+Decoded-row classification is implemented in isolated owner, SDK and native
+branches under [the agreed contract](NEEDS_QUERY_CONTRACT.md). One bounded
 read mailbox attaches only to an existing ordinary xLog cluster poll; it creates
-no query writer, poller or station connection. New facts are not shipped yet.
+no query writer, poller or station connection. Owner tests, 80 SDK checks, replay
+of 40 actual Swift replies and 19 native checks passed. Full integrated desktop
+and final UI checks remain pending; new facts are not shipped yet. See
+[the verification record](DECODED_NEEDS_VERIFICATION.md).
 The needed-station board continues to use xLog's classified cluster observations.
 Transmission is unavailable in companion mode.
 
