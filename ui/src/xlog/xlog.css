@@ -77,3 +77,4 @@
 .xn-world-unknown { color: var(--state-warn); }
 .xn-world-spot:focus-visible circle { stroke: var(--text); stroke-width: 3; }
 .xn-world-legend { display: flex; flex-wrap: wrap; gap: var(--space-3); font-size: var(--fs-label); }
+.xn-footer { overflow-wrap: anywhere; }

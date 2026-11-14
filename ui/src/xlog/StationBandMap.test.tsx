@@ -29,4 +29,9 @@ describe('Nexus band map with xLog observations', () => {
     fireEvent.change(screen.getByLabelText('Band map mode'), { target: { value: 'Digital' } })
     expect(screen.getByRole('button', { name: /OM0RX/ })).toBeTruthy()
   })
+  it('normalizes band presentation and never marks mixed owner evidence as worked', () => {
+    const { container } = render(<StationBandMap spots={[{ ...spot, band: '20M', mode: 'cw', need: { status: 'worked', score: 0, reasons: [] } }, { ...spot, id: 'other', band: '20M', frequency_hz: 14_030_000, need: { status: 'needed', score: 100, reasons: ['Needed at this frequency'] } }]} dialHz={14_025_000} select={vi.fn()} />)
+    expect(container.querySelectorAll('.bandmap-spot')).toHaveLength(2)
+    expect(container.querySelector('.bandmap-spot.worked')).toBeNull()
+  })
 })

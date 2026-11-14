@@ -27,6 +27,7 @@ export function App({ api = bridge }: { api?: Bridge }) {
   const [stopTarget, setStopTarget] = useState<string | null>(null)
   const [stopAllowed, setStopAllowed] = useState(false)
   const generation = useRef(0)
+  const actionSequence = useRef(0)
   useViewport(scale)
 
   function accept(next: View) {
@@ -101,15 +102,18 @@ export function App({ api = bridge }: { api?: Bridge }) {
     } finally { if (epoch === generation.current) setBusy(false) }
   }
   async function command(value: Command) {
+    const epoch = generation.current
+    const sequence = ++actionSequence.current
     setAction('Sending request to xLog…')
     try {
       const receipt = await api.command(value)
+      if (epoch !== generation.current || sequence !== actionSequence.current) return
       setAction(`${receipt.status === 'observed' ? 'Observed by xLog' : receipt.status === 'applied' ? 'Applied by xLog' : receipt.status === 'accepted' ? 'Accepted by xLog — awaiting observation' : receipt.status === 'rejected' ? 'Rejected by xLog' : 'Outcome uncertain — check xLog before retrying'}${receipt.message ? `: ${receipt.message}` : ''}`)
-    } catch (e) { setAction(`${errorText(e)}. Check xLog before retrying.`) }
+    } catch (e) { if (epoch === generation.current && sequence === actionSequence.current) setAction(`${errorText(e)}. Check xLog before retrying.`) }
   }
   const tune = (spot: Spot) => {
     const radio = snapshot?.station.radio_id
-    if (radio && allows('station.tune')) void command({ kind: 'station.tune', radio_id: radio, frequency_hz: spot.frequency_hz, mode: spot.mode })
+    if (radio && allows('station.tune') && snapshot?.station.transmitting === false) void command({ kind: 'station.tune', radio_id: radio, frequency_hz: spot.frequency_hz, mode: spot.mode })
   }
   const azimuth = Number(heading)
   return <div className="app xn-shell">
@@ -138,7 +142,7 @@ export function App({ api = bridge }: { api?: Bridge }) {
       {!view.paired && <section className="xn-onboarding" aria-label="Connect xLog"><h2>Your station, one source of truth</h2><p>Enable the companion bridge in xLog, then open its pairing file here. xLog supplies your logbook needs, cluster, radio and rotator observations.</p><p>The pairing secret stays in the native application and is forgotten when xNexus closes. This window never opens hardware or a second logbook.</p></section>}
       <section className="xn-summary" aria-label="Station observations">
         <div className="xn-card"><p className="xn-eyebrow">RADIO · {snapshot?.station.radio_id ?? 'UNAVAILABLE'}</p><strong className="xn-readout">{fresh ? frequency(snapshot?.station.frequency_hz) : '—'} <small>MHz</small></strong><p>{fresh ? `${snapshot?.station.mode ?? 'Mode unavailable'} · ${snapshot?.station.connected ? 'Connected' : 'Disconnected'}` : 'Waiting for xLog'}{fresh && snapshot?.station.transmitting === true ? ' · Transmitting' : ''}</p></div>
-        <div className="xn-card"><p className="xn-eyebrow">ROTATOR · {snapshot?.rotor.rotor_id ?? 'UNAVAILABLE'}</p><strong className="xn-readout">{fresh && snapshot?.rotor.azimuth_deg != null ? `${snapshot.rotor.azimuth_deg.toFixed(1)}°` : '—'}</strong><p>{fresh ? snapshot?.rotor.connected ? snapshot.rotor.moving ? 'Moving' : 'Connected' : 'Disconnected' : 'Waiting for xLog'}</p></div>
+        <div className="xn-card"><p className="xn-eyebrow">ROTATOR · {snapshot?.rotor.rotor_id ?? 'UNAVAILABLE'}</p><strong className="xn-readout">{fresh && snapshot?.rotor.azimuth_deg != null ? `${snapshot.rotor.azimuth_deg.toFixed(1)}°` : '—'}</strong><p>{fresh ? snapshot?.rotor.connected ? snapshot.rotor.moving == null ? 'Motion unknown' : snapshot.rotor.moving ? 'Moving' : 'Connected' : 'Disconnected' : 'Waiting for xLog'}</p></div>
         <div className="xn-card"><p className="xn-eyebrow">NEEDED NOW</p><strong className="xn-readout">{fresh ? needed.length : '—'}</strong><p>xLog classification · {fresh ? snapshot?.spots.length : '—'} cluster observations</p></div>
       </section>
       <section className="xn-workspace" aria-label="Station opportunities">
@@ -149,7 +153,8 @@ export function App({ api = bridge }: { api?: Bridge }) {
         </div>
         <aside className="xn-inspector" aria-label="Selected station">
           <p className="xn-eyebrow">WORK WITH XLOG</p><h2>{selected?.callsign ?? 'Select a station'}</h2>
-          {selected ? <><p className="xn-mono">{frequency(selected.frequency_hz)} MHz · {selected.mode}</p><p>{selected.need.reasons.join(' · ') || 'Need status unknown'}</p><button disabled={!allows('station.tune') || !snapshot?.station.connected || !snapshot.station.radio_id} onClick={() => tune(selected)}>Tune through xLog</button></> : <p>Choose a callsign to inspect xLog’s evidence and request a tune.</p>}
+          {selected ? <><p className="xn-mono">{frequency(selected.frequency_hz)} MHz · {selected.mode}</p><p>{selected.need.reasons.join(' · ') || 'Need status unknown'}</p><button disabled={!allows('station.tune') || !snapshot?.station.connected || !snapshot.station.radio_id || snapshot.station.transmitting !== false} onClick={() => tune(selected)}>Tune through xLog</button></> : <p>Choose a callsign to inspect xLog’s evidence and request a tune.</p>}
+          {fresh && snapshot?.station.transmitting !== false && <p className="xn-hint">{snapshot?.station.transmitting === true ? 'xLog reports transmission in progress. Tuning is held.' : 'Transmit state is unknown. Wait for xLog to confirm receive before tuning.'}</p>}
           {!view.hello?.capabilities.includes('station.tune') && <p className="xn-hint">Radio tuning is unavailable until xLog grants that capability.</p>}
           {selected && <p className="xn-hint">{selected.country ?? 'Country unavailable'}{selected.adif ? ` · DXCC ${selected.adif}` : ''}<br />Call: {selected.call_status ?? 'unknown'} · DXCC: {selected.dxcc_status ?? 'unknown'} (from xLog)</p>}
           <hr /><h3>Point the antenna</h3><label>Azimuth in degrees<input type="number" min="0" max="359.9" step="0.1" value={heading} onChange={e => setHeading(e.target.value)} /></label><button disabled={!allows('rotor.point') || !snapshot?.rotor.connected || !snapshot.rotor.rotor_id || heading.trim() === '' || !Number.isFinite(azimuth) || azimuth < 0 || azimuth >= 360} onClick={() => snapshot?.rotor.rotor_id && void command({ kind: 'rotor.point', rotor_id: snapshot.rotor.rotor_id, azimuth_deg: azimuth })}>Point through xLog</button>
@@ -157,7 +162,7 @@ export function App({ api = bridge }: { api?: Bridge }) {
         </aside>
       </section>
       <QsoPanel api={api} enabled={allows('logbook.write')} readEnabled={allows('logbook.read')} connected={view.connected} workspace={view.hello?.workspace_id ?? null} selected={fresh ? selected : undefined} />
-      <footer className="xn-footer"><span>{view.endpoint ?? 'No pairing loaded'}</span><span>{view.hello ? `Workspace ${view.hello.workspace_id} · protocol ${view.hello.protocol_version}` : 'Nexus-derived companion · station owned by OM0RX-xLog'}</span><span>Audio and digital transmission are not enabled in this view.</span></footer>
+      <footer className="xn-footer"><span>Version {__XNEXUS_VERSION__} · {__BUILD_ID__}</span><span>{view.endpoint ?? 'No pairing loaded'}</span><span>{view.hello ? `Workspace ${view.hello.workspace_id} · protocol ${view.hello.protocol_version}` : 'Nexus-derived companion · station owned by OM0RX-xLog'}</span><span>Audio and digital transmission are not enabled in this view.</span></footer>
     </main>
   </div>
 }
