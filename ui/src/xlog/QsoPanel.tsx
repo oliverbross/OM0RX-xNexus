@@ -20,6 +20,9 @@ export function QsoPanel({ api, enabled, connected, workspace, selected, readEna
   const draft = record.qso
   const edit = record.edit_revision == null ? null : { workspace: record.workspace_id, revision: record.edit_revision }
   const foreign = record.workspace_id !== null && record.workspace_id !== workspace
+  const untouched = record.workspace_id === null && !record.started && !edit
+    && draft.callsign === '' && draft.rst_sent === '' && draft.rst_received === '' && draft.grid === '' && draft.comment === ''
+    && draft.frequency_hz === null && draft.band === '20m' && draft.mode === 'SSB'
   useEffect(() => { mounted.current = true; return () => { mounted.current = false } }, [])
   function persist(next: SavedDraft, clear = false): boolean {
     if (locked && !clear) return false
@@ -67,7 +70,7 @@ export function QsoPanel({ api, enabled, connected, workspace, selected, readEna
     }
   }
   return <section className="xn-qso" aria-label="QSO submission queue">
-    <HistoryPanel api={api} callsign={selected?.callsign} workspace={workspace} enabled={readEnabled} canEdit={enabled && !busy && !locked && !foreign && draft.callsign.trim() === ''} onEdit={(contact, owner) => { const { contact_revision, ...qso } = contact; if (contact_revision == null) return; persist({ ...newSavedDraft(), qso, workspace_id: owner, edit_revision: contact_revision, started: true }) }} />
+    <HistoryPanel api={api} callsign={selected?.callsign} workspace={workspace} enabled={readEnabled} canEdit={enabled && !busy && !locked && untouched} onEdit={(contact, owner) => { const { contact_revision, ...qso } = contact; if (contact_revision == null) return; persist({ ...newSavedDraft(), qso, workspace_id: owner, edit_revision: contact_revision, started: true }) }} />
     <div><h2>Log through xLog</h2><p>QSO drafts are queued on this computer. Only an applied xLog receipt confirms a logbook write. Nothing is sent automatically.</p></div>
     {!enabled && <p className="xn-hint">A fresh connection with xLog’s logbook.write capability is required to queue or submit a contact.</p>}
     {storageError && <p role="alert" className="xn-error">{storageError}</p>}
