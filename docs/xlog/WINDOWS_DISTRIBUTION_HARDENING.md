@@ -2,8 +2,9 @@
 
 This is tested source for a **future candidate**, based on
 `d206b880216543af2142e600ea6b8e5ac6bdd1b2`. It does not change the frozen
-`1.24.1-xlog.3` candidate, activate the new template in the packaging wrapper,
-or qualify any installer for distribution. The earlier
+`1.24.1-xlog.3` candidate or qualify any installer for distribution. The wrapper
+activation below is prepared source for the next reviewed version; no package
+has been launched with it. The earlier
 [installer review](WINDOWS_INSTALLER_REVIEW.md) remains the record of the
 inherited behavior.
 
@@ -11,10 +12,10 @@ inherited behavior.
 
 The opt-in [distribution overlay](../../src-tauri/tauri.distribution.conf.json)
 selects the fork template and ownership include, and bundles its MIT notice.
-The ordinary `tauri.conf.json` and Windows build wrapper are unchanged. After
-review, activation requires an explicit overlay argument in the guarded build
-recipe, a new user-visible candidate version, exact source provenance, and
-fresh package/static/install qualification. Do not apply it silently to .3.
+The ordinary `tauri.conf.json` is unchanged. The prepared Windows wrapper now
+materializes and passes the explicit reviewed merged config as described below.
+Using it requires a new user-visible candidate version, exact source provenance,
+and fresh package/static/install qualification. Do not apply it silently to .3.
 
 The [generator](../../scripts/xnexus/build-nsis-template.mjs) transforms one
 hash-pinned upstream file with exact single-occurrence seams. Both the original
@@ -173,3 +174,36 @@ Extracted marker harness SHA-256:
 `4547d72573706f65ae5f3c6f65a89f61a61fc1ac1ac8e1ddbfae9402506d704d`.
 The original 26 admission cases use unchanged guard bytes. Native wizard
 extraction-error, Retry/Cancel, upgrade and uninstall qualification remain pending.
+
+## Prepared build activation and resource provenance
+
+The Windows wrapper now runs the pinned-template and installer-policy gates,
+then [distribution-preflight.mjs](../../scripts/xnexus/distribution-preflight.mjs)
+materializes the complete base-plus-overlay config into the candidate provenance
+directory. It passes that exact file to the pinned Tauri CLI with `--config`.
+The merge preserves all **11 existing resource mappings** and adds only the
+installer MIT notice (12 total). It also preserves every application/build
+setting. Unexpected overlay keys, alternate hooks, foreign identity, additional
+Windows platform-config files and inherited `TAURI_CONFIG` are refused for review.
+
+The receipt records the effective config hash, complete base/effective resource
+maps, and hashes of both config sources, template, guard, MIT notice, original
+upstream template and generator. Inputs and effective config are checked again
+before the CLI and after packaging. The generated NSIS source hash is retained.
+The existing static audit still verifies standalone/payload marker differences,
+application versions/manifest/imports, signed Microsoft offline WebView2 input,
+models, Hamlib and legal notices. For this distribution policy it additionally
+checks configuration/source/generated-script hashes and the embedded MIT notice.
+
+`-Jobs 1` is now the default and is recorded for Cargo and CMake; `-Jobs 2` remains
+an explicit supported ceiling. The release optimization/debug profile is unchanged.
+Concurrency is not a per-process memory bound: launch admission, a private Job
+Object cap and process telemetry belong to the separately reviewed outer resource
+guard. No empirical peak-RAM claim is made from the old .2 receipts, which record
+process identities, priority and pauses but not reliable peak memory samples.
+
+Five merge-policy tests pass, including resource-loss, hidden-build-command,
+alternate-hook and foreign-product negative controls. A source-only preflight
+produced the expected 11-to-12 resource map; both PowerShell scripts parse. This
+does not execute Cargo, Tauri, the product, or an installer. Actual merged-config
+bundling and subsequent static/installation acceptance remain pending.
