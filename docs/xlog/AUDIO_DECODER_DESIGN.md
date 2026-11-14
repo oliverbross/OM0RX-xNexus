@@ -4,6 +4,22 @@ This is an implementation design based on the imported source, not a claim that
 the current bridge transports PCM or can transmit. The connected desktop can
 reuse the native Nexus DSP without opening a radio, sound card or second logbook.
 
+The initial native adapter is `src-tauri/src/xlog_decode.rs`: FT8/FT4 only, exact
+signed 16-bit 12 kHz mono frames, owner-provided radio/receiver/stream coordinates,
+generation and a UTC uncertainty bound of at most 50 ms. It consumes the first
+`ModeKind::frame_samples()` samples from a period's start; FT8 requires 180,000,
+while FT4's decoder frame is shorter than its 90,000-sample 7.5-second slot.
+It uses the non-a7 `SignalSource::decode` path with AP disabled until an explicit
+owner-backed QSO context is implemented. It does not register an IPC command,
+subscribe to audio or expose TX. Generated FT8/FT4 roundtrip tests are included;
+their actual execution result belongs in the build acceptance record.
+
+The current xLog contest-recorder callback has neither authoritative radio/source
+mapping nor a calibrated first-sample UTC bound. Arbitrarily mixed recorder
+samples and callback arrival time do not establish those facts. Consequently the
+owner must not advertise `audio.rx` yet. The decoder remains dormant until those
+two owner-side requirements and an explicit stream contract are implemented.
+
 ## Receive implementation
 
 The narrowest seam is `modes::NativeSource::from_kind` in
