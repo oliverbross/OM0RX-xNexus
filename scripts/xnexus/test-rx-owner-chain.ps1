@@ -81,9 +81,10 @@ $receipt=[ordered]@{
 if($WorkerSource) {
     $workerDir=Split-Path $WorkerSource -Parent
     $receipt.worker=@{path=$WorkerSource; sha256=$WorkerSha256; base=(git -C $workerDir rev-parse HEAD).Trim(); dirty=[bool](git -C $workerDir status --porcelain); workerOnly=[bool]$WorkerOnly}
-    if(!$WorkerOnly) { $receipt.expectedTests=4 }
+    $receipt.expectedTests=5
+    if($WorkerOnly) { $receipt.expectedTests=3 }
     if($WorkerOnly) {
-        $receipt.pacedCapture=$false; $receipt.actualOwnerBuffer=$false; $receipt.actualOwnerHttp=$false
+        $receipt.modes=@('FT4')
     }
 }
 $receiptPath=Join-Path $evidence 'receipt.json'
@@ -91,6 +92,7 @@ function Save { $receipt | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $r
 Save
 try {
     $common=@("+$toolchain",'--edition=2021','-C','opt-level=1','-L',"dependency=$deps")
+    if($WorkerSource) { $common+=@('--cfg','xnexus_rx_worker') }
     $sdkLib=Join-Path $evidence 'libxnexus_xlog_client.rlib'
     & rustc @common --crate-name xnexus_xlog_client --crate-type rlib (Join-Path $SdkRoot 'integrations/xlog/src/lib.rs') `
         --extern "reqwest=$($libs.reqwest)" --extern "serde=$($libs.serde)" --extern "serde_json=$($libs.serde_json)" `
@@ -112,7 +114,8 @@ try {
     if($WorkerSource) {
         if($WorkerOnly) { $filters=@() }
         $filters+=@('xlog_rx_worker::tests::changing_epoch_or_stopping_rejects_late_decoder_results',
-            'xlog_rx_worker::tests::revoked_owner_authority_discards_rows_and_partial_context')
+            'xlog_rx_worker::tests::revoked_owner_authority_discards_rows_and_partial_context',
+            'complete_ft4_worker_owner_http_lifecycle')
     }
     & $exe @filters --list *> (Join-Path $evidence 'selected-tests.log')
     $selected=@(Get-Content (Join-Path $evidence 'selected-tests.log') | Where-Object { $_ -match ': test$' })
