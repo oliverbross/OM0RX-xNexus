@@ -28,9 +28,10 @@ Reply fields, all present:
 
 Numeric revisions are exact integers from 0 through 9,007,199,254,740,990; zero
 is permitted only with the owner's explicit ready/complete authority. ADIF is
-null or an integer from 1 through 9999. Band/country are bounded to 32/128
-UTF-8 bytes without controls. Reasons are each bounded to 256 UTF-8 bytes without
-controls. Country-reference identity is
+null or an integer from 1 through 9999. Present band/country strings are nonempty,
+bounded to 32/128 UTF-8 bytes without controls. Reasons are each nonempty and
+bounded to 256 UTF-8 bytes without controls. These literals are not trimmed or
+otherwise normalized; spaces are permitted. Country-reference identity is
 the owner's opaque ASCII identity, bounded to 512 bytes and compared only for
 equality. Its present form begins `xlog-country-facts-v3:` and may include entity
 catalogue, fallback and CTY-data identities. Do not truncate or reinterpret it.
