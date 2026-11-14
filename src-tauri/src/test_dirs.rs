@@ -14,7 +14,7 @@
 //! made by whatever first writes into it and removed when the thread ends. libtest runs every test
 //! on a thread of its own, so that is one folder per test, and nothing for a test to remember. The
 //! shipped resolvers are `cfg(not(test))`, so no thread of a test build can reach the operator's
-//! folders, and the shared folder's twin does not read `NEXUS_DATA_DIR`. Pointing
+//! folders, and the shared folder's twin does not read `XNEXUS_DATA_DIR`. Pointing
 //! `XDG_CONFIG_HOME` or `HOME` elsewhere from inside a test would not do: the environment belongs
 //! to the whole process, and tests run in parallel.
 //!
@@ -57,7 +57,7 @@ thread_local! {
 
 /// The folders the SHIPPED app keeps an operator's files in on this computer, worked out here from
 /// the platform's own variables the way the release build's resolvers work them out (`config_base`,
-/// `local_data_dir`, and `shared_data_dir`'s `NEXUS_DATA_DIR`), so the guards below do not take the
+/// `local_data_dir`, and `shared_data_dir`'s `XNEXUS_DATA_DIR`), so the guards below do not take the
 /// resolvers under test at their word.
 fn operators_folders() -> Vec<PathBuf> {
     let var = |name: &str| std::env::var_os(name).map(PathBuf::from);
@@ -71,9 +71,10 @@ fn operators_folders() -> Vec<PathBuf> {
     };
     let mut folders = vec![
         config.unwrap_or_else(|| PathBuf::from(".")),
-        data.unwrap_or_else(|| PathBuf::from(".")).join("Nexus"),
+        data.unwrap_or_else(|| PathBuf::from("."))
+            .join("OM0RX-xNexus"),
     ];
-    folders.extend(var("NEXUS_DATA_DIR").filter(|d| !d.as_os_str().is_empty()));
+    folders.extend(var("XNEXUS_DATA_DIR").filter(|d| !d.as_os_str().is_empty()));
     folders
 }
 

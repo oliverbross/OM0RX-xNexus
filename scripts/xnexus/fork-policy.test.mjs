@@ -34,6 +34,8 @@ test('no inherited updater plugin can execute in either launch path', () => {
   assert.match(s, /fn self_updates\([^)]*\)[^{]*\{\s*false\s*\}/);
   assert.doesNotMatch(s, /const (GITHUB_RELEASES_URL|VERSION_JSON_URL|BEST_RELEASE_URL)/);
   assert.match(s, /XNEXUS_DATA_DIR/);
+  assert.doesNotMatch(s, /updater_leftovers::spawn|join\("Nexus"\)/);
+  assert.match(s, /join\("OM0RX-xNexus SSTV"\)/);
   assert.doesNotMatch(s, /var_os\("NEXUS_DATA_DIR"\)/);
   assert.equal(JSON.parse(read('src-tauri/capabilities/default.json')).permissions.includes('updater:default'), false);
 });

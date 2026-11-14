@@ -167,7 +167,6 @@ mod tci_spots;
 #[cfg(test)]
 mod test_dirs;
 /// Windows: the installer an automatic update leaves in Temp, removed at the next start.
-mod updater_leftovers;
 mod window_state;
 
 use chains::{panel_key, panel_label, Instance};
@@ -4390,7 +4389,10 @@ fn get_data_folder() -> DataFolderInfo {
         .to_string(),
         log_present: current.join("log.adi").is_file(),
         current: current.to_string_lossy().into_owned(),
-        default: config_base().join("om0rx-xnexus").to_string_lossy().into_owned(),
+        default: config_base()
+            .join("om0rx-xnexus")
+            .to_string_lossy()
+            .into_owned(),
         chosen: chosen.map(|p| p.to_string_lossy().into_owned()),
     }
 }
@@ -8313,14 +8315,15 @@ fn local_data_dir() -> PathBuf {
             .map(PathBuf::from)
             .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".local/share")))
     };
-    base.unwrap_or_else(|| PathBuf::from(".")).join("Nexus")
+    base.unwrap_or_else(|| PathBuf::from("."))
+        .join("OM0RX-xNexus")
 }
 
 /// The test twin of `local_data_dir`: inside the running test's own folder, never the
 /// operator's (see `test_dirs`).
 #[cfg(test)]
 fn local_data_dir() -> PathBuf {
-    test_dirs::root().join("data").join("Nexus")
+    test_dirs::root().join("data").join("OM0RX-xNexus")
 }
 
 /// The WSJT-X-format decode log (`ALL.TXT`), in the app's LOCAL data dir — the same class of
@@ -8519,7 +8522,7 @@ fn reveal_diag_log(app: tauri::AppHandle) -> Result<(), String> {
 /// the images (written by the `sstvrx` decode thread).
 fn sstv_gallery_dir() -> PathBuf {
     match PICTURES_DIR.get() {
-        Some(p) => p.join("Nexus SSTV"),
+        Some(p) => p.join("OM0RX-xNexus SSTV"),
         None => legacy_sstv_gallery_dir(),
     }
 }
@@ -8925,7 +8928,7 @@ fn iso_from_stamp(stamp: &str) -> Option<String> {
     ))
 }
 
-/// Bring an existing SSTV gallery to `Pictures/Nexus SSTV` on the first launch after the move.
+/// Bring an existing SSTV gallery to `Pictures/OM0RX-xNexus SSTV` on the first launch after the move.
 ///
 /// ⚠️ WHY THIS IS NOT OPTIONAL. `gallery.json` lives INSIDE the gallery folder and every entry
 /// holds an ABSOLUTE path. Point the decoder at Pictures without doing anything else and the app
@@ -9437,7 +9440,7 @@ fn voice_dir() -> PathBuf {
 /// tests, where [`DOCUMENTS_DIR`] is never set.
 fn recordings_dir() -> PathBuf {
     match DOCUMENTS_DIR.get() {
-        Some(d) => d.join("Nexus").join("Recordings"),
+        Some(d) => d.join("OM0RX-xNexus").join("Recordings"),
         None => legacy_recordings_dir(),
     }
 }
@@ -9475,7 +9478,7 @@ fn reveal_recordings(app: tauri::AppHandle) -> Result<(), String> {
         .map_err(|e| e.to_string())
 }
 
-/// Open the SSTV gallery folder (`Pictures/Nexus SSTV`) — #130. The diagnostic log, ALL.TXT and
+/// Open the SSTV gallery folder (`Pictures/OM0RX-xNexus SSTV`) — #130. The diagnostic log, ALL.TXT and
 /// the recordings each had a Reveal; the one folder an SSTV operator most needs to find did not.
 /// Created first, like `reveal_recordings`, so a station that has received nothing yet still
 /// lands in the folder pictures will go to instead of getting a silent no-op.
@@ -54239,7 +54242,7 @@ fn build_app(d: BuildDeps) -> tauri::Result<tauri::App> {
             window_state::install(app.handle());
             // Clear the installer the last automatic update left in Temp (Windows; off the UI
             // thread, best-effort, never fails the start).
-            updater_leftovers::spawn(app.handle());
+            // Fork builds never delete upstream updater leftovers.
             // ★ THE MILESTONE THAT MATTERS MOST. Everything that can leave an operator with a
             // window-less process — the WebView2 runtime, a corrupt user-data folder, a
             // quarantined DLL — happens BEFORE this line, inside Tauri's own window creation.
@@ -59957,7 +59960,7 @@ mod tests {
         std::env::temp_dir().join(format!("nexus-test-{}-{name}", std::process::id()))
     }
 
-    /// The SSTV gallery move (`Pictures/Nexus SSTV`) must bring an existing gallery WITH it.
+    /// The SSTV gallery move (`Pictures/OM0RX-xNexus SSTV`) must bring an existing gallery WITH it.
     ///
     /// `gallery.json` lives inside the folder and every entry holds an absolute path, so pointing
     /// the decoder somewhere new without migrating reads a fresh empty index — to the operator

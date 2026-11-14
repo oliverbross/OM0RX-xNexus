@@ -60,10 +60,17 @@ try {
     $cliRoot = Join-Path $repo 'target\xnexus-tools'
     Run { npm install --prefix $cliRoot --no-save --package-lock=false '@tauri-apps/cli@2.11.5' }
     Run { & "$cliRoot\node_modules\.bin\tauri.cmd" build --target x86_64-pc-windows-gnu --features radio,custom-protocol --bundles nsis --no-sign }
+    $executable = "$env:CARGO_TARGET_DIR\x86_64-pc-windows-gnu\release\OM0RX-xNexus.exe"
+    $imports = & "$MsysRoot\ucrt64\bin\objdump.exe" -p $executable
+    if ($LASTEXITCODE -ne 0) { throw 'Unable to audit executable DLL imports.' }
+    if ($imports -match 'DLL Name:.*(libgfortran|libstdc\+\+|libquadmath|libwinpthread|libgcc|libfftw)') {
+        throw 'Executable still depends on builder-only GNU runtime DLLs; reject installer.'
+    }
     if ((git -C $repo rev-parse HEAD).Trim() -ne $source -or (git -C $repo status --porcelain)) { throw 'Source changed during packaging; reject the artifacts.' }
     $artifacts = Get-ChildItem "$env:CARGO_TARGET_DIR\x86_64-pc-windows-gnu\release\bundle\nsis\*-setup.exe"
     if (!$artifacts) { throw 'No NSIS installer produced.' }
     $receipt.status = 'packaged-unsigned-not-installed'
+    $receipt.executableImports = @($imports | Select-String 'DLL Name:' | ForEach-Object { $_.Line.Trim() })
     $receipt.artifacts = @($artifacts | ForEach-Object { @{path=$_.FullName; sha256=(Get-FileHash $_.FullName -Algorithm SHA256).Hash; bytes=$_.Length} })
     $receipt | ConvertTo-Json -Depth 5 | Set-Content -Encoding utf8 $receiptPath
     Write-Output "Build receipt: $receiptPath"

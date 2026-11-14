@@ -75,6 +75,7 @@ fn main() {
         "--target",
         "tempo_static",
         "--parallel",
+        &env::var("NUM_JOBS").unwrap_or_else(|_| "2".into()),
     ]));
 
     // Link: static libtempo first, then its runtime dependencies.
@@ -88,7 +89,29 @@ fn main() {
     // TARGET, not host: `cfg!(target_os)` in a build script describes the machine the script
     // itself was compiled for, so cross-compiling FROM a Mac would wrongly emit these. The file
     // already draws that distinction for Windows (`is_cross_to_windows_gnu`); same rule here.
-    if env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("macos") {
+    if env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows") {
+        // Native GNU Windows builds must be as portable as the cross-release path:
+        // never rely on the builder's MSYS2 runtime DLLs being installed at the station.
+        let fc = env::var("FC").unwrap_or_else(|_| "gfortran".into());
+        for name in ["gfortran", "quadmath", "stdc++", "fftw3f", "winpthread"] {
+            let output = Command::new(&fc)
+                .arg(format!("-print-file-name=lib{name}.a"))
+                .output()
+                .expect("ask the GNU Fortran compiler for static runtime archives");
+            assert!(output.status.success(), "failed to locate static {name}");
+            let archive = PathBuf::from(String::from_utf8(output.stdout).unwrap().trim());
+            assert!(
+                archive.is_file(),
+                "native Windows needs static {name}: {}",
+                archive.display()
+            );
+            println!(
+                "cargo:rustc-link-search=native={}",
+                archive.parent().unwrap().display()
+            );
+            println!("cargo:rustc-link-lib=static={name}");
+        }
+    } else if env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("macos") {
         emit_macos_runtime_search_paths();
         // ⭐ STATIC on macOS — a SHIP-time lesson, not a build-time one (2026-08-16).
         // Dynamic -lgfortran/-lfftw3f link fine on the CI runner (brew install gcc fftw)
@@ -130,10 +153,6 @@ fn main() {
         println!("cargo:rustc-link-lib=dylib=stdc++");
     }
     println!("cargo:rustc-link-lib=dylib=m");
-    // The MinGW gfortran runtime also needs quadmath.
-    if cfg!(windows) {
-        println!("cargo:rustc-link-lib=dylib=quadmath");
-    }
 
     emit_rerun(&libtempo_src);
 }
@@ -262,6 +281,7 @@ fn build_cross_windows(libtempo_src: &std::path::Path, out: &std::path::Path) {
         "--target",
         "tempo_static",
         "--parallel",
+        &env::var("NUM_JOBS").unwrap_or_else(|_| "2".into()),
     ]));
 
     // Link the static libtempo first, then its runtime dependencies — all STATIC so
