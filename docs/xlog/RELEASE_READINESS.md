@@ -88,3 +88,35 @@ the root to a different path selects a different WebView store; keep the origina
 root available when recovering an unqueued draft. Native queue files remain in
 the explicitly selected root. Mac build validation is separate from signed
 bundle qualification and does not establish support for older macOS releases.
+
+### Local macOS candidate route
+
+`scripts/xnexus/build-macos.sh <full-reviewed-SHA> <candidate-version>` builds
+only clean `main` matching the authorized fork's freshly fetched `origin/main`.
+The expected SHA and version must be the same reviewed pair used for Windows.
+`--preflight-only` checks prerequisites without building or packaging. A version
+claim prevents a later source from reusing an existing candidate version.
+
+Stage the two checksum-pinned DeepCW assets from `deepcw-model-v1` first; the
+script refuses missing files and any model bypass. Prepare Hamlib from its
+pinned Hamlib/libusb sources with
+`NEXUS_BUILD_JOBS=2 MACOSX_DEPLOYMENT_TARGET=14.0 bash scripts/fetch-hamlib-unix.sh`.
+Keep its preparation log and source revision. All four tools and their licenses
+must be present, and both staged tools and the final app pass the existing
+Mach-O dependency audit. No `/opt/homebrew` runtime dependency is accepted.
+
+The first local candidate may use Homebrew FFTW, Boost and GCC. Their exact
+versions, static-library architectures and hashes are recorded; that is not
+qualification for every macOS 14 machine. Rust 1.93.1's actual binaries are first
+on the child process PATH, and Tauri CLI 2.11.5 is downloaded by its pinned
+archive hash. Release debug information is retained explicitly for compatibility
+with this Mac's linker; the receipt records this larger candidate profile.
+
+The output is an unsigned (possibly ad-hoc signed), **not notarized** `.app.tar.gz`
+archive with an artifact SHA-256 and provenance under
+`target/xnexus-provenance/macos/`. There is no DMG, app launch, installation,
+Developer ID signing, notarization or public upload in this route. A failed build
+retains its receipt and logs. Existing `.build` validation evidence must be
+inventoried before using a local Git exclusion or relocating it; never delete
+it to satisfy the clean-source guard. Run `bash scripts/xnexus/build-macos.test.sh`
+to exercise source/version/provenance guards without compiling a candidate.

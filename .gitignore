@@ -97,3 +97,6 @@ src-tauri/resources/hamlib/rotctld
 src-tauri/resources/hamlib/rotctl
 src-tauri/resources/hamlib/lib*.so*
 src-tauri/resources/hamlib/lib*.dylib*
+# Generated verbatim from pinned libusb source by the macOS preparer; required
+# and hash-recorded in the candidate bundle, like the staged runtime above.
+src-tauri/resources/hamlib/libusb-COPYING.txt
