@@ -140,7 +140,7 @@ device lease to Nexus. This decision gates decoder and TX work.
 - origin = oliverbross/OM0RX-xNexus; upstream = kd9taw/Nexus, fetch only.
 - Keep upstream commits intact. Never squash away ancestry or mass-rename crates.
 - Keep fork modules in integrations/xlog and docs/xlog, with small reviewed hooks
-  into the shell. Maintain a patch inventory and executable fork invariants.
+  into the shell. Maintain the [patch inventory](PATCH_INVENTORY.md) and executable fork invariants.
 - Fetch on demand; make codex/upstream-<date> from clean origin/main; merge the
   selected upstream SHA, resolve, run fork contract tests and applicable upstream
   gates, then review before promotion. No automatic merge or binary update.
