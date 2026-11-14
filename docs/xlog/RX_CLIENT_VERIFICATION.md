@@ -52,3 +52,13 @@ Those fixture assumptions were corrected; production freshness was not relaxed.
 Audio buffer SHA-256:
 `9d24092cb958f3ef4d424586bbf9058c5c65226ef3c3369764a74f2005af6f31`.
 These tests do not cover the Tauri capture-start lifecycle or a physical endpoint.
+
+The maintained native UI owner fixture built against canonical transport
+`824d256d`. Its executable SHA-256 was
+`fbb78821f23f1430e00736a22adc12d2b8c0ace282043496199fe9be398346b2`.
+A private launch passed exact PID/executable/root verification, a synthetic spot
+read, three synthetic radio/rotor commands, observed state updates and normal
+STOP-file shutdown. Hash-mismatch and relative-root negative controls rejected
+launch. Evidence is retained as fixture
+`xnexus-ui-b1668300-68f2-4b36-a512-e2b639f68e31` in user TEMP. No GUI was observed
+or controlled during this fixture check, and no station device was opened.

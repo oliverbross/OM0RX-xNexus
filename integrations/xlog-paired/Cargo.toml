@@ -6,6 +6,12 @@ publish = false
 
 [workspace]
 
+[[bin]]
+name = "xnexus-ui-owner"
+path = "src/bin/ui-owner-fixture.rs"
+test = false
+bench = false
+
 [features]
 owner-audio = []
 
