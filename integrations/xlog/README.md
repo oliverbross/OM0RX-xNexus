@@ -49,6 +49,10 @@ their own write fence until settled; the SDK also invalidates before submitting 
 logbook mutation. Native receive-context matching and paired owner/UI acceptance
 remain separate integration gates.
 
+`NeedsClient::remaining_authority_ms()` exposes the current monotonic observation
+budget for native scheduling. Reading it does not poll, renew authority or promise
+that a query will complete; the query still captures and checks its own lease.
+
 Run synthetic tests from the repository root:
 
 ```
