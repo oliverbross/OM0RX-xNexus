@@ -230,6 +230,168 @@ fn invalid_action_request_id_and_out_of_range_rotor_never_leave_client() {
     assert_eq!(c.command("bad", tune()).unwrap_err(), Error::Invalid);
     s.join().unwrap();
 }
+
+struct QueueFixture(std::path::PathBuf);
+impl QueueFixture {
+    fn new() -> Self {
+        let path = std::env::temp_dir().join(format!(
+            "xnexus-delivery-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir(&path).unwrap();
+        Self(path)
+    }
+}
+impl Drop for QueueFixture {
+    fn drop(&mut self) {
+        for item in std::fs::read_dir(&self.0).unwrap() {
+            let path = item.unwrap().path();
+            assert_eq!(path.parent(), Some(self.0.as_path()));
+            std::fs::remove_file(path).unwrap();
+        }
+        std::fs::remove_dir(&self.0).unwrap();
+    }
+}
+fn log_hello() -> Value {
+    let mut h = hello();
+    h["capabilities"] = json!(["snapshot.read", "logbook.write"]);
+    h
+}
+fn queued_draft() -> outbox::LogbookMutation {
+    outbox::LogbookMutation::Create {
+        qso: outbox::QsoDraft {
+            contact_id: REQUEST_ID.into(),
+            callsign: "W1AW".into(),
+            band: "20m".into(),
+            mode: "FT8".into(),
+            started_at_unix_ms: 1700000000000,
+            frequency_hz: Some(14074000),
+            rst_sent: "-10".into(),
+            rst_received: "-12".into(),
+            grid: "FN31".into(),
+            comment: "synthetic".into(),
+        },
+    }
+}
+
+#[test]
+fn durable_queue_sends_owner_create_and_retains_terminal_receipt() {
+    let f = QueueFixture::new();
+    let mut queue = outbox::Outbox::open(&f.0).unwrap();
+    queue
+        .enqueue("synthetic-workspace", REQUEST_ID, queued_draft())
+        .unwrap();
+    let (mut c, s) = server(vec![
+        json_response(log_hello()),
+        json_response(snapshot()),
+        json_response(receipt("applied")),
+    ]);
+    c.connect().unwrap();
+    c.poll().unwrap();
+    queue.submit(&mut c, REQUEST_ID).unwrap();
+    assert!(matches!(
+        queue.entries()[0].state,
+        outbox::OutboxState::Settled(_)
+    ));
+    let requests = s.join().unwrap();
+    let body: Value = serde_json::from_str(requests[2].split("\r\n\r\n").nth(1).unwrap()).unwrap();
+    assert_eq!(body["command"]["kind"], "logbook.create");
+    assert_eq!(body["command"]["qso"]["callsign"], "W1AW");
+}
+#[test]
+fn crash_after_dispatch_recovers_by_receipt_without_second_post() {
+    let f = QueueFixture::new();
+    {
+        let mut queue = outbox::Outbox::open(&f.0).unwrap();
+        queue
+            .enqueue("synthetic-workspace", REQUEST_ID, queued_draft())
+            .unwrap();
+        let (mut c, s) = server(vec![
+            json_response(log_hello()),
+            json_response(snapshot()),
+            json_response(json!({"broken":true})),
+        ]);
+        c.connect().unwrap();
+        c.poll().unwrap();
+        assert_eq!(
+            queue.submit(&mut c, REQUEST_ID).unwrap_err(),
+            outbox::DeliveryError::Bridge(Error::OutcomeUnknown)
+        );
+        s.join().unwrap();
+    }
+    let mut queue = outbox::Outbox::open(&f.0).unwrap();
+    let (mut c, s) = server(vec![
+        json_response(log_hello()),
+        json_response(receipt("applied")),
+    ]);
+    c.connect().unwrap();
+    queue.submit(&mut c, REQUEST_ID).unwrap();
+    let requests = s.join().unwrap();
+    assert_eq!(requests.len(), 2);
+    assert!(requests[1].starts_with("GET /xlog/v1/receipt/"));
+}
+#[test]
+fn missing_receipt_needs_separate_explicit_retry_using_same_operation() {
+    let f = QueueFixture::new();
+    let mut queue = outbox::Outbox::open(&f.0).unwrap();
+    queue
+        .enqueue("synthetic-workspace", REQUEST_ID, queued_draft())
+        .unwrap();
+    queue
+        .mark_attempted(REQUEST_ID, "synthetic-workspace")
+        .unwrap();
+    let missing = "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
+    let (mut c, s) = server(vec![
+        json_response(log_hello()),
+        json_response(snapshot()),
+        missing.into(),
+        missing.into(),
+        json_response(receipt("applied")),
+    ]);
+    c.connect().unwrap();
+    c.poll().unwrap();
+    assert_eq!(
+        queue.submit(&mut c, REQUEST_ID).unwrap_err(),
+        outbox::DeliveryError::Queue(outbox::OutboxError::ReceiptRequired)
+    );
+    queue.retry_missing(&mut c, REQUEST_ID).unwrap();
+    let requests = s.join().unwrap();
+    assert_eq!(
+        requests.iter().filter(|r| r.starts_with("POST ")).count(),
+        1
+    );
+    let body: Value = serde_json::from_str(requests[4].split("\r\n\r\n").nth(1).unwrap()).unwrap();
+    assert_eq!(body["request_id"], REQUEST_ID);
+}
+#[test]
+fn wrong_workspace_or_missing_grant_does_not_record_attempt_or_send() {
+    let f = QueueFixture::new();
+    let mut queue = outbox::Outbox::open(&f.0).unwrap();
+    queue
+        .enqueue("synthetic-workspace", REQUEST_ID, queued_draft())
+        .unwrap();
+    let (mut c, s) = server(vec![json_response(hello())]);
+    c.connect().unwrap();
+    assert_eq!(
+        queue.submit(&mut c, REQUEST_ID).unwrap_err(),
+        outbox::DeliveryError::Bridge(Error::Capability)
+    );
+    s.join().unwrap();
+    let mut other = log_hello();
+    other["workspace_id"] = json!("other");
+    let (mut c, s) = server(vec![json_response(other)]);
+    c.connect().unwrap();
+    assert_eq!(
+        queue.submit(&mut c, REQUEST_ID).unwrap_err(),
+        outbox::DeliveryError::Queue(outbox::OutboxError::WorkspaceChanged)
+    );
+    s.join().unwrap();
+    assert_eq!(queue.entries()[0].state, outbox::OutboxState::Pending);
+}
 fn assert_bad_snapshot(value: Value, expected: Error) {
     let (mut client, server) = server(vec![json_response(hello()), json_response(value)]);
     client.connect().unwrap();

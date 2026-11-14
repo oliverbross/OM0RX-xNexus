@@ -17,6 +17,13 @@ pub enum Command {
     RotorPoint { rotor_id: String, azimuth_deg: f64 },
     #[serde(rename = "rotor.stop")]
     RotorStop { rotor_id: String },
+    #[serde(rename = "logbook.create")]
+    LogbookCreate { qso: crate::outbox::QsoDraft },
+    #[serde(rename = "logbook.update")]
+    LogbookUpdate {
+        qso: crate::outbox::QsoDraft,
+        expected_contact_revision: u64,
+    },
 }
 impl Command {
     pub fn capability(&self) -> &'static str {
@@ -24,6 +31,7 @@ impl Command {
             Self::StationTune { .. } => "station.tune",
             Self::RotorPoint { .. } => "rotor.point",
             Self::RotorStop { .. } => "rotor.stop",
+            Self::LogbookCreate { .. } | Self::LogbookUpdate { .. } => "logbook.write",
         }
     }
     fn validate(&self) -> Result<(), Error> {
@@ -42,6 +50,11 @@ impl Command {
                     && (0.0..360.0).contains(azimuth_deg)
             }
             Self::RotorStop { rotor_id } => bounded(rotor_id, 128),
+            Self::LogbookCreate { qso } => qso.validate().is_ok(),
+            Self::LogbookUpdate {
+                qso,
+                expected_contact_revision,
+            } => qso.validate().is_ok() && *expected_contact_revision <= 9_007_199_254_740_990,
         };
         if valid {
             Ok(())

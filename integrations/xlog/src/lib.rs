@@ -128,6 +128,7 @@ pub struct Snapshot {
 
 mod commands;
 pub use commands::{Command, CommandReceipt, CommandStatus, StopClient};
+pub mod outbox;
 
 fn bounded(text: &str, max: usize) -> bool {
     !text.trim().is_empty() && text.len() <= max && !text.chars().any(char::is_control)
