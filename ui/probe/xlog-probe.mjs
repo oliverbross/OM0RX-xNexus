@@ -18,15 +18,22 @@ let server, ws
 const sleep = ms => new Promise(r => setTimeout(r, ms))
 function syntheticBridge() {
   window.probeCalls = []
+  let rx = { enabled:false, mode:null, phase:'off', reason:'Receive decoding is off.', route:null, rows:[] }
   const contact = { contact_id: '10000000-0000-4000-8000-000000000001', callsign: 'W0AW', band: '20m', mode: 'CW', started_at_unix_ms: 1700000000123, frequency_hz: 14025000, rst_sent: '599', rst_received: '599', grid: 'EM12', comment: 'Synthetic prior contact', contact_revision: 12 }
   const view = () => ({ paired: true, connected: true, endpoint: 'http://127.0.0.1:49123', hello: { application: 'OM0RX-xLog', protocol_version: 1, server_instance: 'synthetic-server', workspace_id: 'synthetic-workspace', capabilities: ['snapshot.read', 'station.tune', 'rotor.point', 'rotor.stop', 'logbook.read', 'logbook.write'] }, snapshot: { protocol_version: 1, server_instance: 'synthetic-server', workspace_id: 'synthetic-workspace', revision: 1, generated_at_unix_ms: Date.now(), max_age_ms: 10000, station: { connected: true, radio_id: 'synthetic-radio', frequency_hz: 14074000, mode: 'USB', transmitting: false }, rotor: { connected: true, rotor_id: 'synthetic-rotor', azimuth_deg: 123, moving: false }, spots: Array.from({ length: 35 }, (_, i) => ({ id: String(i), callsign: 'W' + i + 'AW', frequency_hz: 14025000 + i * 1000, mode: 'CW', observed_at_unix_ms: Date.now(), source: 'synthetic cluster', latitude: -60 + i * 3.5, longitude: -170 + i * 9.5, country: 'Fixture location', need: { status: 'needed', score: 100 - i, reasons: ['New band from xLog fixture'] } })) } })
   window.__TAURI__ = { core: { invoke: async (name, args) => {
     window.probeCalls.push({ name, args })
+    if (name === 'xlog_rx_start') {
+      rx = { enabled:true, mode:args.mode, phase:'receiving', reason:'Synthetic receive observation; no device was opened.', route:{ capture_id:'fixture-capture', epoch:'fixture-epoch', radio_id:'synthetic-radio', receiver_id:'synthetic-client/slice-a', mapping_generation:1, device_id:'synthetic-dax', slice:'A', dax_channel:2, frequency_hz:14074000, mode:'DIGU', source_channels:2, selected_channel:0, sample_rate:48000, sample_format:'s16le', timestamp_basis:'windows_endpoint_capture', remote_rf_latency_us:null, utc_sync_accuracy_us:null }, rows:[{ host_period_start_unix_us:1790000000000000, mode:args.mode, message:'CQ K1ABC FN42', snr_db:-12, time_offset_seconds:.2, audio_frequency_hz:1400, clock:{ timestamp_basis:'windows_endpoint_capture', host_mapping_uncertainty_us:20, calibration_uncertainty_us:10, utc_sync_accuracy_us:null, remote_rf_latency_us:null, sample_alignment_offset_ns:0, resampler_center_offset_ns:0 } }] }
+      return rx
+    }
+    if (name === 'xlog_rx_stop') { rx = { enabled:false, mode:null, phase:'off', reason:'Receive decoding is off.', route:null, rows:[] }; return rx }
+    if (name === 'xlog_rx_status') return rx
     if (name === 'xlog_outbox_list' || name === 'xlog_outbox_enqueue') return []
     if (name === 'xlog_history') return { protocol_version: 1, server_instance: 'synthetic-server', workspace_id: 'synthetic-workspace', callsign: args.callsign, generated_at_unix_ms: Date.now(), contacts: [contact], matrix: [{ band: '20m', mode: 'CW', worked: true, confirmed: true }] }
     if (name === 'xlog_command') return { request_id: args.requestId, server_instance: 'synthetic-server', workspace_id: 'synthetic-workspace', status: 'accepted', message: null }
     if (name === 'xlog_disconnect') return { paired: !args.forget, connected: false, endpoint: null, hello: null, snapshot: null }
-    return view()
+    const next = view(); next.hello.capabilities.push('audio.rx'); return next
   } } }
 }
 try {
@@ -107,13 +114,29 @@ try {
   if(!await evaluate(`window.probeCalls.some(call=>call.name==='xlog_outbox_enqueue'&&call.args.mutation.kind==='logbook.update'&&call.args.mutation.expected_contact_revision===12)`))throw Error('Correction lost its owner revision')
   if(!await evaluate(`window.probeCalls.every(call=>call.name.startsWith('xlog_'))`))throw Error('Unexpected ordinary Nexus command')
   if(browserErrors.length)throw Error(`Browser console errors: ${browserErrors.join(' | ')}`)
+  await evaluate(`document.querySelector('[aria-label="Receive decoder"]').value='FT4';document.querySelector('[aria-label="Receive decoder"]').dispatchEvent(new Event('change',{bubbles:true}));[...document.querySelectorAll('button')].find(x=>x.textContent==='Start receiving').click()`)
+  await sleep(200)
+  if(!await evaluate(`document.querySelector('.xn-rx').textContent.includes('CQ K1ABC FN42') && window.probeCalls.some(call=>call.name==='xlog_rx_start'&&call.args.mode==='FT4')`))throw Error('RX selection or decode row did not render')
+  for (const [width,height,scale] of [[1366,768,1],[1024,768,1.75]]) {
+    await page('Emulation.setDeviceMetricsOverride', {width,height,deviceScaleFactor:1,mobile:false})
+    await evaluate(`document.querySelector('[aria-label="Interface scale"]').value='${scale}';document.querySelector('[aria-label="Interface scale"]').dispatchEvent(new Event('change',{bubbles:true}))`)
+    await sleep(150)
+    await evaluate(`document.querySelector('.xn-rx').scrollIntoView({block:'start'})`)
+    await sleep(100)
+    const fits=await evaluate(`(()=>{const b=[...document.querySelectorAll('button')].find(x=>x.textContent==='Stop receiving'),r=b.getBoundingClientRect();return !b.disabled&&r.left>=0&&r.right<=innerWidth&&r.top>=0&&r.bottom<=innerHeight&&document.documentElement.scrollWidth<=innerWidth+1})()`)
+    if(!fits)throw Error('RX controls not reachable at supported viewport/scale')
+    const shot=await page('Page.captureScreenshot',{format:'png'});await writeFile(join(artifacts,`rx-${width}-${scale}.png`),Buffer.from(shot.data,'base64'))
+  }
+  await evaluate(`[...document.querySelectorAll('button')].find(x=>x.textContent==='Stop receiving').click()`)
+  await sleep(150)
+  if(!await evaluate(`window.probeCalls.some(call=>call.name==='xlog_rx_stop')&&!document.querySelector('.xn-rx').textContent.includes('CQ K1ABC FN42')`))throw Error('RX Stop did not discard decode context')
   await evaluate(`[...document.querySelectorAll('button')].find(x=>x.textContent==='Stop rotator').click()`)
   await sleep(100)
   if(!await evaluate(`window.probeCalls.some(x=>x.name==='xlog_command'&&x.args.command.kind==='rotor.stop'&&x.args.command.rotor_id==='synthetic-rotor')`))throw Error('Stop did not use observed xLog target')
   // Negative control: prove the geometry check notices an off-screen emergency control.
   if(await evaluate(`(()=>{const b=[...document.querySelectorAll('button')].find(x=>x.textContent==='Stop rotator');b.style.transform='translateY(10000px)';return b.getBoundingClientRect().bottom<=innerHeight})()`))throw Error('Layout negative control failed')
   await writeFile(join(artifacts,'results.json'),JSON.stringify(results,null,2))
-  console.log(`PASS ${results.length} viewport/theme cases, band/world views, history/correction, independent Stop dispatch and negative geometry control. Evidence: ${artifacts}`)
+  console.log(`PASS ${results.length} viewport/theme cases, RX FT4/route/rows/Stop at normal+175%, band/world views, history/correction, independent Stop dispatch and negative geometry control. Evidence: ${artifacts}`)
   await call('Browser.close')
 } finally {
   ws?.close()

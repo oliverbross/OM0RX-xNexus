@@ -167,9 +167,9 @@ mod tci_spots;
 #[cfg(test)]
 mod test_dirs;
 mod window_state;
-/// Dormant until xLog supplies explicitly mapped and clock-qualified PCM.
-#[allow(dead_code)]
+/// Receive-only adapter for explicitly mapped xLog endpoint PCM.
 mod xlog_decode;
+mod xlog_rx_worker;
 mod xlog_mode;
 
 use chains::{panel_key, panel_label, Instance};

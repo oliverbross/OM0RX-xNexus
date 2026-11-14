@@ -79,3 +79,5 @@
 .xn-world-spot:focus-visible circle { stroke: var(--text); stroke-width: 3; }
 .xn-world-legend { display: flex; flex-wrap: wrap; gap: var(--space-3); font-size: var(--fs-label); }
 .xn-footer { overflow-wrap: anywhere; }
+.xn-rx { margin-top: var(--space-5); padding-top: var(--space-4); border-top: 1px solid var(--border); }
+.xn-rx-route { overflow-wrap: anywhere; }

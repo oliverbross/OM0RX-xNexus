@@ -84,7 +84,7 @@ export interface History {
   matrix: { band: string; mode: string; worked: boolean; confirmed: boolean }[]
 }
 type Native = { core: { invoke: <T>(name: string, args?: Record<string, unknown>) => Promise<T> } }
-function invoke<T>(name: string, args?: Record<string, unknown>): Promise<T> {
+export function invoke<T>(name: string, args?: Record<string, unknown>): Promise<T> {
   const native = (window as unknown as { __TAURI__?: Native }).__TAURI__
   if (!native) return Promise.reject(new Error('Open the OM0RX-xNexus desktop to connect to xLog.'))
   return native.core.invoke<T>(name, args)

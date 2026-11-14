@@ -204,6 +204,8 @@ struct Session {
     pairing: Option<Pairing>,
     connection: Option<Arc<Connection>>,
     stop: Option<StopClient>,
+    rx: Option<crate::xlog_rx_worker::Worker>,
+    rx_generation: u64,
 }
 type Shared = Arc<Mutex<Session>>;
 
@@ -249,6 +251,8 @@ fn parse_pairing(bytes: &[u8]) -> Result<Pairing, String> {
 fn begin(session: &Shared) -> Result<u64, String> {
     let mut session = lock(session)?;
     session.generation = session.generation.wrapping_add(1);
+    session.rx = None;
+    session.rx_generation = session.rx_generation.wrapping_add(1);
     session.connection = None;
     Ok(session.generation)
 }
@@ -361,6 +365,7 @@ async fn xlog_poll(state: State<'_, Shared>) -> Result<View, String> {
         match result {
             Ok(snapshot) => Ok(view(&session, Some(snapshot))),
             Err(error) => {
+                session.rx = None;
                 session.connection = None;
                 Err(error)
             }
@@ -368,6 +373,61 @@ async fn xlog_poll(state: State<'_, Shared>) -> Result<View, String> {
     })
     .await
     .map_err(|_| "Snapshot request failed")?
+}
+
+#[tauri::command]
+fn xlog_rx_status(state: State<'_, Shared>) -> Result<crate::xlog_rx_worker::View, String> {
+    lock(&state)?
+        .rx
+        .as_ref()
+        .map_or_else(|| Ok(Default::default()), |worker| worker.view())
+}
+
+#[tauri::command]
+fn xlog_rx_stop(state: State<'_, Shared>) -> Result<crate::xlog_rx_worker::View, String> {
+    let mut session = lock(&state)?;
+    session.rx_generation = session.rx_generation.wrapping_add(1);
+    session.rx = None;
+    Ok(Default::default())
+}
+
+#[tauri::command]
+async fn xlog_rx_start(
+    state: State<'_, Shared>,
+    mode: crate::xlog_rx_worker::Mode,
+) -> Result<crate::xlog_rx_worker::View, String> {
+    let shared = Arc::clone(&state);
+    let (generation, connection) = current(&shared)?;
+    let rx_generation = {
+        let mut session = lock(&shared)?;
+        if session.generation != generation {
+            return Err("Connection changed".into());
+        }
+        session.rx_generation = session.rx_generation.wrapping_add(1);
+        session.rx = None;
+        session.rx_generation
+    };
+    tauri::async_runtime::spawn_blocking(move || {
+        let client = lock(&connection.client)?;
+        client.snapshot().map_err(|error| error.to_string())?;
+        let audio = client.audio_handle().map_err(|error| error.to_string())?;
+        let mut session = lock(&shared)?;
+        if session.generation != generation || session.rx_generation != rx_generation {
+            return Err("Receive request cancelled".into());
+        }
+        session.rx = None;
+        let worker = crate::xlog_rx_worker::Worker::start(
+            audio,
+            connection.hello.server_instance.clone(),
+            connection.hello.workspace_id.clone(),
+            mode,
+        )?;
+        let view = worker.view()?;
+        session.rx = Some(worker);
+        Ok(view)
+    })
+    .await
+    .map_err(|_| "Receive start failed")?
 }
 
 #[tauri::command]
@@ -508,7 +568,10 @@ pub(crate) fn run() {
             xlog_outbox_list,
             xlog_outbox_enqueue,
             xlog_outbox_deliver,
-            xlog_history
+            xlog_history,
+            xlog_rx_status,
+            xlog_rx_start,
+            xlog_rx_stop
         ])
         .run(context)
         .expect("xLog companion desktop failed");

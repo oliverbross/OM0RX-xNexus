@@ -2,6 +2,7 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { useViewport } from '../useViewport'
 import { QsoPanel } from './QsoPanel'
+import { RxPanel } from './RxPanel'
 import { StationBandMap } from './StationBandMap'
 import { bridge, disconnected, type Bridge, type Command, type Spot, type View } from './api'
 
@@ -163,8 +164,9 @@ export function App({ api = bridge }: { api?: Bridge }) {
           <p className="xn-hint">xLog validates the target and travel limits. Stop rotator remains in the connection bar.</p>
         </aside>
       </section>
+      <RxPanel connected={view.connected} capable={!!view.hello?.capabilities.includes('audio.rx')} fresh={fresh} identity={`${generation.current}/${view.hello?.server_instance ?? ''}/${view.hello?.workspace_id ?? ''}`} />
       <QsoPanel api={api} enabled={allows('logbook.write')} readEnabled={allows('logbook.read')} connected={view.connected} workspace={view.hello?.workspace_id ?? null} selected={fresh ? selected : undefined} />
-      <footer className="xn-footer"><span>Version {__XNEXUS_VERSION__} · {__BUILD_ID__}</span><span>{view.endpoint ?? 'No pairing loaded'}</span><span>{view.hello ? `Workspace ${view.hello.workspace_id} · protocol ${view.hello.protocol_version}` : 'Nexus-derived companion · station owned by OM0RX-xLog'}</span><span>Audio and digital transmission are not enabled in this view.</span></footer>
+      <footer className="xn-footer"><span>Version {__XNEXUS_VERSION__} · {__BUILD_ID__}</span><span>{view.endpoint ?? 'No pairing loaded'}</span><span>{view.hello ? `Workspace ${view.hello.workspace_id} · protocol ${view.hello.protocol_version}` : 'Nexus-derived companion · station owned by OM0RX-xLog'}</span><span>Receive audio requires xLog sharing. Digital transmission is unavailable.</span></footer>
     </main>
   </div>
 }
