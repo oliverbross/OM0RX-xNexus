@@ -6,13 +6,16 @@ param(
     [Parameter(Mandatory=$true)][string]$CoreEvidence,
     [string]$WorkerSource,
     [string]$WorkerSha256,
-    [switch]$WorkerOnly
+    [switch]$WorkerOnly,
+    [switch]$NeedsOnly
 )
 $ErrorActionPreference='Stop'
 $repo=(Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $evidence=Join-Path $repo 'target\xnexus-rx-owner-chain'
 if($WorkerSource) { $evidence=Join-Path $repo 'target\xnexus-rx-worker-chain' }
-if(($WorkerOnly -or $WorkerSha256) -and !$WorkerSource) { throw 'Worker options require WorkerSource.' }
+if($NeedsOnly) { $evidence=Join-Path $repo ('target\xnexus-rx-needs-chain\'+[guid]::NewGuid().ToString('N')) }
+if(($WorkerOnly -or $WorkerSha256 -or $NeedsOnly) -and !$WorkerSource) { throw 'Worker options require WorkerSource.' }
+if($NeedsOnly -and $WorkerOnly) { throw 'Choose one focused worker filter.' }
 if($WorkerSource) {
     $WorkerSource=(Resolve-Path -LiteralPath $WorkerSource).Path
     if(!$WorkerSha256 -or (Get-FileHash $WorkerSource -Algorithm SHA256).Hash -ne $WorkerSha256) {
@@ -27,6 +30,8 @@ if($core.status -ne 'passed' -or $core.toolchain -ne '1.93.1-x86_64-pc-windows-g
 & git -C $SdkRoot diff --exit-code $SdkCommit -- integrations/xlog/src integrations/xlog/Cargo.toml
 if($LASTEXITCODE -ne 0) { throw 'SDK source differs from the requested commit.' }
 $ownerFiles=@('prototype/src-tauri/src/companion_bridge.rs','prototype/src-tauri/src/companion_rx_buffer.rs')
+if(Test-Path -LiteralPath (Join-Path $OwnerRoot 'prototype/src-tauri/src/companion_needs.rs')) { $ownerFiles+='prototype/src-tauri/src/companion_needs.rs' }
+if($NeedsOnly -and $ownerFiles.Count -ne 3) { throw 'Needs chain requires the reviewed owner needs boundary.' }
 & git -C $OwnerRoot diff --exit-code $OwnerCommit -- @ownerFiles
 if($LASTEXITCODE -ne 0) { throw 'Owner buffer/HTTP source differs from the requested commit.' }
 $inventory=Join-Path $CoreEvidence 'cargo.jsonl'
@@ -55,18 +60,30 @@ $bridgePath=(Join-Path $OwnerRoot $ownerFiles[0]) | ConvertTo-Json -Compress
 $bufferPath=(Join-Path $OwnerRoot $ownerFiles[1]) | ConvertTo-Json -Compress
 @("#[path = $bridgePath] mod companion_bridge;", "#[path = $bufferPath] mod companion_rx_buffer;") |
     Set-Content -LiteralPath $ownerModules -Encoding utf8
+if($ownerFiles.Count -eq 3) {
+    $needsPath=(Join-Path $OwnerRoot $ownerFiles[2]) | ConvertTo-Json -Compress
+    "#[path = $needsPath] mod companion_needs;" | Add-Content -LiteralPath $ownerModules -Encoding utf8
+}
 if($WorkerSource) {
     $workerPath=$WorkerSource | ConvertTo-Json -Compress
     "#[path = $workerPath] mod xlog_rx_worker;" | Add-Content -LiteralPath $ownerModules -Encoding utf8
 }
 $env:XNEXUS_RX_OWNER_MODULES=$ownerModules
+$env:XNEXUS_RX_CHAIN_EVIDENCE=$evidence
 $sources=@((Join-Path $repo 'integrations/xlog-rx/src/lib.rs'),
     (Join-Path $repo 'src-tauri/src/xlog_decode.rs'),
     (Join-Path $repo 'integrations/xlog-rx/tests/owner_chain.rs'),
     (Join-Path $SdkRoot 'integrations/xlog/src/lib.rs')) +
     @(Get-ChildItem (Join-Path $SdkRoot 'integrations/xlog/src') -Recurse -Filter '*.rs' | ForEach-Object { $_.FullName }) +
     @($ownerFiles | ForEach-Object { Join-Path $OwnerRoot $_ })
-if($WorkerSource) { $sources += $WorkerSource }
+if($WorkerSource) {
+    $sources += $WorkerSource
+    foreach($sibling in @('xlog_decoded_needs.rs','xlog_rx_needs_transport_tests.rs')) {
+        $path=Join-Path (Split-Path $WorkerSource -Parent) $sibling
+        if(Test-Path -LiteralPath $path){$sources+=$path}
+        elseif($NeedsOnly){throw "Native worker sibling missing: $sibling"}
+    }
+}
 $sources += $PSCommandPath
 $hashes=@($sources | Sort-Object -Unique | ForEach-Object { @{path=$_; sha256=(Get-FileHash $_ -Algorithm SHA256).Hash} })
 $receipt=[ordered]@{
@@ -87,12 +104,18 @@ if($WorkerSource) {
         $receipt.modes=@('FT4')
     }
 }
+if($NeedsOnly) {
+    $receipt.expectedTests=1;$receipt.modes=@('FT4')
+    $receipt.syntheticClassificationProvider=$true;$receipt.actualSwiftLogbook=$false
+    $receipt.durableClientOutbox=$true;$receipt.needsOnly=$true
+}
 $receiptPath=Join-Path $evidence 'receipt.json'
 function Save { $receipt | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $receiptPath -Encoding utf8 }
 Save
 try {
     $common=@("+$toolchain",'--edition=2021','-C','opt-level=1','-L',"dependency=$deps")
     if($WorkerSource) { $common+=@('--cfg','xnexus_rx_worker') }
+    if($NeedsOnly) { $common+=@('--cfg','xnexus_rx_needs') }
     $sdkLib=Join-Path $evidence 'libxnexus_xlog_client.rlib'
     & rustc @common --crate-name xnexus_xlog_client --crate-type rlib (Join-Path $SdkRoot 'integrations/xlog/src/lib.rs') `
         --extern "reqwest=$($libs.reqwest)" --extern "serde=$($libs.serde)" --extern "serde_json=$($libs.serde_json)" `
@@ -117,6 +140,7 @@ try {
             'xlog_rx_worker::tests::revoked_owner_authority_discards_rows_and_partial_context',
             'complete_ft4_worker_owner_http_lifecycle')
     }
+    if($NeedsOnly) { $filters=@('complete_ft4_decoded_needs_owner_http_lifecycle') }
     & $exe @filters --list *> (Join-Path $evidence 'selected-tests.log')
     $selected=@(Get-Content (Join-Path $evidence 'selected-tests.log') | Where-Object { $_ -match ': test$' })
     if($LASTEXITCODE -ne 0 -or $selected.Count -ne $receipt.expectedTests) {

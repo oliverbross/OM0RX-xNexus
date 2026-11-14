@@ -26,6 +26,30 @@ fn now_us() -> u64 {
         .as_micros() as u64
 }
 
+// Deliberately synthetic classification facts; production Buffer, bridge input/
+// reply validation and SDK transports remain real. No Swift/database owner claim.
+#[cfg(xnexus_rx_needs)]
+fn synthetic_authority() -> serde_json::Value {
+    serde_json::json!({"logbook_revision":1,"classification_revision":1,"country_reference_revision":"xlog-country-facts-v3:synthetic-chain","policy_revision":"xlog-call-dxcc-needs-v1"})
+}
+#[cfg(xnexus_rx_needs)]
+fn synthetic_snapshot() -> serde_json::Value {
+    let now = now_us() / 1000;
+    serde_json::json!({"revision":now,"generated_at_unix_ms":now,"max_age_ms":10000,
+      "station":{"connected":false,"radio_id":null,"frequency_hz":null,"mode":null,"transmitting":null},
+      "rotor":{"connected":false,"rotor_id":null,"azimuth_deg":null,"moving":null},"spots":[],
+      "needs":{"generated_at_unix_ms":now,"max_age_ms":2000,"readiness":"ready","authority":synthetic_authority()}})
+}
+#[cfg(xnexus_rx_needs)]
+fn synthetic_needs(batch: &serde_json::Value) -> serde_json::Value {
+    let results:Vec<_> = batch["queries"].as_array().unwrap().iter().map(|q|{
+        assert_eq!(q["callsign"],"K1ABC","lookup must use the actual decoded literal sender");
+        assert_eq!(q["mode"],"FT4");
+        serde_json::json!({"query_id":q["query_id"],"normalized_callsign":q["callsign"],"dial_frequency_hz":q["dial_frequency_hz"],"decoder_mode":q["mode"],"classification_mode":"DIGI","band":"20m","country":"United States","adif":291,"country_resolution":"resolved","call_status":"New Call","dxcc_status":"ATNO","need":{"status":"needed","score":100,"reason_code":null,"reasons":["Synthetic classification fixture"]}})
+    }).collect();
+    serde_json::json!({"generated_at_unix_ms":now_us()/1000,"max_age_ms":2000,"readiness":"ready","authority":synthetic_authority(),"results":results})
+}
+
 struct Cleanup {
     bridge: Arc<Bridge>,
     stop: Arc<AtomicBool>,
@@ -101,8 +125,15 @@ fn run_chain(mode: RxMode, _worker: bool) {
         "synthetic-rx-whole-chain".into(),
         Arc::new(move |request| {
             let Some(request) = request else {
+                #[cfg(xnexus_rx_needs)]
+                return Ok(synthetic_snapshot());
+                #[cfg(not(xnexus_rx_needs))]
                 return Ok(serde_json::json!({}));
             };
+            #[cfg(xnexus_rx_needs)]
+            if let Some(batch) = request.get("needs_query") {
+                return Ok(synthetic_needs(batch));
+            }
             let after = request["audio_after"]
                 .as_u64()
                 .ok_or("Only audio reads are allowed")?;
@@ -125,7 +156,13 @@ fn run_chain(mode: RxMode, _worker: bool) {
     let start = Instant::now() + Duration::from_millis(200);
     let origin_us = now_us() + 200_000;
     let target_slot = (origin_us + 2_000_000).div_ceil(mode.period_us()) * mode.period_us();
-    let end_us = target_slot + mode.period_us() + 5_000_000;
+    let end_us = target_slot
+        + mode.period_us()
+        + if cfg!(xnexus_rx_needs) {
+            12_000_000
+        } else {
+            5_000_000
+        };
     let total = ((end_us - origin_us) * u64::from(RATE) / 1_000_000) as usize;
     let wave_offset = ((target_slot - origin_us) * u64::from(RATE) / 1_000_000) as usize;
     let mut capture = vec![0_i16; total];
@@ -176,6 +213,11 @@ fn run_chain(mode: RxMode, _worker: bool) {
         }
     }));
     let deadline = start + Duration::from_micros(end_us - origin_us) + Duration::from_secs(2);
+    #[cfg(xnexus_rx_needs)]
+    if _worker {
+        run_needs_worker(&mut client, audio, &bridge, target_slot, deadline);
+        return;
+    }
     #[cfg(xnexus_rx_worker)]
     if _worker {
         run_worker(&mut client, audio, &bridge, mode, target_slot, deadline);
@@ -341,5 +383,213 @@ fn run_worker(
 #[cfg(xnexus_rx_worker)]
 #[test]
 fn complete_ft4_worker_owner_http_lifecycle() {
+    run_chain(RxMode::Ft4, true);
+}
+
+#[cfg(xnexus_rx_needs)]
+fn observe_needs(client: &mut BridgeClient, worker: &xlog_rx_worker::Worker) {
+    let snapshot = client.poll().unwrap();
+    worker.needs_snapshot_observed(snapshot.needs.as_ref().unwrap().generated_at_unix_ms);
+}
+
+#[cfg(xnexus_rx_needs)]
+fn run_needs_worker(
+    client: &mut BridgeClient,
+    audio: xnexus_xlog_client::audio::AudioClient,
+    bridge: &Bridge,
+    target_slot: u64,
+    deadline: Instant,
+) {
+    use xlog_rx_worker::{Mode, Worker};
+    use xnexus_xlog_client::outbox::{LogbookMutation, Outbox};
+    use xnexus_xlog_client::{CommandReceipt, NeedStatus};
+    let started = Instant::now();
+    client.poll().unwrap();
+    let pending = Arc::new(AtomicBool::new(false));
+    let worker = Worker::start_with_needs_gate(
+        audio,
+        bridge.server_instance.clone(),
+        bridge.workspace_id.clone(),
+        Mode::FT4,
+        Some(client.needs_handle().unwrap()),
+        pending.clone(),
+    )
+    .unwrap();
+    let mut next_poll = Instant::now();
+    let initial = loop {
+        assert!(
+            Instant::now() < deadline,
+            "real FT4 decode did not reach authenticated known facts: {}",
+            worker.view().unwrap().reason
+        );
+        if Instant::now() >= next_poll {
+            observe_needs(client, &worker);
+            next_poll = Instant::now() + Duration::from_secs(1);
+        }
+        let view = worker.view().unwrap();
+        assert!(view.enabled);
+        if let Some(row) = view.rows.into_iter().find(|row| {
+            row.host_period_start_unix_us == target_slot
+                && row.message == "CQ K1ABC FN42"
+                && row.needs.status == NeedStatus::Needed
+        }) {
+            break row;
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    };
+    let decode_id = initial.decode_id.clone();
+    assert_eq!(initial.sender_callsign.as_deref(), Some("K1ABC"));
+    assert_eq!(
+        initial.needs.owner.as_ref().unwrap().normalized_callsign,
+        "K1ABC"
+    );
+    assert_eq!(initial.needs.score, Some(100));
+    assert_eq!(initial.context.server_instance, bridge.server_instance);
+    assert_eq!(initial.context.workspace_id, bridge.workspace_id);
+    assert_eq!(initial.context.decoder_mode, Mode::FT4);
+    assert!(decode_id.starts_with('w') && decode_id.contains(&format!("_p{target_slot}_")));
+    assert_eq!(initial.clock.utc_sync_accuracy_us, None);
+    assert_eq!(initial.clock.remote_rf_latency_us, None);
+    let known_at = started.elapsed().as_millis();
+
+    // Real disposable client outbox, synthetic rejection receipt. This neither
+    // submits a QSO nor pretends that the Swift logbook owner committed anything.
+    let root = std::path::PathBuf::from(
+        std::env::var_os("XNEXUS_RX_CHAIN_EVIDENCE").expect("isolated evidence root"),
+    )
+    .join("pending-outbox");
+    let mut outbox = Outbox::open(&root).unwrap();
+    let request = "00000000-0000-4000-8000-000000000123";
+    let mutation:LogbookMutation=serde_json::from_value(serde_json::json!({"kind":"logbook.create","qso":{"contact_id":"00000000-0000-4000-8000-000000000124","callsign":"K1ABC","band":"20m","mode":"FT4","started_at_unix_ms":now_us()/1000,"frequency_hz":14074000,"rst_sent":"-10","rst_received":"-12","grid":"FN42","comment":"Disposable generated-decode needs fixture"}})).unwrap();
+    pending.store(true, Ordering::Release);
+    client.invalidate_needs();
+    outbox
+        .enqueue(&bridge.workspace_id, request, mutation)
+        .unwrap();
+    pending.store(
+        xlog_rx_worker::needs_blocked_by_outbox(&outbox.entries(), &bridge.workspace_id),
+        Ordering::Release,
+    );
+    observe_needs(client, &worker);
+    let view = worker.view().unwrap();
+    let blocked = view
+        .rows
+        .iter()
+        .find(|row| row.decode_id == decode_id)
+        .unwrap();
+    assert_eq!(blocked.needs.status, NeedStatus::Unknown);
+    assert_eq!(
+        blocked.needs.reason_code.as_deref(),
+        Some("native_write_pending")
+    );
+    assert!(blocked.needs.owner.is_none() && blocked.needs.score.is_none());
+    assert!(view.enabled && view.route.is_some());
+
+    outbox
+        .mark_attempted(request, &bridge.workspace_id)
+        .unwrap();
+    let receipt:CommandReceipt=serde_json::from_value(serde_json::json!({"request_id":request,"server_instance":bridge.server_instance,"workspace_id":bridge.workspace_id,"status":"rejected","message":"Synthetic fixture settlement; no owner QSO submitted"})).unwrap();
+    outbox.settle(receipt).unwrap();
+    client.invalidate_needs();
+    pending.store(
+        xlog_rx_worker::needs_blocked_by_outbox(&outbox.entries(), &bridge.workspace_id),
+        Ordering::Release,
+    );
+    assert!(!pending.load(Ordering::Acquire));
+    assert!(worker
+        .view()
+        .unwrap()
+        .rows
+        .iter()
+        .find(|row| row.decode_id == decode_id)
+        .unwrap()
+        .needs
+        .owner
+        .is_none());
+    observe_needs(client, &worker);
+    let recovery_deadline = Instant::now() + Duration::from_secs(4);
+    let recovered = loop {
+        assert!(
+            Instant::now() < recovery_deadline,
+            "settled row did not acquire new authenticated facts"
+        );
+        if Instant::now() >= next_poll {
+            observe_needs(client, &worker);
+            next_poll = Instant::now() + Duration::from_secs(1);
+        }
+        let view = worker.view().unwrap();
+        if let Some(row) = view
+            .rows
+            .into_iter()
+            .find(|row| row.decode_id == decode_id && row.needs.status == NeedStatus::Needed)
+        {
+            break row;
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    };
+    assert_eq!(recovered.context, initial.context);
+    assert!(
+        recovered.needs.generated_at_unix_ms > initial.needs.generated_at_unix_ms,
+        "settlement cannot renew original facts"
+    );
+    let recovered_at = started.elapsed().as_millis();
+
+    // Keep the real PCM producer/poller running but stop main-snapshot refresh.
+    // Query replies may still arrive; captured SDK authority must expire anyway.
+    let expiry = Instant::now() + Duration::from_millis(2500);
+    loop {
+        let view = worker.view().unwrap();
+        assert!(
+            view.enabled && view.route.is_some(),
+            "audio must stay fresh during needs-only expiry"
+        );
+        let row = view
+            .rows
+            .iter()
+            .find(|row| row.decode_id == decode_id)
+            .expect("decoded row retained while PCM continues");
+        if row.needs.status == NeedStatus::Unknown {
+            assert!(row.needs.owner.is_none() && row.needs.score.is_none());
+            assert_eq!(row.needs.remaining_valid_ms, 0);
+            break;
+        }
+        assert!(
+            Instant::now() < expiry,
+            "facts survived original snapshot authority expiry"
+        );
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    let expired_at = started.elapsed().as_millis();
+    worker.stop();
+    assert!(!worker.view().unwrap().enabled && worker.view().unwrap().rows.is_empty());
+    let restart_deadline = Instant::now() + Duration::from_secs(3);
+    let restarted = loop {
+        match Worker::start(
+            client.audio_handle().unwrap(),
+            bridge.server_instance.clone(),
+            bridge.workspace_id.clone(),
+            Mode::FT4,
+        ) {
+            Ok(worker) => break worker,
+            Err(error) => {
+                assert!(
+                    Instant::now() < restart_deadline,
+                    "worker lease leaked: {error}"
+                );
+                std::thread::sleep(Duration::from_millis(20));
+            }
+        }
+    };
+    assert!(restarted.view().unwrap().rows.is_empty());
+    restarted.stop();
+    // Wait for the restarted no-needs worker to retire before ending the fixture.
+    std::thread::sleep(Duration::from_millis(150));
+    assert!(worker.view().unwrap().rows.is_empty());
+    println!("FT4 decode→owner HTTP needs: id={decode_id}, known_ms={known_at}, recovered_ms={recovered_at}, expired_ms={expired_at}; durable pending fence/TTL/Stop passed; synthetic classification provider, no Swift/database/hardware");
+}
+
+#[cfg(xnexus_rx_needs)]
+#[test]
+fn complete_ft4_decoded_needs_owner_http_lifecycle() {
     run_chain(RxMode::Ft4, true);
 }
