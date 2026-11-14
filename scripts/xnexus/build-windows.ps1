@@ -47,9 +47,12 @@ foreach ($name in $models.Keys) {
     }
     if ((Get-FileHash $file -Algorithm SHA256).Hash.ToLowerInvariant() -ne $models[$name]) { throw "DeepCW hash mismatch: $name" }
 }
+$upstream = Get-Content -Raw "$repo\docs\xlog\UPSTREAM.json" | ConvertFrom-Json
+Run { git -C $repo merge-base --is-ancestor $upstream.commit HEAD }
 $receipt = [ordered]@{
     version = $config.version; source = $source; timestampUtc = [DateTime]::UtcNow.ToString('o')
-    upstreamBase = (git -C $repo merge-base HEAD upstream/main).Trim(); toolchain = $toolchain
+    upstreamBase = $upstream.commit; upstreamVersion = $upstream.upstream_version
+    availableUpstream = (git -C $repo rev-parse upstream/main).Trim(); toolchain = $toolchain
     profile = 'release'; target = 'x86_64-pc-windows-gnu'; features = 'radio,custom-protocol'
     signed = $false; installed = $false; modelHashes = $models; status = 'started'
     rustc = (& rustc "+$toolchain" -Vv) -join "`n"
