@@ -1,7 +1,8 @@
 # Receive-only desktop extension
 
-This receive extension is integrated into the source for `1.24.1-xlog.2`.
-It is absent from the frozen Mac `1.24.1-xlog.1` core candidate. Installed
+The base receive extension was integrated into the source for `1.24.1-xlog.2`.
+That candidate is not qualified for use; see the [current ledger](STATUS.md).
+Later source adds xLog-owned classification to decoded rows. Installed
 application and physical-station acceptance remain pending.
 
 1. In xLog, explicitly select and confirm the FLEX slice A / DAX input route,
@@ -18,8 +19,12 @@ application and physical-station acceptance remain pending.
 
 The selected mono samples stay in native code. The WebView receives bounded
 route/status metadata and at most 200 decoded rows; it has no audio-device,
-capture, transmit or raw-PCM API. Decoded text is a receive observation and never
-automatically tunes, transmits, classifies a needed station or creates a QSO.
+capture, transmit or raw-PCM API. An unambiguous decoded sender requests xLog's
+classification when `logbook.classify` is advertised. The displayed needed,
+worked or Unknown status, score and reasons come from xLog and expire with
+their original authority. A pending log change suppresses old classifications.
+Decoding never automatically tunes, moves a rotator, transmits or creates a QSO.
+See [the decoded-needs verification](DECODED_NEEDS_VERIFICATION.md).
 
 Timing derives from the Windows capture endpoint's host clock. Every row retains
 the host mapping/calibration uncertainty, sample alignment, resampler center
@@ -33,7 +38,7 @@ backlog clears the partial window. A process-wide lease prevents repeated starts
 from accumulating native decoder threads. These threads never hold the ordinary
 bridge-client or emergency rotator Stop mutex while polling or decoding.
 
-Development validation: full UI TypeScript and Vite builds passed; 40 distinct
+Historical base-extension validation: full UI TypeScript and Vite builds passed; 40 distinct
 companion UI tests passed, including four receive lifecycle cases. The isolated
 synthetic browser probe passed 14 viewport/theme cases plus receive controls,
 route and rows at 1366×768 and 1024×768/175%. Three focused worker tests compiled
