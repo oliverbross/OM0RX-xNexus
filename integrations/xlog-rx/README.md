@@ -41,8 +41,26 @@ at 12 kHz, then independently interpolated into the synthetic endpoint stream;
 changing the generator's sample-rate argument alone would change its baud rate.
 Five focused adapter tests passed using the actual source and the pinned
 dependencies from the previously passed core native build. The pure harness
-passes 13 tests (six assembler cases and seven upstream FIR cases). Full future
+passes 14 tests (seven assembler cases and seven upstream FIR cases). Full future
 desktop compilation, native IPC and physical endpoint acceptance remain separate
 gates; these focused tests do not establish them.
 Synthetic tests do not qualify an actual endpoint, radio mapping, UTC clock or
 remote RF latency.
+
+The maintained `scripts/xnexus/test-rx-owner-chain.ps1` also compiles the actual
+owner `companion_bridge.rs` and `companion_rx_buffer.rs`, actual SDK and adapter
+against hashed dependencies from a previously passed GNU native build. It
+requires exact owner/SDK commits, checks those production files before compiling
+and after execution, selects exactly two tests, and writes a receipt with source,
+dependency and executable hashes. Unrelated owner worktree edits do not enter the
+harness. This is a focused test executable, not a desktop application build.
+
+Both paced 48 kHz cases passed using owner `f5c4048e805216edd3bc018a1f3c1bf23860e453`,
+SDK `a23b01c477affd697e6a7d916bfab0db6dc78c7b`, and native dependencies qualified on
+core `43e305f1d65ec27f6f72255a14f2eb0775e9b349`. Generated FT4 and FT8 messages
+traversed 652 and 1088 genuine HTTP audio chunks respectively and decoded
+`CQ K1ABC FN42`. Capture publication follows real wall time; owner retention,
+client freshness and future-timestamp bounds remain enabled. Unknown UTC sync
+accuracy and RF latency survive to the decoded result. This covers synthetic
+capture through the production buffer, authenticated HTTP, client, assembler
+and modem, while actual endpoint capture and desktop IPC remain separate gates.
