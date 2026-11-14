@@ -1,6 +1,6 @@
 # OM0RX-xNexus delivery plan
 
-Owner: OM0RX. Created 14 November 2026. Status: foundation in development;
+Owner: OM0RX. Created 14 November 2026. Status: integrated source in development;
 **not a qualified integrated station application**. This is the maintained backlog,
 not a claim that future milestones are implemented.
 
@@ -73,8 +73,9 @@ retry of a mutation whose outcome is uncertain.
 
 ## Work breakdown, dependencies and exit gates
 
-Estimates are engineering effort, not delivery promises. One primary engineer;
-the existing xLog owner reviews/implements changes in the canonical checkout.
+Estimates are engineering effort, not delivery promises. Execution uses one
+integration lead and three isolated agents for desktop, xLog bridge and release.
+The existing xLog owner controls its canonical release/installation boundary.
 Budget approximately 25–45 engineering days through a tested receive/control beta;
 digital TX/audio and platform release work add 15–30 days, depending on findings.
 
