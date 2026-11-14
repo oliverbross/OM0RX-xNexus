@@ -46,6 +46,24 @@ export interface Receipt {
   status: 'accepted' | 'applied' | 'observed' | 'rejected' | 'uncertain'
   message: string | null
 }
+export interface QsoDraft {
+  contact_id: string
+  callsign: string
+  band: string
+  mode: string
+  started_at_unix_ms: number
+  frequency_hz: number | null
+  rst_sent: string
+  rst_received: string
+  grid: string
+  comment: string
+}
+export type LogbookMutation = { kind: 'logbook.create'; qso: QsoDraft } | { kind: 'logbook.update'; qso: QsoDraft; expected_contact_revision: number }
+export interface OutboxEntry {
+  queued: { version: number; request_id: string; workspace_id: string; mutation: LogbookMutation }
+  state: 'Pending' | 'NeedsReceipt' | { Settled: Receipt }
+}
+export type DeliveryAction = 'submit' | 'reconcile' | 'retry_missing'
 type Native = { core: { invoke: <T>(name: string, args?: Record<string, unknown>) => Promise<T> } }
 function invoke<T>(name: string, args?: Record<string, unknown>): Promise<T> {
   const native = (window as unknown as { __TAURI__?: Native }).__TAURI__
@@ -59,6 +77,9 @@ export const bridge = {
   poll: () => invoke<View>('xlog_poll'),
   disconnect: (forget = false) => invoke<View>('xlog_disconnect', { forget }),
   command: (command: Command, requestId = crypto.randomUUID()) => invoke<Receipt>('xlog_command', { command, requestId }),
+  outbox: () => invoke<OutboxEntry[]>('xlog_outbox_list'),
+  enqueue: (mutation: LogbookMutation, requestId: string) => invoke<OutboxEntry[]>('xlog_outbox_enqueue', { mutation, requestId }),
+  deliver: (requestId: string, action: DeliveryAction) => invoke<Receipt>('xlog_outbox_deliver', { requestId, action }),
 }
 export type Bridge = typeof bridge
 export const disconnected: View = { paired: false, connected: false, endpoint: null, hello: null, snapshot: null }

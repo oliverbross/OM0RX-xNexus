@@ -33,18 +33,20 @@ try {
   const pending = new Map()
   ws.addEventListener('message', event => { const message = JSON.parse(event.data); const entry = pending.get(message.id); if (entry) { pending.delete(message.id); message.error ? entry.reject(Error(message.error.message)) : entry.resolve(message.result) } })
   const call = (method, params = {}, sessionId) => new Promise((resolve, reject) => { const id = ++sequence; const timeout = setTimeout(() => { pending.delete(id); reject(Error(`CDP timed out: ${method}`)) }, 30000); pending.set(id, { resolve: value => { clearTimeout(timeout); resolve(value) }, reject: error => { clearTimeout(timeout); reject(error) } }); ws.send(JSON.stringify({ id, method, params, sessionId })) })
-  server = await createServer({ root: ui, configFile: join(ui, 'vite.config.ts'), logLevel: 'warn', server: { host: '127.0.0.1', port: 0, strictPort: false } })
+  server = await createServer({ root: ui, configFile: join(ui, 'vite.config.ts'), optimizeDeps: { entries: ['xlog.html'] }, logLevel: 'warn', server: { host: '127.0.0.1', port: 0, strictPort: false } })
   await server.listen()
   console.log('Started isolated UI preview')
   const origin = `http://127.0.0.1:${server.httpServer.address().port}`
   const { targetId } = await call('Target.createTarget', { url: 'about:blank' })
   const { sessionId } = await call('Target.attachToTarget', { targetId, flatten: true })
   const page = (method, params) => call(method, params, sessionId)
+  await page('Page.enable')
+  await page('Runtime.enable')
   const evaluate = async expression => { const result = await page('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true }); if (result.exceptionDetails) throw Error(result.exceptionDetails.exception?.description ?? 'Browser evaluation failed'); return result.result.value }
   const fixture = `(() => {
     window.probeCalls=[];
     const view=()=>({paired:true,connected:true,endpoint:'http://127.0.0.1:49123',hello:{application:'OM0RX-xLog',protocol_version:1,server_instance:'synthetic-server',workspace_id:'synthetic-workspace',capabilities:['snapshot.read','station.tune','rotor.point','rotor.stop']},snapshot:{protocol_version:1,server_instance:'synthetic-server',workspace_id:'synthetic-workspace',revision:1,generated_at_unix_ms:Date.now(),max_age_ms:10000,station:{connected:true,radio_id:'synthetic-radio',frequency_hz:14074000,mode:'USB',transmitting:false},rotor:{connected:true,rotor_id:'synthetic-rotor',azimuth_deg:123,moving:false},spots:Array.from({length:35},(_,i)=>({id:String(i),callsign:'W'+i+'AW',frequency_hz:14025000+i*1000,mode:'CW',observed_at_unix_ms:Date.now(),source:'synthetic cluster',need:{status:'needed',score:100-i,reasons:['New band from xLog fixture']}}))}});
-    window.__TAURI__={core:{invoke:async(name,args)=>{window.probeCalls.push({name,args});if(name==='xlog_command')return{request_id:args.requestId,server_instance:'synthetic-server',workspace_id:'synthetic-workspace',status:'accepted',message:null}; if(name==='xlog_disconnect')return{paired:!args.forget,connected:false,endpoint:null,hello:null,snapshot:null};return view()}}};
+    window.__TAURI__={core:{invoke:async(name,args)=>{window.probeCalls.push({name,args});if(name==='xlog_outbox_list')return[];if(name==='xlog_command')return{request_id:args.requestId,server_instance:'synthetic-server',workspace_id:'synthetic-workspace',status:'accepted',message:null}; if(name==='xlog_disconnect')return{paired:!args.forget,connected:false,endpoint:null,hello:null,snapshot:null};return view()}}};
   })()`
   await page('Page.addScriptToEvaluateOnNewDocument', { source: fixture })
   const cases = [[1024,768,1],[1280,800,1],[1366,768,1],[1200,750,.8],[1200,1390,1],[3440,1440,1],[1024,768,1.75]]
@@ -52,7 +54,9 @@ try {
   for (const [width,height,scale] of cases) {
     await page('Emulation.setDeviceMetricsOverride', { width,height,deviceScaleFactor:1,mobile:false })
     await page('Page.navigate', { url: `${origin}/xlog.html` })
-    for(let n=0;n<100;n++){if(await evaluate(`!!document.querySelector('[aria-label="Inspect W0AW"]')`))break;await sleep(100)}
+    let ready=false
+    for(let n=0;n<240;n++){if(await evaluate(`!!document.querySelector('[aria-label="Inspect W0AW"]')`)){ready=true;break}await sleep(250)}
+    if(!ready)throw Error(`xLog page not ready: ${await evaluate('document.body.innerText')}`)
     await evaluate(`document.querySelector('[aria-label="Interface scale"]').value='${scale}';document.querySelector('[aria-label="Interface scale"]').dispatchEvent(new Event('change',{bubbles:true}));document.querySelector('[aria-label="Inspect W0AW"]').click()`)
     await sleep(300)
     for (const theme of ['dark','light']) {

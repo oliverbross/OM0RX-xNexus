@@ -15,7 +15,8 @@ function connected(capabilities = ['snapshot.read', 'station.tune', 'rotor.point
     } }
 }
 function api(view: View = disconnected): Bridge {
-  return { status: vi.fn(async () => view), importPairing: vi.fn(async () => connected()), connect: vi.fn(async () => connected()), poll: vi.fn(async () => connected()), disconnect: vi.fn(async forget => ({ ...disconnected, paired: !forget })), command: vi.fn(async () => ({ request_id: 'synthetic-request', server_instance: 'fixture-server', workspace_id: 'fixture-workspace', status: 'observed', message: null })) }
+  const receipt = { request_id: 'synthetic-request', server_instance: 'fixture-server', workspace_id: 'fixture-workspace', status: 'observed' as const, message: null }
+  return { status: vi.fn(async () => view), importPairing: vi.fn(async () => connected()), connect: vi.fn(async () => connected()), poll: vi.fn(async () => connected()), disconnect: vi.fn(async forget => ({ ...disconnected, paired: !forget })), command: vi.fn(async () => receipt), outbox: vi.fn(async () => []), enqueue: vi.fn(async () => []), deliver: vi.fn(async () => receipt) }
 }
 afterEach(() => { vi.useRealTimers(); delete (window as unknown as { __TAURI__?: unknown }).__TAURI__ })
 

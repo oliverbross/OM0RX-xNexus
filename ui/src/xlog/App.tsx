@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 import { useEffect, useRef, useState } from 'react'
 import { useViewport } from '../useViewport'
+import { QsoPanel } from './QsoPanel'
 import { bridge, disconnected, type Bridge, type Command, type Spot, type View } from './api'
 
 const frequency = (hz: number | null | undefined) => hz == null ? '—' : (hz / 1_000_000).toFixed(6)
@@ -82,7 +83,8 @@ export function App({ api = bridge }: { api?: Bridge }) {
   async function connection(kind: 'import' | 'connect' | 'disconnect' | 'forget') {
     const epoch = ++generation.current
     setBusy(true); setError(''); setAction('')
-    if (kind === 'disconnect' || kind === 'forget') setView(old => ({ ...old, connected: false, snapshot: null }))
+    setView(old => ({ ...old, connected: false, snapshot: null }))
+    if (kind === 'import' || kind === 'connect') { setStopTarget(null); setStopAllowed(false) }
     try {
       const next = kind === 'import' ? await api.importPairing() : kind === 'connect' ? await api.connect() : await api.disconnect(kind === 'forget')
       if (epoch !== generation.current) return
@@ -118,6 +120,7 @@ export function App({ api = bridge }: { api?: Bridge }) {
     <div className="xn-connection" aria-label="xLog connection">
       <strong className={fresh ? 'xn-live' : 'xn-unavailable'} role="status">{fresh ? 'Connected to xLog' : view.connected ? 'Waiting for fresh observations' : 'xLog disconnected'}</strong>
       <span>{fresh ? `Updated ${ageText(age)}` : 'Station actions require a fresh xLog connection.'}</span>
+      {!fresh && stopAllowed && stopTarget && <small>Stop targets the last paired rotator: {stopTarget}</small>}
       <div className="xn-connection-actions">
         <button disabled={busy} onClick={() => void connection('import')}>Open xLog pairing file</button>
         {!view.connected && view.paired && <button disabled={busy} onClick={() => void connection('connect')}>Reconnect</button>}
@@ -148,7 +151,8 @@ export function App({ api = bridge }: { api?: Bridge }) {
           <p className="xn-hint">xLog validates the target and travel limits. Stop rotator remains in the connection bar.</p>
         </aside>
       </section>
-      <footer className="xn-footer"><span>{view.endpoint ?? 'No pairing loaded'}</span><span>{view.hello ? `Workspace ${view.hello.workspace_id} · protocol ${view.hello.protocol_version}` : 'Nexus-derived companion · station owned by OM0RX-xLog'}</span><span>Audio, digital transmission and QSO writeback are not enabled in this view.</span></footer>
+      <QsoPanel api={api} enabled={allows('logbook.write')} connected={view.connected} workspace={view.hello?.workspace_id ?? null} selected={fresh ? selected : undefined} />
+      <footer className="xn-footer"><span>{view.endpoint ?? 'No pairing loaded'}</span><span>{view.hello ? `Workspace ${view.hello.workspace_id} · protocol ${view.hello.protocol_version}` : 'Nexus-derived companion · station owned by OM0RX-xLog'}</span><span>Audio and digital transmission are not enabled in this view.</span></footer>
     </main>
   </div>
 }

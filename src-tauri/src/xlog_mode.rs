@@ -15,7 +15,102 @@ use std::{
     sync::{Arc, Mutex},
 };
 use tauri::State;
+use xnexus_xlog_client::outbox::{LogbookMutation, Outbox, OutboxEntry};
 use xnexus_xlog_client::{BridgeClient, Command, CommandReceipt, Hello, Snapshot, StopClient};
+
+type Queue = Arc<Mutex<Option<Outbox>>>;
+
+fn with_queue<T>(
+    queue: &Queue,
+    f: impl FnOnce(&mut Outbox) -> Result<T, String>,
+) -> Result<T, String> {
+    let mut guard = lock(queue)?;
+    if guard.is_none() {
+        let root = std::env::var_os("XNEXUS_DATA_DIR")
+            .filter(|value| !value.is_empty())
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(crate::config_dir)
+            .join("xlog-outbox");
+        *guard = Some(Outbox::open(root).map_err(|error| error.to_string())?);
+    }
+    f(guard.as_mut().ok_or("QSO queue unavailable")?)
+}
+
+#[tauri::command]
+fn xlog_outbox_list(queue: State<'_, Queue>) -> Result<Vec<OutboxEntry>, String> {
+    with_queue(&queue, |outbox| Ok(outbox.entries()))
+}
+
+#[tauri::command]
+async fn xlog_outbox_enqueue(
+    state: State<'_, Shared>,
+    queue: State<'_, Queue>,
+    request_id: String,
+    mutation: LogbookMutation,
+) -> Result<Vec<OutboxEntry>, String> {
+    let shared = Arc::clone(&state);
+    let queue = Arc::clone(&queue);
+    let (generation, connection) = current(&shared)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let client = lock(&connection.client)?;
+        if lock(&shared)?.generation != generation {
+            return Err("Connection changed".into());
+        }
+        client.snapshot().map_err(|error| error.to_string())?;
+        if !connection
+            .hello
+            .capabilities
+            .iter()
+            .any(|capability| capability == "logbook.write")
+        {
+            return Err("xLog has not granted QSO writeback".into());
+        }
+        with_queue(&queue, |outbox| {
+            outbox
+                .enqueue(&connection.hello.workspace_id, &request_id, mutation)
+                .map_err(|error| error.to_string())?;
+            Ok(outbox.entries())
+        })
+    })
+    .await
+    .map_err(|_| "QSO queue request failed")?
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum DeliveryAction {
+    Submit,
+    Reconcile,
+    RetryMissing,
+}
+
+#[tauri::command]
+async fn xlog_outbox_deliver(
+    state: State<'_, Shared>,
+    queue: State<'_, Queue>,
+    request_id: String,
+    action: DeliveryAction,
+) -> Result<CommandReceipt, String> {
+    let shared = Arc::clone(&state);
+    let queue = Arc::clone(&queue);
+    let (generation, connection) = current(&shared)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut client = lock(&connection.client)?;
+        if lock(&shared)?.generation != generation {
+            return Err("Connection changed".into());
+        }
+        with_queue(&queue, |outbox| {
+            match action {
+                DeliveryAction::Submit => outbox.submit(&mut client, &request_id),
+                DeliveryAction::Reconcile => outbox.reconcile(&mut client, &request_id),
+                DeliveryAction::RetryMissing => outbox.retry_missing(&mut client, &request_id),
+            }
+            .map_err(|error| error.to_string())
+        })
+    })
+    .await
+    .map_err(|_| "QSO result unavailable; check its receipt before retrying")?
+}
 
 #[derive(Clone, Deserialize)]
 struct Pairing {
@@ -117,6 +212,7 @@ async fn xlog_import_pairing(
     use tauri_plugin_dialog::DialogExt;
     let shared = Arc::clone(&state);
     let generation = begin(&shared)?;
+    lock(&shared)?.stop = None;
     let (tx, rx) = tokio::sync::oneshot::channel();
     app.dialog()
         .file()
@@ -149,6 +245,7 @@ async fn xlog_import_pairing(
 async fn xlog_connect(state: State<'_, Shared>) -> Result<View, String> {
     let shared = Arc::clone(&state);
     let generation = begin(&shared)?;
+    lock(&shared)?.stop = None;
     let pairing = lock(&shared)?
         .pairing
         .clone()
@@ -197,6 +294,12 @@ async fn xlog_command(
     request_id: String,
     command: Command,
 ) -> Result<CommandReceipt, String> {
+    if matches!(
+        command,
+        Command::LogbookCreate { .. } | Command::LogbookUpdate { .. }
+    ) {
+        return Err("QSO changes must use the durable submission queue".into());
+    }
     let shared = Arc::clone(&state);
     if let Command::RotorStop { rotor_id } = &command {
         let stop = lock(&shared)?
@@ -266,13 +369,17 @@ pub(crate) fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .manage(Shared::default())
+        .manage(Queue::default())
         .invoke_handler(tauri::generate_handler![
             xlog_status,
             xlog_import_pairing,
             xlog_connect,
             xlog_poll,
             xlog_command,
-            xlog_disconnect
+            xlog_disconnect,
+            xlog_outbox_list,
+            xlog_outbox_enqueue,
+            xlog_outbox_deliver
         ])
         .run(context)
         .expect("xLog companion desktop failed");
