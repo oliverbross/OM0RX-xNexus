@@ -41,8 +41,12 @@ evidence is retained alongside successful partial-load and quiet rechecks.
 The Mac core app displayed its full `.1` version and source `5e56be94c` in a
 process-verified private WebView store. It showed no pairing, disconnected xLog,
 an empty queue and unavailable station controls. Initial dark 100% and light
-125% window-only captures were readable. Lifecycle persistence is still being
-checked at this checkpoint. No pairing or hardware action was performed.
+125% window-only captures were readable. Four explicit private launches ended
+with verified ordinary Quits. A synthetic unqueued `K1ABC` draft survived an
+ordinary Quit and explicit restart of the same binary/profile. Theme and scale
+reset because their source uses session-only component state; this is separate
+from the successfully verified draft storage. No pairing, QSO submission or
+hardware action was performed.
 
 A fresh protected Windows xLog fixture used explicit offline private-root
 arguments on both host and worker. Exact process identities, parent relationship,
