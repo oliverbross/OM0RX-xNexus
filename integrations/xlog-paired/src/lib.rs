@@ -1,6 +1,8 @@
 #![allow(dead_code)]
 include!(concat!(env!("OUT_DIR"), "/owner_transport.rs"));
 #[cfg(test)]
+mod swift_owner;
+#[cfg(test)]
 mod paired {
     use super::companion_bridge::Bridge;
     use serde_json::json;
