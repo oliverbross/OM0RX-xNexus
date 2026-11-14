@@ -34,8 +34,15 @@ rustc --edition=2021 --test -C opt-level=1 integrations/xlog-rx/tests/standalone
 target/xnexus-rx-pure/assembler-tests.exe --test-threads=1
 ```
 
-Desktop adapter validation must separately check these frame sizes against
-Nexus's `ModeKind` and exercise generated FT8/FT4 waveforms through the real decoder
-before this assembler is integrated. Those adapter checks are not yet run.
+The desktop adapter checks these frame sizes against Nexus's `ModeKind` and
+exercises real FT8/FT4 waveforms through the assembler and native decoder at
+12/24/44.1/48/96 kHz. The modem's fixed samples-per-symbol waveform is generated
+at 12 kHz, then independently interpolated into the synthetic endpoint stream;
+changing the generator's sample-rate argument alone would change its baud rate.
+Five focused adapter tests passed using the actual source and the pinned
+dependencies from the previously passed core native build. The pure harness
+passes 13 tests (six assembler cases and seven upstream FIR cases). Full future
+desktop compilation, native IPC and physical endpoint acceptance remain separate
+gates; these focused tests do not establish them.
 Synthetic tests do not qualify an actual endpoint, radio mapping, UTC clock or
 remote RF latency.

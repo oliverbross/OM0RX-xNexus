@@ -5431,6 +5431,7 @@ dependencies = [
  "windows-core 0.61.2",
  "windows-sys 0.59.0",
  "xnexus-xlog-client",
+ "xnexus-xlog-rx",
 ]
 
 [[package]]
@@ -7275,6 +7276,13 @@ dependencies = [
  "reqwest 0.13.5",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "xnexus-xlog-rx"
+version = "0.1.0"
+dependencies = [
+ "tempo-codec",
 ]
 
 [[package]]

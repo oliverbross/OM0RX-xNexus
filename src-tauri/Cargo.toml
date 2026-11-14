@@ -63,6 +63,7 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 # xLog authority bridge: no direct hardware or shared database.
 xnexus-xlog-client = { path = "../integrations/xlog" }
+xnexus-xlog-rx = { path = "../integrations/xlog-rx" }
 # protocol-asset backs tauri.conf.json's assetProtocol (SSTV gallery BMPs served
 # to the webview via convertFileSrc under the sstv-gallery scope).
 tauri = { version = "2", features = ["protocol-asset"] }
