@@ -81,3 +81,15 @@
 .xn-footer { overflow-wrap: anywhere; }
 .xn-rx { margin-top: var(--space-5); padding-top: var(--space-4); border-top: 1px solid var(--border); }
 .xn-rx-route { overflow-wrap: anywhere; }
+.xn-decodes th:first-child { width: 18%; }
+.xn-decodes th:nth-child(2) { width: 42%; }
+.xn-decodes th:last-child { width: 40%; }
+.xn-decode-need { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-1); }
+.xn-need-status { border: 1px solid currentColor; border-radius: var(--radius-sm); padding: 0 var(--space-1); }
+.xn-need-needed { color: var(--accent); }
+.xn-need-worked { color: var(--state-ok); }
+.xn-need-unknown { color: var(--text-dim); }
+.xn-decode-need details { max-width: 100%; }
+.xn-decode-need summary { cursor: pointer; min-height: var(--touch); display: list-item; align-content: center; }
+.xn-decode-need summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.xn-decode-need details p { margin: var(--space-1) 0; font-size: var(--fs-micro); }
