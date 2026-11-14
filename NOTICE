@@ -1971,3 +1971,15 @@ with exact resolution in integrations/xlog/Cargo.lock. No third-party source
 was copied into that module. Their distribution notices, and all transitive
 notices, must accompany any future shipped binary; this bootstrap ships source
 only and does not claim completion of the desktop dependency/model audit.
+
+
+## Fork Windows installer template
+
+The optional hardened NSIS template in `scripts/xnexus/nsis/installer.nsi`
+is derived from Tauri CLI 2.11.5, Copyright (c) 2017 - Present Tauri Apps
+Contributors, under the MIT License. The exact upstream template is retained
+alongside the reviewed transformation. The full permission notice is in
+`scripts/xnexus/nsis/LICENSE-MIT.tauri`; the distribution overlay installs it
+as `resources/installer/LICENSE-MIT.tauri`. Original fork guard and test code
+is GPL-3.0-only. See `docs/xlog/WINDOWS_DISTRIBUTION_HARDENING.md` for provenance,
+activation status and qualification limits.
