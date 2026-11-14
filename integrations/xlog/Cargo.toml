@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 license = "GPL-3.0-only"
 publish = false
-description = "Read-only native reference client for the proposed xLog companion protocol"
+description = "Native observation and owner-mediated receive/control client for xLog"
 
 # Independent from the DSP workspace: contract tests never open station devices.
 [workspace]

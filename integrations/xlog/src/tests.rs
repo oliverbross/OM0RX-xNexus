@@ -57,6 +57,19 @@ fn server(replies: Vec<String>) -> (BridgeClient, thread::JoinHandle<Vec<String>
                 stream.read_exact(&mut byte).unwrap();
                 request.push(byte[0]);
             }
+            let header_text = String::from_utf8(request.clone()).unwrap();
+            let content_len = header_text
+                .lines()
+                .find_map(|line| {
+                    line.to_ascii_lowercase()
+                        .strip_prefix("content-length:")
+                        .map(|v| v.trim().parse::<usize>().unwrap())
+                })
+                .unwrap_or(0);
+            assert!(content_len <= 65536);
+            let mut body = vec![0; content_len];
+            stream.read_exact(&mut body).unwrap();
+            request.extend_from_slice(&body);
             requests.push(String::from_utf8(request).unwrap());
             // A client rejecting the length may close before the response finishes.
             let _ = stream.write_all(reply.as_bytes());
@@ -67,6 +80,155 @@ fn server(replies: Vec<String>) -> (BridgeClient, thread::JoinHandle<Vec<String>
         BridgeClient::new(&format!("http://{address}"), &token()).unwrap(),
         thread,
     )
+}
+
+const REQUEST_ID: &str = "00000000-0000-4000-8000-000000000001";
+fn control_hello() -> Value {
+    let mut h = hello();
+    h["capabilities"] = json!(["snapshot.read", "station.tune", "rotor.point", "rotor.stop"]);
+    h
+}
+fn receipt(status: &str) -> Value {
+    json!({"request_id":REQUEST_ID,"server_instance":"synthetic-server","workspace_id":"synthetic-workspace","status":status,"message":null})
+}
+fn tune() -> Command {
+    Command::StationTune {
+        radio_id: "fake-radio".into(),
+        frequency_hz: 14075000,
+        mode: "USB".into(),
+    }
+}
+
+#[test]
+fn action_is_bound_to_identity_revision_and_observed_target() {
+    let (mut c, s) = server(vec![
+        json_response(control_hello()),
+        json_response(snapshot()),
+        json_response(receipt("applied")),
+    ]);
+    c.connect().unwrap();
+    c.poll().unwrap();
+    assert_eq!(
+        c.command(REQUEST_ID, tune()).unwrap().status,
+        CommandStatus::Applied
+    );
+    assert_eq!(c.snapshot().unwrap_err(), Error::Disconnected);
+    let requests = s.join().unwrap();
+    let action = &requests[2];
+    assert!(action.starts_with("POST /xlog/v1/command HTTP/1.1"));
+    let value: Value = serde_json::from_str(action.split("\r\n\r\n").nth(1).unwrap()).unwrap();
+    assert_eq!(value["workspace_id"], "synthetic-workspace");
+    assert_eq!(value["expected_revision"], 5);
+    assert_eq!(value["command"]["kind"], "station.tune");
+    assert_eq!(value["command"]["radio_id"], "fake-radio");
+}
+#[test]
+fn actions_require_capability_and_fresh_non_transmitting_target() {
+    let (mut c, s) = server(vec![json_response(hello()), json_response(snapshot())]);
+    c.connect().unwrap();
+    c.poll().unwrap();
+    assert_eq!(
+        c.command(REQUEST_ID, tune()).unwrap_err(),
+        Error::Capability
+    );
+    s.join().unwrap();
+    for (key, value) in [
+        ("radio_id", json!("other")),
+        ("transmitting", json!(true)),
+        ("transmitting", Value::Null),
+        ("connected", json!(false)),
+    ] {
+        let mut snap = snapshot();
+        snap["station"][key] = value;
+        let (mut c, s) = server(vec![json_response(control_hello()), json_response(snap)]);
+        c.connect().unwrap();
+        c.poll().unwrap();
+        assert_eq!(c.command(REQUEST_ID, tune()).unwrap_err(), Error::Invalid);
+        s.join().unwrap();
+    }
+}
+#[test]
+fn stale_action_is_refused_but_independent_rotor_stop_is_sent() {
+    let (mut c, s) = server(vec![
+        json_response(control_hello()),
+        json_response(snapshot()),
+        json_response(receipt("observed")),
+    ]);
+    c.connect().unwrap();
+    let stop = c.stop_handle().unwrap();
+    c.poll().unwrap();
+    c.observation.as_mut().unwrap().received -= Duration::from_secs(11);
+    assert_eq!(c.command(REQUEST_ID, tune()).unwrap_err(), Error::Stale);
+    assert_eq!(
+        stop.stop_rotor(REQUEST_ID, "fake-rotor").unwrap().status,
+        CommandStatus::Observed
+    );
+    let requests = s.join().unwrap();
+    let value: Value = serde_json::from_str(requests[2].split("\r\n\r\n").nth(1).unwrap()).unwrap();
+    assert_eq!(value["expected_revision"], 0);
+    assert_eq!(value["command"]["kind"], "rotor.stop");
+}
+#[test]
+fn malformed_or_wrong_identity_action_reply_is_uncertain_never_retried() {
+    for mut r in [receipt("observed"), receipt("invalid-status")] {
+        r["workspace_id"] = json!("other");
+        let (mut c, s) = server(vec![
+            json_response(control_hello()),
+            json_response(snapshot()),
+            json_response(r),
+        ]);
+        c.connect().unwrap();
+        c.poll().unwrap();
+        assert_eq!(
+            c.command(REQUEST_ID, tune()).unwrap_err(),
+            Error::OutcomeUnknown
+        );
+        assert_eq!(c.snapshot().unwrap_err(), Error::Disconnected);
+        assert_eq!(s.join().unwrap().len(), 3);
+    }
+}
+#[test]
+fn receipt_lookup_distinguishes_missing_from_rejected_and_validates_identity() {
+    let (mut c, s) = server(vec![
+        json_response(control_hello()),
+        "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".into(),
+        json_response(receipt("rejected")),
+    ]);
+    c.connect().unwrap();
+    assert!(c.receipt(REQUEST_ID).unwrap().is_none());
+    assert_eq!(
+        c.receipt(REQUEST_ID).unwrap().unwrap().status,
+        CommandStatus::Rejected
+    );
+    let requests = s.join().unwrap();
+    assert!(requests[1].starts_with(&format!("GET /xlog/v1/receipt/{REQUEST_ID} ")));
+}
+#[test]
+fn invalid_action_request_id_and_out_of_range_rotor_never_leave_client() {
+    let (mut c, s) = server(vec![
+        json_response(control_hello()),
+        json_response(snapshot()),
+    ]);
+    c.connect().unwrap();
+    let stop = c.stop_handle().unwrap();
+    c.poll().unwrap();
+    assert_eq!(
+        c.command(
+            REQUEST_ID,
+            Command::RotorPoint {
+                rotor_id: "fake-rotor".into(),
+                azimuth_deg: 360.0
+            }
+        )
+        .unwrap_err(),
+        Error::Invalid
+    );
+    assert_eq!(
+        stop.stop_rotor("../../secrets", "fake-rotor").unwrap_err(),
+        Error::Invalid
+    );
+    assert_eq!(c.command("bad", tune()).unwrap_err(), Error::Invalid);
+    s.join().unwrap();
 }
 fn assert_bad_snapshot(value: Value, expected: Error) {
     let (mut client, server) = server(vec![json_response(hello()), json_response(value)]);

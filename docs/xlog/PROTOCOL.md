@@ -30,7 +30,7 @@ does not reset its age: age uses generated time at receipt plus monotonic elapse
 time. Max_age is capped client-side; a future timestamp beyond 2 seconds is refused.
 Freshness expires even when a TCP connection remains open. Any failed poll clears
 actionable state; stale content can be displayed only as explicitly unavailable.
-No mutation method exists in this first client.
+Read/control methods require explicit capabilities and cannot transmit.
 
 Response budget: 2 MiB, 4096 spots, nonempty bounded identifiers, finite radio and
 rotor observations, 32 reasons per spot, 256 bytes per reason. Request timeout 3s,
@@ -38,6 +38,32 @@ connect timeout 1s. Unknown additive fields accepted for compatible v1 evolution
 unknown need status refused rather than interpreted as unworked. HTTP error bodies
 are not surfaced because they can contain private station data.
 
-Later revisions add log cursor streams, needs batches and mutation receipts with
-request_id + expected workspace/server/revision. Those are design intentions, not
-advertised capabilities. TX and rotor/tune writes are absent in this first slice.
+## Explicit receive/control commands
+
+`POST /xlog/v1/command` accepts an envelope with `request_id` (UUID),
+`server_instance`, `workspace_id`, `expected_revision`, and `command`.
+Command kinds and required capabilities are identical:
+
+- `station.tune`: radio_id, frequency_hz, mode.
+- `rotor.point`: rotor_id, azimuth_deg (0 inclusive to 360 exclusive).
+- `rotor.stop`: rotor_id. Revision 0 is deliberately permitted for Stop; it still
+  requires valid pairing, server/workspace and stable rotor identity.
+
+The native client requires a fresh snapshot and matching connected device for
+ordinary controls; tuning also requires positively observed non-transmitting
+state. xLog repeats admission against its current owner state. No local CAT or
+rotor connection is opened. Server capabilities alone determine availability.
+
+Receipts include request_id, server_instance, workspace_id, status and optional
+bounded message. Status is `accepted`, `applied`, `observed`, `rejected` or
+`uncertain`; an ACK must never be labeled physical observation. A lost/malformed
+reply after dispatch returns outcome unknown and must not cause an automatic
+repeat. `GET /xlog/v1/receipt/{UUID}` returns a matching receipt or HTTP 404.
+
+`BridgeClient::stop_handle` creates an independent StopClient at pairing time.
+The desktop keeps it outside the ordinary poll mutex; Stop neither waits for a
+fresh poll nor takes its queue slot. Revocation/workspace changes still refuse
+the action at the host. Desktop disconnect drops this handle.
+
+Logbook create/update, audio and TX remain unavailable until their owner-side
+contracts are implemented and validated; no control capability implies them.
