@@ -15,7 +15,8 @@ function connected(capabilities = ['snapshot.read', 'station.tune', 'rotor.point
     } }
 }
 function api(view: View = disconnected): Bridge {
-  return { status: vi.fn(async () => view), importPairing: vi.fn(async () => connected()), connect: vi.fn(async () => connected()), poll: vi.fn(async () => connected()), disconnect: vi.fn(async forget => ({ ...disconnected, paired: !forget })), command: vi.fn(async () => ({ request_id: 'synthetic-request', server_instance: 'fixture-server', workspace_id: 'fixture-workspace', status: 'observed', message: null })) }
+  const receipt = { request_id: 'synthetic-request', server_instance: 'fixture-server', workspace_id: 'fixture-workspace', status: 'observed' as const, message: null }
+  return { status: vi.fn(async () => view), importPairing: vi.fn(async () => connected()), connect: vi.fn(async () => connected()), poll: vi.fn(async () => connected()), disconnect: vi.fn(async forget => ({ ...disconnected, paired: !forget })), command: vi.fn(async () => receipt), outbox: vi.fn(async () => []), enqueue: vi.fn(async () => []), deliver: vi.fn(async () => receipt) }
 }
 afterEach(() => { vi.useRealTimers(); delete (window as unknown as { __TAURI__?: unknown }).__TAURI__ })
 
@@ -91,6 +92,14 @@ describe('xLog-owned desktop', () => {
     await screen.findByText('Your station, one source of truth')
     expect(native.disconnect).toHaveBeenCalledWith(true)
     expect(screen.getByRole('button', { name: 'Stop rotator' })).toHaveProperty('disabled', true)
+  })
+  it('drops the prior station stop route while pairing a replacement', async () => {
+    const native = api(connected()); vi.mocked(native.importPairing).mockReturnValue(new Promise(() => {}))
+    render(<App api={native} />)
+    await screen.findByText('Connected to xLog')
+    fireEvent.click(screen.getByRole('button', { name: 'Open xLog pairing file' }))
+    expect(screen.getByRole('button', { name: 'Stop rotator' })).toHaveProperty('disabled', true)
+    expect(screen.queryByRole('button', { name: 'Inspect W1AW' })).toBeNull()
   })
   it('refuses browser HTTP fallback when the native bridge is absent', async () => {
     const fetch = vi.spyOn(window, 'fetch')
