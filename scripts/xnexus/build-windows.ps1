@@ -47,11 +47,23 @@ foreach ($name in $models.Keys) {
     }
     if ((Get-FileHash $file -Algorithm SHA256).Hash.ToLowerInvariant() -ne $models[$name]) { throw "DeepCW hash mismatch: $name" }
 }
+$upstream = Get-Content -Raw "$repo\docs\xlog\UPSTREAM.json" | ConvertFrom-Json
+Run { git -C $repo merge-base --is-ancestor $upstream.commit HEAD }
 $receipt = [ordered]@{
     version = $config.version; source = $source; timestampUtc = [DateTime]::UtcNow.ToString('o')
-    upstream = (git -C $repo rev-parse upstream/main).Trim(); toolchain = $toolchain
+    upstreamBase = $upstream.commit; upstreamVersion = $upstream.upstream_version
+    availableUpstream = (git -C $repo rev-parse upstream/main).Trim(); toolchain = $toolchain
     profile = 'release'; target = 'x86_64-pc-windows-gnu'; features = 'radio,custom-protocol'
     signed = $false; installed = $false; modelHashes = $models; status = 'started'
+    rustc = (& rustc "+$toolchain" -Vv) -join "`n"
+    gfortran = (& gfortran --version | Select-Object -First 1)
+    node = (& node --version); npm = (& npm --version)
+    cargoLockSha256 = (Get-FileHash "$repo\src-tauri\Cargo.lock" -Algorithm SHA256).Hash
+    libvpxArchiveSha256 = (Get-FileHash "$env:VPX_MINGW_PREFIX\lib\libvpx.a" -Algorithm SHA256).Hash
+    libvpxSourceSha256 = (Get-Content -Raw "$env:VPX_MINGW_PREFIX\.xnexus-sha256").Trim()
+    hamlibHashes = @(Get-ChildItem "$repo\src-tauri\resources\hamlib" -File |
+        Where-Object { $_.Extension -in '.exe', '.dll' } |
+        ForEach-Object { @{name=$_.Name; sha256=(Get-FileHash $_.FullName -Algorithm SHA256).Hash} })
 }
 $receipt | ConvertTo-Json -Depth 5 | Set-Content -Encoding utf8 $receiptPath
 Push-Location "$repo\src-tauri"

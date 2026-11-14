@@ -61,6 +61,9 @@ mod chains;
 /// station off. Every command its screens make goes where its class says, and fails closed.
 mod client_mode;
 mod xlog_mode;
+// Dormant until xLog supplies explicitly mapped and clock-qualified PCM.
+#[allow(dead_code)]
+mod xlog_decode;
 /// This station's club key for Field Day club sync (kept beside settings.json, never logged or
 /// shown), and the SHA-256 a club host pins position keys by.
 mod club_key;
