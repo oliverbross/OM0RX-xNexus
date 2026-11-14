@@ -38,3 +38,17 @@ example channel number is not a default. The separate xLog audio owner branch,
 period assembler and desktop worker still need integrated transport/decoder/UI
 checks. Real DAX input, endpoint-to-RF delay and UTC synchronization have not been
 measured. No TX capability is provided by this client.
+
+The new opt-in owner-audio harness passed 26 checks against xLog receive branch
+`a59da6b396b3d066a2fb617f6c9507069025475b`, including its production buffer and
+HTTP transport with the real client. Synthetic PCM crossed the endpoint in
+32-chunk pages, retained sequence continuity, stopped without samples, restarted
+with a new epoch/frequency, and lost queued authority on revocation. The separate
+Swift-owner test remains explicitly opted in and was not part of that 26 count.
+The fixture first incorrectly omitted hello's readiness callback, expected only
+HTTP 401 after listener revocation (connection closure is also valid), and
+produced samples before client initialization where they could correctly expire.
+Those fixture assumptions were corrected; production freshness was not relaxed.
+Audio buffer SHA-256:
+`9d24092cb958f3ef4d424586bbf9058c5c65226ef3c3369764a74f2005af6f31`.
+These tests do not cover the Tauri capture-start lifecycle or a physical endpoint.

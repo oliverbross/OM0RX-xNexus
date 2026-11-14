@@ -24,3 +24,11 @@ lost acknowledgement, reconciles the durable receipt, then checks correction,
 stale revision rejection, original-operation replay and history. The station
 snapshot remains synthetic; no hardware commands or background station owners
 are enabled. This does not substitute for native application acceptance.
+
+The Windows `-Audio` option additionally compiles the owner's actual
+`companion_rx_buffer.rs` and exercises selected-channel PCM through its real
+HTTP endpoint and the xNexus audio client. It checks paged cursor continuity,
+stop/restart with a new route/epoch, and revocation of queued audio. Owner buffer
+tests also run. Only synthetic PCM enters the buffer; no WASAPI device is opened.
+The runner records the buffer's hash in addition to the transport hash. This
+feature requires the receive-owner source checkout and fails if it is absent.

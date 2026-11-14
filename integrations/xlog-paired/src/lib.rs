@@ -1,5 +1,7 @@
 #![allow(dead_code)]
 include!(concat!(env!("OUT_DIR"), "/owner_transport.rs"));
+#[cfg(all(test, windows, feature = "owner-audio"))]
+mod audio_owner;
 #[cfg(test)]
 mod swift_owner;
 #[cfg(test)]

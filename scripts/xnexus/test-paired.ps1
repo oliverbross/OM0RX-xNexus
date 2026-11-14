@@ -2,7 +2,8 @@ param(
     [Parameter(Mandatory=$true)][string]$XLogPath,
     [string]$CargoTargetDirectory,
     [string]$OwnerFixture,
-    [string]$OwnerEvidenceDirectory
+    [string]$OwnerEvidenceDirectory,
+    [switch]$Audio
 )
 $ErrorActionPreference = 'Stop'
 $repo = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
@@ -24,7 +25,15 @@ $priorEvidence = $env:XNEXUS_OWNER_EVIDENCE
 try {
     $env:XNEXUS_XLOG_SOURCE = $source
     if ($CargoTargetDirectory) { $env:CARGO_TARGET_DIR = $CargoTargetDirectory }
-    & cargo test --locked --manifest-path (Join-Path $repo 'integrations/xlog-paired/Cargo.toml') -j 1
+    $audioArgs = @()
+    if ($Audio) {
+        if (!$IsWindows) { throw 'Actual owner audio HTTP acceptance currently requires Windows.' }
+        $audioSource = Join-Path $owner 'prototype/src-tauri/src/companion_rx_buffer.rs'
+        if (!(Test-Path -LiteralPath $audioSource -PathType Leaf)) { throw 'Owner audio source is missing.' }
+        Write-Output ("Owner audio buffer SHA-256: {0}" -f (Get-FileHash -LiteralPath $audioSource -Algorithm SHA256).Hash)
+        $audioArgs = @('--features', 'owner-audio')
+    }
+    & cargo test --locked --manifest-path (Join-Path $repo 'integrations/xlog-paired/Cargo.toml') -j 1 @audioArgs
     if ($LASTEXITCODE -ne 0) { throw "Paired implementation checks failed ($LASTEXITCODE)." }
     if ($OwnerFixture) {
         $env:XNEXUS_OWNER_FIXTURE = (Resolve-Path -LiteralPath $OwnerFixture).Path
@@ -32,7 +41,7 @@ try {
         if (![System.IO.Path]::IsPathFullyQualified($OwnerEvidenceDirectory)) { throw 'Owner evidence directory must be absolute.' }
         $env:XNEXUS_OWNER_EVIDENCE = $OwnerEvidenceDirectory
         Write-Output ("Owner fixture SHA-256: {0}" -f (Get-FileHash -LiteralPath $env:XNEXUS_OWNER_FIXTURE -Algorithm SHA256).Hash)
-        & cargo test --locked --manifest-path (Join-Path $repo 'integrations/xlog-paired/Cargo.toml') -j 1 actual_swift_owner -- --ignored --nocapture
+        & cargo test --locked --manifest-path (Join-Path $repo 'integrations/xlog-paired/Cargo.toml') -j 1 @audioArgs actual_swift_owner -- --ignored --nocapture
         if ($LASTEXITCODE -ne 0) { throw "Actual owner acceptance failed ($LASTEXITCODE)." }
     }
 } finally {
