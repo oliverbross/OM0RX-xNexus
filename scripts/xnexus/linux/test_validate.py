@@ -58,6 +58,38 @@ class ContainerIsolationTests(unittest.TestCase):
             validate.check_admission(standard, 10 * gib - 1)
         validate.check_admission(standard, 10 * gib)
 
+    def test_reduced_contract_and_seed_are_bounded_and_offline(self):
+        for phase in ("contract", "seed"):
+            args = validate.run_args("sha256:" + "a" * 64, phase, Path("job"), "new-volume",
+                                     profile_name="contract-reduced")
+            for flag, value in (("--memory", "4g"), ("--memory-swap", "4g"),
+                                ("--cpus", "2"), ("--network", "none")):
+                self.assertEqual(args[args.index(flag) + 1], value)
+            self.assertIn("NODE_OPTIONS=--max-old-space-size=2560", args)
+            profile = validate.resource_profile("contract-reduced", phase)
+            self.assertEqual(profile["jobs"], 1)
+            self.assertTrue(profile["guard_commit"])
+            validate.check_admission(profile, 8 * 1024**3, 6 * 1024**3)
+            for physical, commit in ((8 * 1024**3 - 1, 6 * 1024**3), (8 * 1024**3, None)):
+                with self.assertRaises(ValueError):
+                    validate.check_admission(profile, physical, commit)
+        for phase in ("desktop", "fetch", "image"):
+            with self.assertRaises(ValueError):
+                validate.resource_profile("contract-reduced", phase)
+
+    def test_seed_mounts_donor_readonly_and_never_overlays_new_source(self):
+        image = "sha256:" + "a" * 64
+        donor, new = "xnexus-linux-" + "b" * 16 + "-" + "a" * 12, "xnexus-linux-" + "c" * 16 + "-" + "a" * 12
+        command = validate.run_args(image, "seed", Path("job"), new, profile_name="contract-reduced")
+        args = validate.seed_mounts(command, image, donor, new, Path("donor/input"))
+        self.assertIn(f"type=volume,src={donor},dst=/donor,readonly", args)
+        self.assertIn(f"type=bind,src={Path('donor/input')},dst=/donor-input,readonly", args)
+        self.assertIn(f"type=volume,src={new},dst=/work", args)
+        self.assertEqual(args[args.index("--network") + 1], "none")
+        for invalid in (new, "unrelated-volume"):
+            with self.assertRaises(ValueError):
+                validate.seed_mounts(command, image, invalid, new, Path("donor/input"))
+
     def test_commit_pressure_stops_only_owned_container_even_when_ram_is_ample(self):
         cid, image, volume = "b" * 64, "sha256:" + "a" * 64, "xnexus-test"
         details = {"Id": cid, "Config": {"Image": image,
@@ -272,6 +304,12 @@ class PhaseProvenanceTests(unittest.TestCase):
                 env={**env, "XNEXUS_RESOURCE_PROFILE": "desktop-reduced"},
                 capture_output=True, text=True, timeout=15)
             self.assertEqual(reduced.returncode, 0, reduced.stderr)
+            self.assertEqual(set(Path("/evidence/stub-jobs").read_text().splitlines()), {"1,1"})
+            Path("/evidence/stub-jobs").write_text("")
+            reduced_contract = subprocess.run(["bash", "/tools/validate.sh", "contract"],
+                env={**env, "XNEXUS_RESOURCE_PROFILE": "contract-reduced"},
+                capture_output=True, text=True, timeout=15)
+            self.assertEqual(reduced_contract.returncode, 0, reduced_contract.stderr)
             self.assertEqual(set(Path("/evidence/stub-jobs").read_text().splitlines()), {"1,1"})
             rejected = subprocess.run(["bash", "/tools/validate.sh", "contract"],
                 env={**env, "XNEXUS_RESOURCE_PROFILE": "desktop-reduced"},

@@ -1,12 +1,20 @@
 #!/usr/bin/env bash
 set -euo pipefail
-case "${1:-}" in fetch|contract|desktop) phase=$1;; *) echo 'Expected fetch, contract or desktop' >&2; exit 2;; esac
+case "${1:-}" in fetch|contract|desktop|seed) phase=$1;; *) echo 'Expected fetch, contract, desktop or seed' >&2; exit 2;; esac
+if [[ $phase == seed ]]; then
+  [[ ${XNEXUS_RESOURCE_PROFILE:-} == contract-reduced ]] || exit 2
+  exec python3 /tools/seed_cache.py
+fi
+[[ ! -e /work/seed.pending.json ]] || { echo 'Incomplete cache seed; preserve it and use a new volume' >&2; exit 2; }
 mkdir -p /work/cargo /work/home
 export HOME=/work/home CARGO_HOME=/work/cargo CARGO_TARGET_DIR=/work/target
 case "${XNEXUS_RESOURCE_PROFILE:-standard}" in
   standard) jobs=2 ;;
   desktop-reduced)
     [[ $phase == desktop ]] || { echo 'Reduced profile requires desktop phase' >&2; exit 2; }
+    jobs=1 ;;
+  contract-reduced)
+    [[ $phase == contract ]] || { echo 'Reduced contract profile requires contract phase' >&2; exit 2; }
     jobs=1 ;;
   *) echo 'Unknown resource profile' >&2; exit 2 ;;
 esac
@@ -47,9 +55,18 @@ elif [[ $phase == contract ]]; then
   node scripts/gates --list > /evidence/upstream-gates.txt
   node --test scripts/xnexus/fork-policy.test.mjs
   cargo test --locked --offline --manifest-path integrations/xlog/Cargo.toml
+  # A seeded volume deliberately has no old source/node_modules/dist/tsbuildinfo.
+  if [[ -f /work/seed.json && ! -d ui/node_modules ]]; then
+    npm --prefix ui ci --offline --ignore-scripts --no-audit --no-fund
+  fi
   npm --prefix ui rebuild --offline
   npm --prefix ui run build
-  npm --prefix ui test -- src/xlog --maxWorkers=2
+  npm --prefix ui test -- src/xlog --maxWorkers=$jobs
 else
-  cargo check --locked --offline --manifest-path src-tauri/Cargo.toml --features radio --all-targets
+  if [[ -f /work/seed.json ]]; then
+    cargo check --locked --offline --manifest-path src-tauri/Cargo.toml --features radio --all-targets --message-format=json-render-diagnostics | tee /evidence/desktop-cargo.jsonl
+    python3 /tools/seed_cache.py --check-compiled /evidence/desktop-cargo.jsonl
+  else
+    cargo check --locked --offline --manifest-path src-tauri/Cargo.toml --features radio --all-targets
+  fi
 fi
