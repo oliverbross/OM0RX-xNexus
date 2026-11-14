@@ -2,7 +2,8 @@
 
 This guide describes the integrated source. Check [STATUS.md](STATUS.md) and the
 candidate's build receipt before treating a build as qualified. Both programs
-run separately on the same computer. A bridge-enabled xLog build is required;
+run separately on the same computer. The Mac companion requires macOS14 or newer
+for an isolated persistent WebView store. A bridge-enabled xLog build is required;
 an older xLog installation will not acquire the bridge merely by installing
 xNexus.
 
@@ -97,7 +98,7 @@ application path. It is a separate operating mode, not connection recovery, and
 its hardware operation has not been qualified by companion tests.
 
 For disposable native acceptance, launch the exact candidate executable with
-`--xlog-data-dir <absolute disposable root>`. That root holds both its companion
-outbox and WebView profile. Verify the live process path and complete arguments
+`--xlog-data-dir <absolute disposable root>`. That root holds its companion outbox. Windows stores its WebView profile there;
+on macOS the canonical root selects a distinct OS-managed persistent WebView store. Verify the live process path and complete arguments
 before any UI observation. A failed launch is a stop, never permission to open
 the application without the isolation argument.
