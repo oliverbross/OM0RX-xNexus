@@ -70,7 +70,7 @@ Reject 'unknown NSIS extraction switch rejected' { Get-XnPayloadMap ($rendered.R
 Reject 'case-insensitive destination collision rejected' { Get-XnPayloadMap ($rendered.Replace('/oname=COPYING','/oname=webview2loader.dll')) } 'duplicate'
 Reject 'execute cannot launch anything' {
     & (Join-Path $PSScriptRoot 'prepare-installer-acceptance.ps1') -BuildReceipt 'C:\inert\build.json' -AuditReceipt 'C:\inert\audit.json' -ExpectedAuditSha256 $hash -Version $build.version -ExpectedCommit $source -Execute
-} 'Execution is not implemented'
+} 'This preparation command never starts a process'
 Pass 'refusals retain sentinel bytes' { Assert-XnHash (Join-Path $retained 'sentinel.txt') $sentinelHash }
 $marker="[Ownership]`r`nProduct=sk.om0rx.xnexus`r`nFormat=1`r`nRoot=$retained`r`n"
 Pass 'exact ordinary marker positive control' { Assert-XnOwnershipMarker $marker $retained }

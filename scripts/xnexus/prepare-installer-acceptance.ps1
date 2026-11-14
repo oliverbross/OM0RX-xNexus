@@ -1,9 +1,8 @@
 # SPDX-License-Identifier: GPL-3.0-only
 <#
 Prepares evidence for WINDOWS_INSTALLER_ACCEPTANCE_PLAN.md. Never installs or
-launches a process. -Execute deliberately fails until the separately tested
-observer is wired into a reviewed candidate transaction; the build Job force-kill
-policy is not suitable here. A prepared report is not installation acceptance.
+launches a process. Execution has a separate entry point bound to the exact
+reviewed preparation SHA. A prepared report is not installation acceptance.
 #>
 [CmdletBinding()]
 param(
@@ -13,11 +12,12 @@ param(
     [Parameter(Mandatory)][string]$Version,
     [Parameter(Mandatory)][string]$ExpectedCommit,
     [string]$EvidenceParent='C:\Projects\OM0RX-xLog\.build\xnexus-installer-acceptance',
-    [switch]$Execute
+    [switch]$Execute,
+    [switch]$PassThru
 )
 $ErrorActionPreference='Stop'
 . (Join-Path $PSScriptRoot 'installer-acceptance-lib.ps1')
-if ($Execute) { throw 'Execution is not implemented: the inert-tested observer is not wired into a reviewed candidate-specific install/uninstall transaction. No process or installation was started.' }
+if ($Execute) { throw 'Use execute-installer-acceptance.ps1 with the exact reviewed preparation SHA and explicit -Execute. This preparation command never starts a process.' }
 $repo='C:\Projects\OM0RX-xNexus'
 $null=Assert-XnLocalPath $EvidenceParent -NoSpaces
 if (!(Test-Path -LiteralPath $EvidenceParent -PathType Container)) { throw 'Create/review the private evidence parent separately; preparation never creates arbitrary ancestors.' }
@@ -118,9 +118,9 @@ try {
     Assert-XnHash $AuditReceipt $ExpectedAuditSha256; Assert-XnHash $BuildReceipt $buildHash
     $report.transactionPlan=@{install=@{executable=$audit.installer.path;arguments="/S /NS /D=$target"};uninstall=@{executable=(Join-Path $target 'uninstall.exe');arguments='/S'};marker=@{file='.om0rx-xnexus-owner.ini';Product='sk.om0rx.xnexus';Format='1';Root=$target};sentinels=@('app\qualification-unknown.txt','app\qualification-nested\retained.txt','profiles\synthetic-a\draft.json','profiles\synthetic-b\outbox.json');sentinelCreation='Only after verified owned installation; never seed the fresh target';retention='Preserve all evidence, unknown files and external profiles; never recursive-delete or force-kill'}
     $report.status='prepared-not-executed'
-    $report.executionBlockers=@('Inert observer tests passed; candidate-specific ordinary NSIS handoff and complete historical process identities are not yet qualified or wired into an execution transaction.', 'Generated uninstall.exe is absent from static extraction: record its exact identity only after a verified audited install, then reverify before its ordinary /S launch.', 'Final immediate registry/process/profile/runtime recheck and post-install/uninstall comparisons belong to that reviewed transaction; preparation does not reserve the namespace.')
+    $report.executionBlockers=@('Package-owner release and exact reviewed preparation/audit SHA are required by the separate explicit executor.', 'Real candidate NSIS temporary handoff remains unqualified until actual execution; unknown process identities stop without forced cleanup.', 'Preparation does not reserve shared registration; executor repeats admission and validates payload, marker, registration and retained bytes around ordinary uninstall.')
     Save-Report
-    Write-Output "Preparation only: $receipt"
+    if ($PassThru) { Write-Output $receipt } else { Write-Output "Preparation only: $receipt" }
 } catch {
     $report.status='refused';$report.error=$_.Exception.Message;Save-Report;throw
 }

@@ -43,6 +43,8 @@ namespace Xnexus.InstallerObservation {
         [DllImport("kernel32.dll",SetLastError=true)] static extern bool GetExitCodeProcess(IntPtr process,out uint code);
         [DllImport("kernel32.dll",CharSet=CharSet.Unicode,SetLastError=true)] static extern bool QueryFullProcessImageNameW(IntPtr process,uint flags,StringBuilder path,ref uint size);
         [DllImport("kernel32.dll",SetLastError=true)] static extern bool CloseHandle(IntPtr handle);
+        [DllImport("kernel32.dll",CharSet=CharSet.Unicode,SetLastError=true)] static extern IntPtr CreateFileW(string path,uint access,uint share,IntPtr security,uint disposition,uint flags,IntPtr template);
+        [DllImport("kernel32.dll",CharSet=CharSet.Unicode,SetLastError=true)] static extern uint GetFinalPathNameByHandleW(IntPtr file,StringBuilder path,uint size,uint flags);
         IntPtr job, process;
         public uint Pid { get; private set; }
         public string Executable { get; private set; }
@@ -62,6 +64,18 @@ namespace Xnexus.InstallerObservation {
             get { if(process==IntPtr.Zero) throw new ObjectDisposedException("Observer"); uint s=WaitForSingleObject(process,0); if(s==0xffffffff) throw new Win32Exception(Marshal.GetLastWin32Error()); return s==0; }
         }
         public uint RootExitCode { get { if(!RootExited) throw new InvalidOperationException("Root still alive"); uint code; Check(GetExitCodeProcess(process,out code)); return code; } }
+        public static string CanonicalFilePath(string path) {
+            IntPtr file=CreateFileW(path,0,7,IntPtr.Zero,3,0,IntPtr.Zero);
+            if(file==new IntPtr(-1)) throw new Win32Exception(Marshal.GetLastWin32Error());
+            try {
+                StringBuilder normalized=new StringBuilder(32768);
+                uint size=GetFinalPathNameByHandleW(file,normalized,(uint)normalized.Capacity,0);
+                if(size==0 || size>=normalized.Capacity) throw new Win32Exception(Marshal.GetLastWin32Error());
+                string result=normalized.ToString();
+                if(!result.StartsWith("\\\\?\\") || result.StartsWith("\\\\?\\UNC\\",StringComparison.OrdinalIgnoreCase)) throw new InvalidOperationException("Nonlocal observed image");
+                return result.Substring(4);
+            } finally { CloseHandle(file); }
+        }
         public Observer(string executable,string arguments,string directory) {
             if(!System.IO.Path.IsPathRooted(executable) || executable.IndexOf('"')>=0 || arguments==null) throw new ArgumentException("Exact executable and arguments required");
             IntPtr attributes=IntPtr.Zero, value=IntPtr.Zero; bool initialized=false;

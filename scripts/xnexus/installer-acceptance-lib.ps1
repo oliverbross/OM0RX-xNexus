@@ -2,10 +2,16 @@
 # Read-only admission primitives. No installer/application/registry writes.
 Set-StrictMode -Version Latest
 
-function Assert-XnLocalPath([string]$Path, [switch]$AllowMissing, [switch]$NoSpaces) {
+function Assert-XnLocalPath([string]$Path, [switch]$AllowMissing, [switch]$NoSpaces, [switch]$ObservedImage) {
     if ($Path -notmatch '^[A-Za-z]:\\[^\\]' -or $Path.Contains('/') -or
-        $Path.Substring(2) -match '[:*?"<>|~]' -or $Path.EndsWith('\') -or
+        $Path.Substring(2) -match '[:*?"<>|]' -or (!$ObservedImage -and $Path.Contains('~')) -or $Path.EndsWith('\') -or
         ($NoSpaces -and $Path -match '\s')) { throw 'Require a canonical local path (no alias, UNC, ADS, wildcard or trailing slash).' }
+    if ($ObservedImage) {
+        # NSIS's ordinary temp directory can contain a literal tilde. Native
+        # normalized file identity distinguishes it from an 8.3 path alias.
+        if ($AllowMissing -or !('Xnexus.InstallerObservation.Observer' -as [type]) -or
+            [Xnexus.InstallerObservation.Observer]::CanonicalFilePath($Path) -ine $Path) { throw 'Observed executable is not a canonical existing file.' }
+    }
     foreach ($part in $Path.Substring(3).Split('\')) {
         if (!$part -or $part -in '.', '..' -or $part -match '[. ]$') { throw 'Noncanonical path component.' }
     }
@@ -28,8 +34,8 @@ function Assert-XnLocalPath([string]$Path, [switch]$AllowMissing, [switch]$NoSpa
     $Path
 }
 
-function Get-XnHash([string]$Path) {
-    $null = Assert-XnLocalPath $Path
+function Get-XnHash([string]$Path,[switch]$ObservedImage) {
+    $null = Assert-XnLocalPath $Path -ObservedImage:$ObservedImage
     if (!(Test-Path -LiteralPath $Path -PathType Leaf)) { throw 'Expected a regular file.' }
     (Get-FileHash -LiteralPath $Path -Algorithm SHA256 -ErrorAction Stop).Hash.ToLowerInvariant()
 }
@@ -85,10 +91,12 @@ function Get-XnRegistrySnapshot {
                         # Only bounded relevant values; never dump unrelated Run entries.
                         $values = @{}
                         if ($present) {
-                            $names = if ($kind -eq 'run') { @('OM0RX-xNexus') } else { @('','DisplayVersion','InstallLocation','UninstallString') }
+                            $names = if ($kind -eq 'run') { @('OM0RX-xNexus') } else { @($key.GetValueNames()) }
+                            if ($names.Count -gt 128 -or ($kind -ne 'run' -and $key.SubKeyCount -ne 0)) { throw 'Unreviewed fork registry shape.' }
                             foreach ($name in $names) {
                                 $value = $key.GetValue($name,$null,[Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
-                                if ($null -ne $value) { $values[$name] = ([string]$value).Substring(0,[Math]::Min(([string]$value).Length,2048)) }
+                                if ($name.Length -gt 128 -or ([string]$value).Length -gt 4096) { throw 'Fork registry value bound exceeded; never truncate identity.' }
+                                if ($null -ne $value) { $values[$name] = $value }
                             }
                         }
                         [pscustomobject]@{hive=$hive;view=$view;kind=$kind;present=[bool]$present;values=$values}

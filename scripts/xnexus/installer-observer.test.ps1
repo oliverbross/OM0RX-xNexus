@@ -12,6 +12,14 @@ $compiler=Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
 & $compiler /nologo /target:winexe "/out:$exe" (Join-Path $PSScriptRoot 'installer-observer-fixture.cs') *> (Join-Path $evidence 'compiler.log')
 if ($LASTEXITCODE -ne 0) { throw 'Inert fixture compile failed; see compiler.log' }
 $hash=Get-XnHash $exe
+if (!('Xnexus.InstallerObservation.Observer' -as [type])) { Add-Type -Path (Join-Path $PSScriptRoot 'installer-observer.cs') }
+$literalTemp=Join-Path $evidence '~nsu-test.tmp';[IO.Directory]::CreateDirectory($literalTemp) | Out-Null
+$temporaryImage=Join-Path $literalTemp 'Au_.exe';Copy-Item -LiteralPath $exe -Destination $temporaryImage
+if ((Get-XnHash $temporaryImage -ObservedImage) -cne $hash) { throw 'Literal NSIS-like temporary name was not canonicalized correctly' }
+$alias=Join-Path $evidence 'temporary-alias';New-Item -ItemType Junction -Path $alias -Target $literalTemp | Out-Null
+$rejected=$false
+try { Get-XnHash (Join-Path $alias 'Au_.exe') -ObservedImage | Out-Null } catch { $rejected=$true }
+if (!$rejected) { throw 'Observed executable accepted a reparse alias' }
 $cases=@()
 foreach ($case in @(@{name='ordinary';timeout=20},@{name='timeout';timeout=2})) {
     $directory=Join-Path $evidence $case.name;[IO.Directory]::CreateDirectory($directory) | Out-Null
@@ -42,5 +50,5 @@ foreach ($case in @(@{name='ordinary';timeout=20},@{name='timeout';timeout=2})) 
     if ($live.Count) { throw 'Owned fixture remains live' }
     $cases+=@{name=$case.name;status='passed';rootExited=$true;activeProcesses=0;observationStatus=$result.status}
 }
-@{status='passed';cases=$cases;fixtureExecutable=$exe;fixtureSha256=$hash;candidateLaunched=$false;installed=$false;forceTerminated=$false;completedUtc=[DateTime]::UtcNow.ToString('o')} | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $evidence 'receipt.json') -Encoding utf8
+@{status='passed';cases=$cases;observedImagePathControls=2;fixtureExecutable=$exe;fixtureSha256=$hash;candidateLaunched=$false;installed=$false;forceTerminated=$false;completedUtc=[DateTime]::UtcNow.ToString('o')} | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $evidence 'receipt.json') -Encoding utf8
 Write-Output "2 inert process lifecycle cases passed; all roots/children exited naturally: $evidence"

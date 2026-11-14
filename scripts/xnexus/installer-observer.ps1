@@ -35,7 +35,7 @@ function Invoke-XnProcessObservation {
                 if (!$known.ContainsKey($key)) {
                     # Recheck membership after querying CIM: PID reuse cannot import an unrelated process.
                     if (@($observer.ActivePids()) -notcontains [uint32]$member) { continue }
-                    $known[$key]=[ordered]@{pid=[uint32]$member;parentPid=$process.ParentProcessId;createdUtc=$process.CreationDate.ToUniversalTime().ToString('o');executable=$process.ExecutablePath;arguments=$process.CommandLine;sha256=(Get-XnHash $process.ExecutablePath)}
+                    $known[$key]=[ordered]@{pid=[uint32]$member;parentPid=$process.ParentProcessId;createdUtc=$process.CreationDate.ToUniversalTime().ToString('o');executable=$process.ExecutablePath;arguments=$process.CommandLine;sha256=(Get-XnHash $process.ExecutablePath -ObservedImage)}
                 }
             }
             $counts=$observer.Counts
