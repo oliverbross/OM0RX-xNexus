@@ -21,6 +21,14 @@ import { RecallCardPopover } from './RecallCardPopover'
 import { useCallback, useState } from 'react'
 import type { ReactNode } from 'react'
 
+/** Only fields this original card actually displays. Native LoggedQso remains
+ * assignable; an owner never has to invent frequency or confirmation flags. */
+export type RecallRow = Pick<LoggedQso, 'id' | 'whenUnix' | 'band' | 'mode' | 'rstSent' | 'rstRcvd' | 'comment' | 'notes'> & { canOpen?: boolean }
+export type ExternalRecallRead =
+  | { state: 'current'; callsign: string; band: string | null; notice: string; confirmationTitle: string; unavailableMessage: string;
+      history: { qsos: (RecallRow & { canOpen: boolean })[]; count: number; confirmedCount: number; dupeThisBand: boolean | null } }
+  | { state: 'loading' | 'unavailable'; message: string }
+
 interface Props {
   call: string
   /** Current operating band, for the same-band dupe flag. */
@@ -39,7 +47,9 @@ interface Props {
   image?: string | null
   /** Operator's own Maidenhead grid: the distance/bearing line says when it is only a square. */
   myGrid?: string
-  hist: CallHistory
+  hist: CallHistory | null
+  /** Explicit owner state suppresses native history, including during failure. */
+  externalHistory?: ExternalRecallRead
   newEntity?: boolean
   newBandSlot?: boolean
   newModeSlot?: boolean
@@ -148,7 +158,7 @@ function fmtTime(unix: number): string {
 }
 
 /** "59/59" sent/received, or "" when neither is present. */
-function rstPair(q: LoggedQso): string {
+function rstPair(q: RecallRow): string {
   const s = (q.rstSent ?? '').trim()
   const r = (q.rstRcvd ?? '').trim()
   return s || r ? `${s || '—'}/${r || '—'}` : ''
@@ -190,14 +200,16 @@ export function recallCardClass(bounded?: boolean, kept?: boolean): string {
 
 export function RecallPanel(props: Props) {
   const { api: { openExternalUrl, openQrzPage }, can } = useOperateServices()
-  const { call, band, name, qth, state, grid, country, image, myGrid, hist, newEntity, newBandSlot, newModeSlot, contestDupe = 'none', contestLogsDupes = false, contestDupeByBand = true, activating = false, potaDupe = null, hasLookup = true, bounded = false, kept = false, onOpenLog, latestNote, historyNotice, calling, onShowCall, onRemove, hideNote, paneTitle, grip, full = false } = props
+  const { call, band, name, qth, state, grid, country, image, myGrid, hist: nativeHist, externalHistory, newEntity, newBandSlot, newModeSlot, contestDupe = 'none', contestLogsDupes = false, contestDupeByBand = true, activating = false, potaDupe = null, hasLookup = true, bounded = false, kept = false, onOpenLog, latestNote, historyNotice, calling, onShowCall, onRemove, hideNote, paneTitle, grip, full = false } = props
   const units = useUnits()
   const c = call.trim()
   const cu = c.toUpperCase()
+  const external = externalHistory?.state === 'current' && externalHistory.callsign === cu ? externalHistory : null
+  const hist = externalHistory === undefined ? nativeHist : external?.history ?? null
   // ⚠️ ABOVE the short-call early return, both of them, because a hook may not be conditional
   // and `useRovingList` needs the row count. `prior` is where it was in the render order
   // otherwise — newest first, and `lastNote` still reads it below.
-  const prior = [...hist.qsos].sort((a, b) => b.whenUnix - a.whenUnix)
+  const prior: RecallRow[] = [...(hist?.qsos ?? [])].sort((a, b) => b.whenUnix - a.whenUnix)
   // One Tab stop for the whole list, arrows to move, Enter/Space to activate — the same
   // `useRovingList` the decode and roster lists use, and for the same reason: 40 prior contacts
   // would otherwise be 40 tab stops on a list where every row does the identical thing. The
@@ -206,8 +218,13 @@ export function RecallPanel(props: Props) {
   const openLog = onOpenLog
   // A row names its contact by id (every contact a 1.14+ station serves has one): the Logbook opens
   // with its editor on that contact. A row without one only searches, as every row did before.
-  const openRow = (q: LoggedQso | undefined) => (q?.id ? openLog?.(cu, q.id) : openLog?.(cu))
-  const roving = useRovingList(prior.length, (i) => openRow(prior[i]))
+  const openRow = (q: RecallRow | undefined) => {
+    if (!q || q.canOpen === false) return
+    if (q.id) openLog?.(cu, q.id)
+    else openLog?.(cu)
+  }
+  const clickablePrior = prior.filter(q => openLog && q.canOpen !== false)
+  const roving = useRovingList(clickablePrior.length, (i) => openRow(clickablePrior[i]))
   // #162: which prior-contact comments are open, keyed like the row itself. Same state shape
   // and same idiom as the Logbook's Comment column (1.13.0) — a `LoggedQso` has no stable id,
   // so the key is the instant plus the position, and a re-sorted list cannot carry an open
@@ -294,7 +311,7 @@ export function RecallPanel(props: Props) {
     approx.length > 0 && bearing?.pointed.to !== 'country'
       ? t('recall.geo.title.approx', { to, squares })
       : t('recall.geo.title', { to })
-  const confirmed = hist.confirmedCount > 0
+  const confirmed = hist != null && hist.confirmedCount > 0
   const needed = newEntity
     ? t('recall.need.entity')
     : newBandSlot
@@ -302,7 +319,7 @@ export function RecallPanel(props: Props) {
       : newModeSlot
         ? t('recall.need.mode')
         : null
-  const lastNote = latestNote === undefined ? prior.find((q) => (q.notes ?? '').trim())?.notes?.trim() : latestNote?.trim()
+  const lastNote = latestNote === undefined || externalHistory !== undefined ? prior.find((q) => (q.notes ?? '').trim())?.notes?.trim() : latestNote?.trim()
   // The link needs only the CALLSIGN (operator, 2026-07-31: open the call's QRZ page from the
   // recall photo "to look at the page while you're working them"). It used to ride on CS
   // RESOLUTION — `nm || where || image` — and that was backwards, reported 2026-08-05 as "the
@@ -390,15 +407,15 @@ export function RecallPanel(props: Props) {
           {t('recall.potaDupe.label', { park: potaDupe.park })}
         </span>
       )}
-      {!activating && hist.dupeThisBand && band && (
+      {!activating && hist?.dupeThisBand && band && (externalHistory === undefined || external?.band === band.trim().toLowerCase()) && (
         <span className="recall-badge dupe" title={t('recall.dupe.title', { band })}>
           {t('recall.dupe.label', { band })}
         </span>
       )}
-      {confirmed && (
+      {confirmed && hist && (
         <span
           className="recall-badge ok"
-          title={t('recall.confirmed.title', {
+          title={external?.confirmationTitle ?? t('recall.confirmed.title', {
             confirmed: hist.confirmedCount,
             count: hist.count,
           })}
@@ -514,7 +531,9 @@ export function RecallPanel(props: Props) {
         )}
       </div>
 
-      {historyNotice}
+      {externalHistory === undefined ? historyNotice : (
+        <div role="status" className="muted">{externalHistory.state === 'current' ? (external ? external.notice : externalHistory.unavailableMessage) : externalHistory.message}</div>
+      )}
       {lastNote && (
         <div className="recall-note" title={t('recall.note.title')}>
           📝 {lastNote}
@@ -524,7 +543,7 @@ export function RecallPanel(props: Props) {
       {prior.length > 0 && (
         <div className="recall-log">
           <div className="recall-log-head">
-            {t('recall.log.head')} <span className="recall-log-count">{hist.count}</span>
+            {t('recall.log.head')} <span className="recall-log-count">{hist?.count}</span>
           </div>
           {/* role=list: jsdom/AT reachability for rows scrolled under the em ceiling —
               carried over from the compact variant's list when compact was deleted. */}
@@ -538,20 +557,21 @@ export function RecallPanel(props: Props) {
               // Comment only — the private note is surfaced once, in the 📝 line above (showing
               // it here too would duplicate the newest QSO's note).
               const cmt = (q.comment ?? '').trim()
-              const rp = roving.rowProps(i)
+              const activeIndex = clickablePrior.indexOf(q)
+              const rp = activeIndex < 0 ? null : roving.rowProps(activeIndex)
               // THIS contact, by its id (`openRow`): the Logbook searches the call and opens its
               // editor on the row. An id follows the contact wherever the list moves it.
               return (
                 <div
-                  className={`recall-log-row${openLog ? ' clickable' : ''}`}
+                  className={`recall-log-row${rp ? ' clickable' : ''}`}
                   role="listitem"
                   key={`${q.whenUnix}-${i}`}
-                  title={openLog ? (q.id ? t('logbook.row.edit', { call: cu }) : t('recall.log.row.title', { call: cu })) : undefined}
-                  tabIndex={openLog ? rp.tabIndex : undefined}
-                  ref={openLog ? (rp.ref as (el: HTMLDivElement | null) => void) : undefined}
-                  onFocus={openLog ? rp.onFocus : undefined}
+                  title={rp ? (q.id ? t('logbook.row.edit', { call: cu }) : t('recall.log.row.title', { call: cu })) : undefined}
+                  tabIndex={rp?.tabIndex}
+                  ref={rp ? (rp.ref as (el: HTMLDivElement | null) => void) : undefined}
+                  onFocus={rp?.onFocus}
                   onClick={
-                    openLog
+                    rp
                       ? () => {
                           rp.onClick()
                           openRow(q)
