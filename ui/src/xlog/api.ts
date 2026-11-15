@@ -185,4 +185,19 @@ export const historyReads = {
   recent: (connectionToken: string) =>
     invoke<HistoryReadView<RecentContacts>>('xlog_recent', { connectionToken }),
 }
+/** Selected-contact reads use an independent native lane, never the history page. */
+export const contactReads = {
+  read: (connectionToken: string, contactId: string) =>
+    invoke<HistoryReadView<ContactDetailEnvelope>>('xlog_contact_detail_read', { connectionToken, contactId }),
+}
+export interface ContactDetailEnvelope {
+  protocol_version: 1
+  server_instance: string
+  workspace_id: string
+  worker_generation: number
+  generation: string
+  generated_at_unix_ms: number
+  max_age_ms: 5000
+  detail: import('../features/ownerContactDetail').OwnerContactDetail
+}
 export const disconnected: View = { paired: false, connected: false, endpoint: null, hello: null, snapshot: null }
