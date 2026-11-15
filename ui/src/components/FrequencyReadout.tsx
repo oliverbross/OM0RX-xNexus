@@ -17,8 +17,8 @@ const MHZ = 'MHz'
 const PENDING = '…'
 
 /** Format a dial frequency (MHz) for DISPLAY — 4 decimals (100 Hz resolution). */
-export function formatDialMhz(mhz: number): string {
-  return mhz.toFixed(4)
+export function formatDialMhz(mhz: number | null): string {
+  return mhz == null ? '—' : mhz.toFixed(4)
 }
 /** "Essentially unchanged" tolerance for a committed edit (MHz) — 5 Hz. Skips a no-op QSY. */
 const UNCHANGED_EPS = 5e-6
@@ -59,7 +59,7 @@ function stepLabel(decade: number): string {
 }
 
 interface Props {
-  dialMhz: number
+  dialMhz: number | null
   /** Band chip label rendered beside the number; omit to hide (e.g. when the caller shows its own). */
   band?: string
   /** hero = big focal readout (var(--fs-display)); compact = strip-sized (17px). */
@@ -132,12 +132,12 @@ export function FrequencyReadout({
   // Closed by Enter or Esc. Removing the focused input fires a blur in Chromium (WebView2), and
   // that blur must not commit after an Esc, or commit a second time after an Enter.
   const closedRef = useRef(false)
-  const canEdit = editable && !disabled
+  const canEdit = editable && !disabled && dialMhz != null
   // The number ON SCREEN: what was asked for while the station catches up, its own reading
   // otherwise. Every judgement in this file that is not the digits themselves — TX blocking, the
   // band chip, what is announced — keeps reading `dialMhz`, which is the station's.
   const shown = provisionalMhz ?? dialMhz
-  const awaiting = provisionalMhz !== undefined && Math.round(provisionalMhz * 1e6) !== Math.round(dialMhz * 1e6)
+  const awaiting = provisionalMhz !== undefined && dialMhz != null && Math.round(provisionalMhz * 1e6) !== Math.round(dialMhz * 1e6)
   const text = formatDialMhz(shown)
   const digits = digitTune ? dialDigits(text) : null
   // The digit the KEYBOARD spins (the wheel takes the one under the pointer instead). null until
@@ -154,7 +154,7 @@ export function FrequencyReadout({
   }, [dialMhz])
 
   const startEdit = () => {
-    if (!canEdit) return
+    if (!canEdit || shown == null) return
     // Seed at 10 Hz (finer than the 100 Hz display) so re-committing an unchanged value doesn't
     // round the rig off-frequency. From the number ON SCREEN, so opening the field never rewrites
     // the digits the operator was looking at (identical to the dial wherever there is no
@@ -173,7 +173,7 @@ export function FrequencyReadout({
     closedRef.current = true
     const v = parseOperatorNumber(draft)
     setEditing(false)
-    if (!canEdit) return
+    if (!canEdit || shown == null) return
     // Skip a no-op commit (opened + Enter/blur without changing) so it never fires a spurious QSY.
     if (Number.isFinite(v) && v > 0 && Math.abs(v - shown) >= UNCHANGED_EPS) onCommit?.(v)
   }

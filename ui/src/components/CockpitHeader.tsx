@@ -1,3 +1,4 @@
+import type { OperatingSnapshot } from './operatingView'
 // ⚠️ THIS FILE IS **PARTIAL** ON THE i18n LIST (i18n/hardcoded-strings.test.ts) for the CAT
 // pill's two plates alone. The TX-enable latch, Tune, ATU and Stop TX it used to draw for six
 // cockpits — and their deferred labels — moved to the TX strip under the scope
@@ -12,7 +13,7 @@ import { AmpStrip } from './AmpStrip'
 import { WheelRange } from './WheelRange'
 import type { ReactNode, RefObject } from 'react'
 import type { AppSnapshot } from '../types'
-import { isOnAir } from '../types'
+import { observedOnAir } from './operatingView'
 import { bandLabelForMhz, bandRangeForLabel } from '../band'
 import { pushToast } from '../toast'
 import { FrequencyReadout } from './FrequencyReadout'
@@ -64,7 +65,7 @@ export interface CockpitHeaderPower {
 }
 
 export interface CockpitHeaderProps {
-  snap: AppSnapshot
+  snap: OperatingSnapshot
   onSnap?: (s: AppSnapshot) => void
   /** Mode/tier indicator, fixed left region (FT8/FT4 tier · Phone AUTO/USB/LSB/FM · CW badge). */
   modeIndicator: ReactNode
@@ -224,12 +225,12 @@ export function CockpitHeader({
   // Do NOT re-derive this from flags. Ask the arbiter; it ships the reason with the answer.
   const tuneBy = useWheelTune(readoutRef, {
     dialMhz: dial,
-    sideband: radio.sideband || 'USB',
+    sideband: radio.sideband,
     enabled:
       (wheelTune || digitTune) &&
       catOk &&
       !radio.txBusyReason &&
-      !radio.transmitting &&
+      radio.transmitting === false &&
       !radio.rigKeyed && // radio-side keying (mic/straight key, #57) — same live-over rule
       !radio.tuning,
     stepHz: wheelStepHz,
@@ -252,6 +253,7 @@ export function CockpitHeader({
     // `error`: nothing was refused, and an error toast is routed to the assertive live region
     // (i.e. spoken), which would announce a supported destination as a failure.
     onEdge: (mhz) => {
+      if (dial == null) return
       const said = edgeMessage(dial, mhz)
       if (said) pushToast(said, 'info', 3000)
     },
@@ -263,7 +265,7 @@ export function CockpitHeader({
   // key and SSTV all read as "RX" through it — the #57 report (FTdx10, Phone/CW showed no
   // TX). `txBusyReason` ships whenever ANY of the seven owners holds the transmitter; the
   // same rule the wheel-tune gate above already follows.
-  const onAir = isOnAir(radio)
+  const onAir = observedOnAir(radio)
 
   const actionsBox = (
         <div className="ch-actions">
@@ -279,7 +281,7 @@ export function CockpitHeader({
               Elecraft has none). Operator, 2026-09-27: it only ever refuses more. */}
           <AmpStrip
             amp={snap?.radio?.amp ?? null}
-            radioTransmitting={onAir}
+            radioTransmitting={onAir !== false}
           />
 
           {power && (

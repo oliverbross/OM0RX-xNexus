@@ -21,7 +21,7 @@ import type { RadioStatus } from '../types'
  *
  * Drawn AFTER a strip's controls, never between them: Tune, ATU and Stop TX keep their places.
  */
-export function RadioTuneNote({ radio }: { radio: RadioStatus }) {
+export function RadioTuneNote({ radio }: { radio: Pick<RadioStatus, 'flexAtu' | 'flexTune' | 'tuneToneRefused' | 'tuneOverRefused' | 'atuCarrierRefusedMhz' | 'flexTuneRefused' | 'flexAtuRefused'> }) {
   const atu = radio.flexAtu
   const readouts = radio.flexTune ?? atu?.tune
   // Why Tune keys nothing, on any station: the licence refuses Nexus's own tone where it goes out,

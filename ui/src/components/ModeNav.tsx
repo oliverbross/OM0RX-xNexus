@@ -55,6 +55,8 @@ interface Props {
   /** Enabled-set from the feature system — disabled sections are hidden. */
   enabled: Record<FeatureId, boolean>
   onSelect: (view: View) => void
+  /** Explicit external hosts can retain unavailable original controls without repurposing them. */
+  canSelect?: (view: View) => boolean
   /** Live radio tier (TempoFast/TempoDeep/FT8/FT4) — picks which Digital sub-item is active. */
   tier: Tier
   /** Choose a Digital sub-mode: 'digital' opens the weak-signal cockpit on its
@@ -270,6 +272,7 @@ export function ModeNav({
   tier,
   onDigitalMode,
   onClubBoard,
+  canSelect,
   contest,
   runningContest,
   clubBoard = true,
@@ -370,7 +373,8 @@ export function ModeNav({
           className={`mode-btn${view === it.id ? ' active' : ''}`}
           aria-current={view === it.id ? 'page' : undefined}
           aria-label={title}
-          onClick={() => onSelect(it.id)}
+          disabled={canSelect?.(it.id) === false}
+          onClick={() => { if (canSelect?.(it.id) !== false) onSelect(it.id) }}
         >
           <span className="mode-glyph" aria-hidden="true">
             <Icon size={18} strokeWidth={1.75} />
@@ -517,7 +521,8 @@ export function ModeNav({
               className={`mode-btn gear${view === 'settings' ? ' active' : ''}`}
               aria-current={view === 'settings' ? 'page' : undefined}
               aria-label={t('nav.settings.label')}
-              onClick={() => onSelect('settings')}
+              disabled={canSelect?.('settings') === false}
+              onClick={() => { if (canSelect?.('settings') !== false) onSelect('settings') }}
             >
               <span className="mode-glyph" aria-hidden="true">
                 <Settings size={18} strokeWidth={1.75} />

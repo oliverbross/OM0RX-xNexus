@@ -1,3 +1,4 @@
+import type { OperatingSnapshot } from './operatingView'
 // ⚠️ THIS FILE IS ON THE **MIGRATED** LIST (i18n/hardcoded-strings.test.ts): the prose is in
 // the catalog under `cockpit.tuning.*`. Nothing here transmits — every control moves the RX
 // dial or a clarifier — so nothing is deferred.
@@ -47,7 +48,7 @@ export function TuningStrip({
   sensitivity,
   showReadout = true,
 }: {
-  snap: AppSnapshot
+  snap: OperatingSnapshot
   onSnap?: (s: AppSnapshot) => void
   /** Controlled tuning step (Hz), shared with scope wheel-tuning; falls back to internal state. */
   step?: number
@@ -60,7 +61,8 @@ export function TuningStrip({
 }) {
   const { api: { setFrequency, setRit, setXit, setVfo, swapVfo }, can } = useOperateServices()
   const dial = snap.radio.dialMhz
-  const catOk = snap.radio.catOk === true
+  const catOk = snap.radio.catOk === true && dial != null && snap.radio.sideband != null
+    && (snap.backend !== 'xlog' || snap.radio.transmitting === false)
   const [stepInternal, setStepInternal] = useState(100)
   const step = stepProp ?? stepInternal
   const setStep = onStep ?? setStepInternal
@@ -74,13 +76,13 @@ export function TuningStrip({
     // A dial has to BE one. The band lookup used to double as this check (it answers '' for a
     // NaN or an absurd value), so it stays here on its own now that band membership no longer
     // refuses anything.
-    if (!Number.isFinite(mhz) || mhz <= 0) return
+    if (!catOk || dial == null || snap.radio.sideband == null || !can('setFrequency') || !Number.isFinite(mhz) || mhz <= 0) return
     // An EMPTY band label is not a refusal: listening off the ham bands is first-class (operator,
     // 2026-08-13) — WWV, a shortwave broadcaster, the gap between two allocations. This used to
     // toast "outside the band plan" and return, which is what made every ◄/► nudge and every
     // typed entry stop dead at a band edge.
     // In-band keeps the current sideband; crossing 10 MHz follows the band convention (#45).
-    const s = await setFrequency(mhz, bandLabelForMhz(mhz), sidebandForQsy(mhz, snap.radio.dialMhz, snap.radio.sideband)).catch((e) => {
+    const s = await setFrequency(mhz, bandLabelForMhz(mhz), sidebandForQsy(mhz, dial, snap.radio.sideband)).catch((e) => {
       showWhenDriving(e)
       return null
     })
@@ -89,6 +91,7 @@ export function TuningStrip({
   // #273: `steps` whole steps, the first rounding to the step (18.110.250 → 18.111.000 at 1 kHz),
   // in integer Hz so float drift never accumulates on repeated nudges.
   const nudge = (steps: number) => {
+    if (dial == null) return
     void tuneTo(stepFrom(Math.round(dial * 1e6), steps, step) / 1e6)
   }
 
@@ -98,7 +101,7 @@ export function TuningStrip({
   const readoutRef = useRef<HTMLSpanElement>(null)
   useWheelTune(readoutRef, {
     dialMhz: dial,
-    sideband: snap.radio.sideband || 'USB',
+    sideband: snap.radio.sideband,
     enabled: can('setFrequency') && catOk && !snap.radio.txBusyReason && !snap.radio.transmitting,
     stepHz: step,
     sensitivity,

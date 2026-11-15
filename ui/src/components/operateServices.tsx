@@ -19,9 +19,15 @@ const names = [
   'appVersion', 'repairClock', 'getPrivilegeSpans', 'rotatorBearingToCall',
 ] as const satisfies readonly (keyof typeof native)[]
 export type OperateServiceName = typeof names[number]
-export type OperateApi = Pick<typeof native, OperateServiceName>
+export type OperateApi = Omit<Pick<typeof native, OperateServiceName>, 'setFrequency' | 'getSpectrumRow'> & {
+  // An owner command completes with its own receipt and refreshes observations
+  // independently; it must never forge an AppSnapshot to satisfy a callback.
+  setFrequency: (...args: Parameters<typeof native.setFrequency>) => Promise<Awaited<ReturnType<typeof native.setFrequency>> | void>
+  // No new/fresh spectrum is distinct from a real quiet row of samples.
+  getSpectrumRow: (...args: Parameters<typeof native.getSpectrumRow>) => Promise<Awaited<ReturnType<typeof native.getSpectrumRow>> | null>
+}
 export const OPERATE_UNAVAILABLE = 'Unavailable through this station connection.'
-export type OperateAction = 'transmit' | 'stopTransmit' | 'radio' | 'rotator' | 'stopRotator' | 'source' | 'decoder' | 'log' | 'settings' | 'panels' | 'recording' | 'cluster' | 'external' | 'clock' | 'propagation'
+export type OperateAction = 'transmit' | 'stopTransmit' | 'rxMarker' | 'radio' | 'rotator' | 'stopRotator' | 'source' | 'decoder' | 'log' | 'settings' | 'panels' | 'recording' | 'cluster' | 'external' | 'clock' | 'propagation'
 const actionFor: Partial<Record<OperateServiceName, OperateAction>> = {
   atuTune: 'transmit', atuBypass: 'radio', startCq: 'transmit', startRunning: 'transmit',
   startSearchAndPounce: 'transmit', clearDxCall: 'stopTransmit', setSkipTx1: 'transmit',

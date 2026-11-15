@@ -1,3 +1,4 @@
+import type { OperatingSnapshot } from './operatingView'
 // The manual split control — SPLIT toggle, ±1 kHz steps, and the live offset readout.
 //
 // ⭐ ONE COPY, USED BY THREE COCKPITS. It shipped in Phone only, so a CW operator working a
@@ -31,7 +32,7 @@ const SPLIT_STEP_KHZ = 1
 const SPLIT_LIMIT_KHZ = 90
 
 interface Props {
-  snap: AppSnapshot
+  snap: OperatingSnapshot
   /** Apply the snapshot the IPC returns, so the readout does not wait for the next poll. */
   onSnap?: (snap: AppSnapshot) => void
   /** Surface a failure to the operator — silence here reads as "the button is broken". */
@@ -54,7 +55,7 @@ interface Props {
 export function SplitControl({ snap, onSnap, onError, unavailable }: Props) {
   const { api: { setSplit }, can } = useOperateServices()
   unavailable = unavailable ?? (can('setSplit') ? undefined : { title: OPERATE_UNAVAILABLE })
-  const allowed = unavailable == null
+  const allowed = unavailable == null && snap.radio.dialMhz != null
   // Dead with no printed mark: the reason rides on each disabled button instead.
   const quietReason = unavailable && !unavailable.mark ? unavailable.title : undefined
   const failed = (local: string) => () => onError?.(local)
@@ -68,16 +69,18 @@ export function SplitControl({ snap, onSnap, onError, unavailable }: Props) {
   // offset so the readout and the next bump start from the truth, not a stale default.
   const wasSplitOn = useRef(false)
   useEffect(() => {
-    if (splitOn && !wasSplitOn.current && splitTxMhz != null) {
+    if (splitOn && !wasSplitOn.current && splitTxMhz != null && snap.radio.dialMhz != null) {
       setSplitOffsetKhz(Math.round((splitTxMhz - snap.radio.dialMhz) * 1000))
     }
     wasSplitOn.current = splitOn
   }, [splitOn, splitTxMhz, snap.radio.dialMhz])
 
-  const applySplitTx = (offsetKhz: number) =>
-    setSplit(snap.radio.dialMhz + offsetKhz / 1000)
+  const applySplitTx = (offsetKhz: number) => {
+    if (!allowed || snap.radio.dialMhz == null) return
+    return setSplit(snap.radio.dialMhz + offsetKhz / 1000)
       .then((s) => onSnap?.(s))
       .catch(failed(t('phone.split.setFailed')))
+  }
 
   const toggleSplit = () =>
     splitOn
