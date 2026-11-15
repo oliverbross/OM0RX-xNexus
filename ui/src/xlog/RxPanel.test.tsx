@@ -8,6 +8,28 @@ function native(): RxApi {
   return { status:vi.fn(async () => rxOff), start:vi.fn(async mode => ({ ...rxOff, enabled:true, mode, phase:'waiting', reason:'Waiting for xLog sharing.' })), stop:vi.fn(async () => rxOff) }
 }
 describe('xLog receive decoder', () => {
+  it('clears a polling error when a later status request succeeds', async () => {
+    const api = native()
+    api.status = vi.fn().mockRejectedValueOnce(Error('Temporary status outage')).mockResolvedValue(rxOff)
+    render(<RxPanel api={api} connected={true} capable={true} fresh={true} identity="owner" />)
+    await waitFor(() => expect(screen.getByRole('alert').textContent).toContain('Temporary status outage'))
+    await waitFor(() => expect(api.status).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(screen.queryByRole('alert')).toBeNull())
+  })
+  it('retains an action error through a failed poll and successful status recovery', async () => {
+    const api = native()
+    api.status = vi.fn().mockResolvedValueOnce(rxOff).mockRejectedValueOnce(Error('Temporary status outage')).mockResolvedValue(rxOff)
+    api.start = vi.fn().mockRejectedValue(Error('Start outcome requires review'))
+    render(<RxPanel api={api} connected={true} capable={true} fresh={true} identity="owner" />)
+    await waitFor(() => expect(api.status).toHaveBeenCalledOnce())
+    fireEvent.click(screen.getByRole('button', { name:'Start receiving' }))
+    await waitFor(() => expect(screen.getByText(/Start outcome requires review/)).toBeTruthy())
+    await waitFor(() => expect(screen.getByText(/Temporary status outage/)).toBeTruthy())
+    expect(screen.getByText(/Start outcome requires review/)).toBeTruthy()
+    await waitFor(() => expect(vi.mocked(api.status).mock.calls.length).toBeGreaterThanOrEqual(3), { timeout:2000 })
+    await waitFor(() => expect(screen.queryByText(/Temporary status outage/)).toBeNull())
+    expect(screen.getByText(/Start outcome requires review/)).toBeTruthy()
+  })
   it('never starts capture or polls without owner capability', () => {
     const api = native()
     render(<RxPanel api={api} connected={true} capable={false} fresh={true} identity="owner" />)

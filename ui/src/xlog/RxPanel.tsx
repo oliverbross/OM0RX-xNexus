@@ -8,6 +8,7 @@ export function RxPanel({ api=rxApi, connected, capable, needsCapable=false, fre
   const [view, setView] = useState<RxView>(rxOff)
   const [mode, setMode] = useState<RxMode>('FT8')
   const [error, setError] = useState('')
+  const [pollError, setPollError] = useState('')
   const [busy, setBusy] = useState(false)
   const epoch = useRef(0)
   const action = useRef(0)
@@ -39,7 +40,7 @@ export function RxPanel({ api=rxApi, connected, capable, needsCapable=false, fre
   useEffect(() => {
     const generation = ++epoch.current
     pendingAction.current = false
-    setView(rxOff); setError(''); setBusy(false); remember(new Map())
+    setView(rxOff); setError(''); setPollError(''); setBusy(false); remember(new Map())
     if (!connected || !capable) return
     let timer: ReturnType<typeof setTimeout>
     const poll = async () => {
@@ -48,8 +49,8 @@ export function RxPanel({ api=rxApi, connected, capable, needsCapable=false, fre
       try {
         const next = await api.status()
         if (epoch.current !== generation) return
-        if (sequence === action.current) accept(next, requestStarted)
-      } catch (cause) { if (epoch.current === generation && sequence === action.current) { remember(revokeNeeds(leaseRef.current)); setError(String(cause)) } }
+        if (sequence === action.current) { accept(next, requestStarted); setPollError('') }
+      } catch (cause) { if (epoch.current === generation && sequence === action.current) { remember(revokeNeeds(leaseRef.current)); setPollError(String(cause)) } }
       if (epoch.current === generation) timer = setTimeout(poll, 500)
     }
     void poll()
@@ -78,6 +79,7 @@ export function RxPanel({ api=rxApi, connected, capable, needsCapable=false, fre
     </div>
     <p role="status">{connected && capable ? view.reason : 'Enable RX sharing in xLog, then connect with the audio capability.'}</p>
     {error && <p role="alert" className="xn-error">{error}</p>}
+    {pollError && <p role="alert" className="xn-error">{pollError}</p>}
     <p className="xn-hint">Configure and start DAX sharing in xLog, then choose FT8 or FT4 here. Stop receiving before changing decoder.</p>
     <p className="xn-hint">Timing uses this PC’s clock; UTC sync and DAX delay are unverified.</p>
     {connected && !needsCapable && <p className="xn-hint">Needs lookup is not available from this xLog connection. Decoded messages remain Unknown.</p>}
