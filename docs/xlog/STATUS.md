@@ -13,6 +13,9 @@ receive failed an owner clock guard and RX sharing was stopped. The owner fix is
 now installed as xLog 1.6.28. The operator confirmed a fresh pairing/sharing/FT8
 attempt, but at 04:07:59 UTC it failed a distinct 50 ms uncertainty guard
 (50,459 microseconds). No decoded rows/needs were observed or receive soak started.
+Installed 1.6.28 sharing remains stopped. The reviewed recovery correction is in
+clean, pushed xLog 1.6.29 candidate `1ff361bfa4f0d1f92c1f1f0323f9dcd166f1da44`;
+its build is underway, not yet reported packaged or installed.
 It remains unsigned. [The build record](WINDOWS_BUILD_1.24.1-xlog.4.md) binds the
 actual tools, reviewed 12 GiB supervisor, artifacts and warning qualification.
 The packaging freeze is released for reviewed documentation/tooling integration;
@@ -27,8 +30,16 @@ zero decoded rows and no decoded-needs evidence. The operator stopped RX sharing
 An owner metadata-only probe identified 10–17 ms endpoint sample-clock residuals
 against existing 2 ms guards. The reviewed owner correction and restart UI passed
 16 Rust/four UI tests and independent origin-pair replay, then shipped in 1.6.28.
-The fresh 1.6.28 attempt then failed the uncertainty bound; diagnosis is ongoing
-with no further fix chosen. Owner `stopped` state retains the companion subscription
+The fresh 1.6.28 attempt then failed the uncertainty bound. Owner fix
+`9f75def1d41ec695165eca2cc016f2226b687651` now discards invalid intervals and
+recovers with explicit new epochs, preserving raw timestamps and the 50 ms limit.
+Its six-recoveries/rolling-60-seconds operational bound stops persistently failing
+input. Native six-minute metadata observation and exact Buffer replay passed;
+[cross-application recovery acceptance](../../integrations/xlog-paired/RX_RECOVERY_ACCEPTANCE.md)
+also passed against unchanged `.4`: two five-client cases, 19 Worker tests and
+generated FT4 recovery after actual declared-gap/timing discards. These results
+do not qualify live 1.6.29 receive/needs, whose candidate is still building.
+Owner `stopped` state retains the companion subscription
 and can resume on a new valid descriptor, so this is not a terminal UI-state claim.
 Both live failures remain preserved; see [the incident and exact evidence](RX_CLOCK_INCIDENT_2026-11-15.md).
 The project plan is not complete; live RX/needs, physical controls, TX and updated

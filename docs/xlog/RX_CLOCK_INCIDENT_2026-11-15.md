@@ -76,7 +76,8 @@ the earlier 1.6.27 observation and not successful live RX qualification.
 Receipt beside the earlier failure is
 `rx-1.6.28-new-attempt-uncertainty.json`, SHA-256
 `FD536564A009BAA06D75FA52FE3FF53DC7FB6943EEED9B771619EDC48D4B797E`.
-Diagnosis is ongoing; no further timing fix or guard relaxation has been chosen.
+This prompted the bounded interval-recovery correction described below; it did
+not qualify live RX or justify increasing the timestamp uncertainty limit.
 
 Source review of [the native worker](../../src-tauri/src/xlog_rx_worker.rs)
 confirms that an owner `stopped` audio state clears current route/authority and
@@ -87,6 +88,42 @@ Transport failures and explicit Stop have separate handling.
 The 1.6.27 failure and 1.6.28 uncertainty failure both remain preserved. Repeat
 live receive/needs acceptance before promoting either capability; the broader
 project, TX and updated platform/distribution gates remain incomplete.
+
+## Bounded recovery correction and compatibility acceptance
+
+Owner fix `9f75def1d41ec695165eca2cc016f2226b687651` preserves raw timestamps
+and the 50 ms any-origin bound. A startup outlier, an over-budget timing interval
+or a declared audio gap is discarded rather than joined into continuous audio.
+Recovery clears buffered authority and starts an explicit new epoch; subscribers
+must discard old partial periods/facts and wait for a complete new period.
+Physical clock, frame, flag, liveness, route and revocation checks remain.
+At most six interval recoveries are admitted within a rolling 60 seconds;
+exceeding that operational bound stops sharing. It is a bounded failure policy,
+not a measured hardware tolerance or relaxation of the 50 ms contract.
+
+The candidate native owner completed a six-minute metadata-only observation:
+14,397 packets, one startup discard, 14,396 valid packets and zero failures.
+Exact Buffer replay published all 14,396 valid packets without a timing discard.
+That run contained no later gap. Separately, replay of the reproduced failing
+trace's 14,396 rows published 14,393 packets, with one startup discard, one
+timing discard and one declared gap. Both original live failures stay preserved.
+
+[Cross-application recovery acceptance](../../integrations/xlog-paired/RX_RECOVERY_ACCEPTANCE.md)
+passed against that exact owner fix and unchanged `.4` production source `ae35`:
+two five-client SDK/HTTP cases, all 19 native Worker tests, and a paced generated
+FT4 chain through actual owner Buffer/HTTP, SDK, assembler and decoder. Declared
+gap and timing discard each cleared rows/needs; a complete new-epoch period
+decoded again with fresh synthetic owner needs. The 147.5-second guarded run
+peaked at 850,972,672 bytes and exited naturally with zero descendants. All 32
+recorded source hashes stayed unchanged. This is synthetic compatibility evidence,
+not live DAX, actual logbook classification or installed GUI qualification.
+
+The clean, pushed owner candidate is xLog 1.6.29 at
+`1ff361bfa4f0d1f92c1f1f0323f9dcd166f1da44`. Its build is underway; package
+completion and installation are not claimed. Installed 1.6.28 remains the failed
+live candidate with sharing stopped. Live 1.6.29 receive/needs acceptance is
+pending. No xNexus runtime edit, version change or rebuild is required by the
+tested recovery compatibility result.
 
 ## Separate UI backlog: obsolete polling alert
 
