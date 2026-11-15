@@ -8,7 +8,8 @@ build, static artifact audit and independent retention from clean canonical
 `ae35fc6435f861e38029049299833afe57de4885`. The [disposable install/uninstall](WINDOWS_INSTALLER_1.24.1-xlog.4.md)
 passed, followed by native A→B→A profile/lifecycle checks and permanent current-user
 installation. A subsequent explicit installed launch passed; both applications
-were left open at the latest handoff, with xNexus still unpaired.
+were left open. The operator subsequently completed live native pairing, but
+receive failed an owner clock guard and RX sharing is now stopped.
 It remains unsigned. [The build record](WINDOWS_BUILD_1.24.1-xlog.4.md) binds the
 actual tools, reviewed 12 GiB supervisor, artifacts and warning qualification.
 The packaging freeze is released for reviewed documentation/tooling integration;
@@ -17,7 +18,14 @@ and packaged provenance still exact `ae35`. The xLog owner reports
 1.6.27 packages, installation and installed qualification passed. Its current
 documentation is `bb68bbc6` over application source `16cac867`. Its normal installed
 handoff passed a 35-second observation and left xLog open and connected.
-Installed xNexus is open awaiting pairing. The project plan is not complete.
+Installed xNexus paired with the real workspace/protocol 1 and displayed live
+DIGU correctly. Two observations over 46 seconds showed the owner clock error,
+zero decoded rows and no decoded-needs evidence. The operator stopped RX sharing.
+An owner metadata-only probe identified 10–17 ms endpoint sample-clock residuals
+against existing 2 ms guards; a narrowly reviewed owner fix and new xLog candidate
+remain pending. See [the incident and exact evidence](RX_CLOCK_INCIDENT_2026-11-15.md).
+The project plan is not complete; live RX/needs, physical controls, TX and updated
+platform/distribution qualification remain open.
 
 At that handoff, the owner verified installed host PID 27440 and worker PID 17076,
 10.136 MHz DIGU, receive slice A, TX idle and connected FLEX/rotor/KPA/KAT.
@@ -34,8 +42,9 @@ at `ae35`, with a blank unpaired view. One pairing-button click failed because
 input geometry was unavailable, and no blind retries followed. Both applications
 were left open. The operator was asked to select the native pairing file, confirm
 current A/RX1 and enable sharing in xLog, then choose FT8 and Start receiving in
-xNexus. No credential/path is recorded here. Native paired/RX acceptance remains
-pending; this automation limitation does not establish an endpoint/radio failure.
+xNexus. The operator then completed those steps, establishing the narrow pairing
+pass and subsequent clock failure recorded above. No credential/path is recorded
+here. The original automation failure remains separate from that live RX failure.
 
 **Preserved isolation failure:** the fresh Mac `.2` profile displayed a draft from
 the prior `.1` test before pairing. Both processes exited normally and no station
