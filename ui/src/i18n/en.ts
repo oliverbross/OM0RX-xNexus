@@ -15468,11 +15468,13 @@ export const EN = {
   'rotor.owner.coincident': 'Coincident positions: no bearing',
   'rotor.owner.antipodal': 'Antipodal positions: no bearing',
   'rotor.owner.receipt': 'Point request {{id}}: {{status}}',
-  'rotor.owner.pending': 'Point request pending',
-  'rotor.owner.uncertain': 'Point outcome unknown; no retry sent',
-  'rotor.owner.notSent': 'Point not sent',
+  'rotor.owner.pending': 'Pending',
+  'rotor.owner.uncertain': 'Unknown; no retry',
+  'rotor.owner.notSent': 'Not sent',
   'rotor.owner.laterMatch': ' · Later snapshot {{deg}}°T matches target; not a motion confirmation',
   'rotor.owner.laterOther': ' · Later snapshot {{deg}}°T differs from target',
+  'rotor.owner.lastPoint': 'Last Point: {{status}} · {{deg}}°T',
+  'rotor.owner.inspect': 'Inspect last Point request',
   // What a point-at-call's bearing was taken to, the `{{to}}` at the end of every "pointing
   // antenna" toast: the station's own grid, the position its callbook entry gives, or only the
   // centre of its country (a tester was sent 20° wide by that and could not tell). `{{grid}}` is

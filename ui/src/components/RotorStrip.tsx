@@ -22,6 +22,7 @@ import { t } from '../i18n'
 import { pollSingleFlight } from '../singleFlight'
 import type { ExternalRotorPresentation } from './rotorExternal'
 import { bearingReason } from '../xlog/ownerBearingMessages'
+import { Tooltip, TooltipProvider } from './ui/Tooltip'
 
 /** The strip's annunciator plates — what the chip is, in the shortest form that fits a cockpit
  *  header bar. Instrument marks rather than sentences (the CwCockpit `SPLIT ▲` / `REC` class),
@@ -87,7 +88,14 @@ function OwnerRotorStrip({ source }: { source: ExternalRotorPresentation }) {
   const bearing = source.bearing, facts = bearing?.current() ? bearing.facts : null
   const evidence = bearing?.evidence
   if (az === null && !canStop && !bearing) return null
-  const deg = az === null ? null : Math.round(az)
+  // Display precision only. Retained facts and the Point callback keep exact angles.
+  const deg = az === null ? null : az.toFixed(1)
+  const pointStatus = evidence?.settlement.kind === 'receipt' ? evidence.settlement.receipt.status
+    : evidence?.settlement.kind === 'pending' ? t('rotor.owner.pending')
+    : evidence?.settlement.kind === 'uncertain' ? t('rotor.owner.uncertain') : t('rotor.owner.notSent')
+  const pointSummary = evidence ? t('rotor.owner.lastPoint', {
+    status: pointStatus, deg: evidence.intent.command.azimuth_deg.toFixed(1),
+  }) : ''
   return <span role="group" aria-label={t('rotor.strip.aria')}
     style={{ display: 'inline-flex', alignItems: 'center', flexWrap: 'wrap', gap: '0.35rem', color: 'inherit' }}>
     <span style={{ fontSize: '0.65em', letterSpacing: '0.08em', opacity: 0.55, fontWeight: 600 }} aria-hidden>{ROTOR_PLATE}</span>
@@ -101,7 +109,7 @@ function OwnerRotorStrip({ source }: { source: ExternalRotorPresentation }) {
       <button type="button" style={chipStyle} disabled={!bearing.canRead()} onClick={() => { void bearing.read() }}>
         {t('rotor.owner.read', { call: bearing.callsign })}</button>
       {facts?.status === 'available' && facts.geometry && facts.target ? <>
-        <span className="mono">{t('rotor.owner.paths', { sp: String(facts.geometry.short_path_deg), lp: String(facts.geometry.long_path_deg) })}</span>
+        <span className="mono">{t('rotor.owner.paths', { sp: facts.geometry.short_path_deg.toFixed(1), lp: facts.geometry.long_path_deg.toFixed(1) })}</span>
         <span>{facts.target.precision === 'historical_grid_cell_center'
           ? t('rotor.owner.historical', { grid: facts.target.grid ?? '—' }) : t('rotor.owner.approximate')}</span>
       </> : <span role="status">{bearing.state === 'loading' ? t('rotor.owner.loading') : bearingReason(facts?.reason ?? null)}</span>}
@@ -110,13 +118,15 @@ function OwnerRotorStrip({ source }: { source: ExternalRotorPresentation }) {
       <button type="button" style={chipStyle} disabled={!bearing.canPoint()} onClick={() => { void bearing.point(true) }}
         title={t('rotor.strip.pointAtLong.title', { call: bearing.callsign })}>{LONG_PATH}</button>
       {evidence && <span role="status">
-        <span className="mono">{`${evidence.intent.command.rotor_id} → ${evidence.intent.command.azimuth_deg}°T · `}</span>
-        {evidence.settlement.kind === 'receipt' ? t('rotor.owner.receipt', { id: evidence.intent.requestId, status: evidence.settlement.receipt.status })
-          : evidence.settlement.kind === 'pending' ? t('rotor.owner.pending')
-          : evidence.settlement.kind === 'uncertain' ? t('rotor.owner.uncertain') : t('rotor.owner.notSent')}
+        <TooltipProvider><Tooltip side="bottom" content={<div style={{ overflowWrap: 'anywhere' }}>
+          <div>{t('rotor.owner.receipt', { id: evidence.intent.requestId, status: pointStatus })}</div>
+          <div className="mono">{`${evidence.intent.command.rotor_id} → ${evidence.intent.command.azimuth_deg}°T`}</div>
+        </div>}>
+          <button type="button" style={chipStyle} aria-label={`${pointSummary} · ${t('rotor.owner.inspect')}`}>{pointSummary}</button>
+        </Tooltip></TooltipProvider>
         {bearing.observationCurrent() && evidence.observation.kind === 'snapshot' && !evidence.retired && evidence.observation.deadline > now
-          ? evidence.observation.matchesTarget ? t('rotor.owner.laterMatch', { deg: String(evidence.observation.azimuthDeg) })
-            : t('rotor.owner.laterOther', { deg: String(evidence.observation.azimuthDeg) }) : ''}
+          ? evidence.observation.matchesTarget ? t('rotor.owner.laterMatch', { deg: evidence.observation.azimuthDeg.toFixed(1) })
+            : t('rotor.owner.laterOther', { deg: evidence.observation.azimuthDeg.toFixed(1) }) : ''}
       </span>}
     </>}
     <button type="button" style={chipStyle} title={t('rotor.pane.stop.title')} aria-label={t('rotor.pane.stop.title')}
