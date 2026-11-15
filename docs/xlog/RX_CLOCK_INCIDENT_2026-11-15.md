@@ -151,8 +151,9 @@ Before six minutes, the owner reported:
 Rows and route cleared. The native healthy-receive soak stopped immediately;
 both applications were left open and no input was performed. A separate owner
 process/socket observer may finish, but cannot establish uninterrupted RX.
-The cause of this native E_FAIL remains unconfirmed; bounded read-only needs
-diagnosis and targeted native failure instrumentation are being prepared.
+The generic live E_FAIL alone does not identify its predicate. Subsequent
+diagnostic evidence and the separate corrections are recorded below; none
+retroactively qualifies this failed installed attempt.
 
 Decoded-call needs also remain unqualified. Twelve fresh decoded rows initially
 showed Awaiting, then lookup/classification unavailable or expired; no decoded
@@ -166,13 +167,65 @@ It records a failed live attempt. No station calls, workspace/device identifiers
 or credentials are reproduced here. All prior failures and synthetic recovery
 results retain their original scope; live RX stability and decoded needs remain open.
 
-## Separate UI backlog: obsolete polling alert
+## Diagnostic clock correction and unresolved live stability
 
-Source review of [RxPanel](../../ui/src/xlog/RxPanel.tsx) confirms that a status-poll
-catch sets the local `error` alert, while subsequent successful `api.status()`
-acceptance updates the view/needs leases without clearing that error. A transient
-poll failure can therefore leave an obsolete alert until an action or connection
-effect clears it. This is a separate backlog defect, not an explanation for the
-fresh owner uncertainty reason above. Add a failure-then-success recovery test
-and clear only the appropriately superseded polling error when implementing it;
-no runtime edit or new package is part of this checkpoint.
+The exact installed-source metadata probe reproduced E_FAIL after 11.203 seconds.
+Only predicate bit 64 failed: the UTC/QPC correlation bracket measured
+21,567 × 100 ns, exceeding the existing 1 ms limit. Capture HRESULTs were S_OK,
+packet size 1,200, flags zero and packet age 42.99 ms. This identifies a reproduced
+failure path; it does not establish that every generic live E_FAIL has that cause.
+
+Owner correction `fa312941188991c6cf5a1a7e7c6bf8241c450647` retries only a
+positive oversized bracket, at most three times, using the actual accepted
+attempt's clocks and the unchanged inclusive 1 ms limit. Failed/backward QPC
+remains fatal. It also releases local COM interfaces before CoUninitialize on
+open failure. The earlier diagnostic incorrectly passed CPAL's display identifier
+to the raw endpoint API, exposing that cleanup bug; those probe access violations
+are separate from the installed receive failure. Hardware-free native open/read
+tests passed, including exact HRESULT preservation and balanced apartment cleanup.
+
+A later clock-retry capture still failed after 2.469 seconds/87 metadata records
+with generic E_FAIL. The next instrumented capture, `capture-20261115-065856`,
+failed after 19.422 seconds/752 records with only mask 512: packet age
+543.01265 ms exceeded the unchanged 250 ms age limit. DATA_DISCONTINUITY was set;
+the first correlation attempt was valid at 0.5 microseconds. The reader correctly
+rejected stale audio. Both probes used BelowNormal process priority, whereas
+installed xLog runs Normal. No age, clock, packet-size or recovery limit was widened.
+
+The Normal-priority repeat, `capture-20261115-070404`, passed 360,000 ms with
+14,388 metadata records: 14,382 publishable, one startup discard and five declared
+gap results. Three publishable packets used the second clock attempt; there was
+no fatal result. The actual probe priority was verified, root/final results were
+zero and cleanup was confirmed. Trace SHA-256:
+`97EC6DB6B913159911D20F348D303275EA619F8C00D6772E15CBFB6DE53A48FA`.
+This qualifies that native diagnostic capture only. Replay through the exact
+production Buffer and installed paired acceptance remain pending. All original
+failed receipts remain preserved; no `.31`/`.5` installed acceptance is claimed.
+
+## Decoded-needs correction remains in qualification
+
+Owner `979b7ff748992c73ee99571eabb65b0a5e68a20e` makes classification completion
+nonblocking across existing cluster polls, preserving original result age and
+worker/workspace/authority/mutation fencing. Its complete Windows host compiled
+and 40 focused tests passed. This changes neither the SDK's one-second HTTP timeout
+nor two-second evidence TTL and starts no new station poller or connection.
+
+The coordinated Nexus native scheduler/cache change is still uncommitted. Tests
+found that cache freshness could remain true for a submillisecond interval after
+the serialized remaining lifetime had rounded to zero. The reviewed correction
+aligns freshness with a positive serialized lifetime; native validation remains
+pending. Installed `.4`/xLog `1.6.30` are unchanged. A passing owner fixture does
+not qualify decoded-call classification; both corrected candidates and paired
+acceptance are still required.
+
+## Polling alert fixed in source, not yet installed
+
+[RxPanel](../../ui/src/xlog/RxPanel.tsx) previously retained a status-poll error
+after successful refresh and could overwrite an action error with a poll failure.
+Commit `4f4d431c88f0f1481084a20c71aad09721a9b9aa` separates those channels:
+successful status refresh clears its polling error while preserving action errors.
+Failure-then-success and action-error persistence regressions failed before the
+fix and passed afterward. Together with the independent band-map identity fix,
+26 focused UI tests passed with no retained processes. Installed `.4` still has
+the original behavior; integrated frontend/browser and new candidate gates remain.
+This UI correction is not an explanation or repair for fresh owner timing errors.

@@ -3,6 +3,47 @@
 The integration remains in qualification. Source, synthetic tests, packaged
 binaries and physical station acceptance are separate evidence levels.
 
+## Current source checkpoint
+
+Installed applications remain xNexus `.4` at `ae35fc643` and xLog `1.6.30`
+at `8795606b`; no subsequent source fix below is installed or live-qualified.
+The native metadata diagnostic reproduced an oversized UTC/QPC correlation
+bracket. Owner correction `fa312941188991c6cf5a1a7e7c6bf8241c450647`
+adds bounded correlation retries without widening the 1 ms limit and fixes
+COM cleanup on open failure. A later clock-retry capture still failed with
+generic E_FAIL after 2.469 seconds/87 records; that run did not identify its
+predicate. A subsequent instrumented run failed after 19.422 seconds/752 records:
+only the packet-age predicate failed (543.01265 ms, with DATA_DISCONTINUITY).
+Its first correlation attempt was valid at 0.5 microseconds. Stale audio was
+correctly rejected; this does not prove the installed failure's cause. Both
+probes ran BelowNormal, unlike the installed Normal-priority owner; a separate
+Normal-priority diagnostic then passed 360,000 ms with 14,388 metadata records:
+14,382 publishable, one startup discard and five declared gaps, with no fatal
+result. Three publishable packets used the second clock attempt. Root/final
+results were zero and cleanup was confirmed. This is native-only capture evidence;
+exact production Buffer replay and installed paired acceptance remain pending.
+No production limit changed.
+See [the preserved diagnostic sequence](RX_CLOCK_INCIDENT_2026-11-15.md).
+
+Owner classification-cache correction
+`979b7ff748992c73ee99571eabb65b0a5e68a20e` passed 40 focused Windows host tests
+(nine needs, 20 cluster, nine projection and two worker-routing tests). The
+coordinated Nexus native scheduler/cache work remains uncommitted: tests exposed
+a submillisecond cache/view lifetime mismatch. The view floors remaining lifetime
+to zero before the precise deadline, while cache admission still used that deadline.
+The reviewed correction aligns admission with positive serialized lifetime;
+its native tests remain pending, so its acceptance is not complete.
+Neither owner-only tests nor this pending consumer change qualify live needs.
+
+Two independent UI fixes are now on canonical main: exact band-map row-to-owner
+identity (`30ee3e98a9aab1889835186146ff093ce4a290eb`) and separate polling/action
+error state (`4f4d431c88f0f1481084a20c71aad09721a9b9aa`). Both had failing-first
+regressions; 26 focused tests then passed (five band-map, six receive-panel,
+15 needs-lease tests), with no remaining test processes. The receipt SHA-256 is
+`FE901636C2E26F98656FFEA5B0C630CD402A16700F90D286F691D8FD345BC947`.
+These fixes still require the integrated candidate frontend/browser gates and
+a new packaged version; the running `.4` has not changed.
+
 [Candidate 1.24.1-xlog.4](CANDIDATE_1.24.1-xlog.4.md) has a completed Windows
 build, static artifact audit and independent retention from clean canonical
 `ae35fc6435f861e38029049299833afe57de4885`. The [disposable install/uninstall](WINDOWS_INSTALLER_1.24.1-xlog.4.md)
@@ -36,8 +77,9 @@ from 06:07:09.881 to 06:11:38.140 UTC showed actual new FT8 periods, rows increa
 six minutes, `RX device/timestamp discontinuity (0x80004005); restart sharing.`
 cleared the route/rows. The healthy-RX soak stopped immediately, with no input;
 apps were left open. Decoded-call needs showed Awaiting/unavailable/expired,
-never qualified Needed/Worked. Native failure cause remains unconfirmed and
-bounded read-only diagnosis/instrumentation is underway. The earlier tests
+never qualified Needed/Worked. The later metadata diagnostic reproduced one
+clock-bracket failure path, but its correction has not passed live qualification
+and a subsequent generic failure remains under investigation. The earlier tests
 are not retroactively reclassified as actual retained-owner wiring proof.
 It remains unsigned. [The build record](WINDOWS_BUILD_1.24.1-xlog.4.md) binds the
 actual tools, reviewed 12 GiB supervisor, artifacts and warning qualification.
@@ -150,9 +192,10 @@ These sets cover different boundaries and are not a combined coverage claim.
 
 ## xLog coordination
 
-The latest integrated xNexus application source is
+The integrated decoded-needs baseline is
 `0d01248b0504ae77f6f122fdada1b21e4a61806b`. Full Windows frontend and native
-all-targets checks passed. A generated FT4 signal also passed through the real
+all-targets checks passed on that source; the newer UI source checkpoint above
+has only its stated focused checks. A generated FT4 signal also passed through the real
 decoder and owner HTTP/validator path into classification, pending-operation
 revocation, expiry and Stop. Its classifier is synthetic; the actual Swift
 reply replay remains separate evidence. See
@@ -253,7 +296,7 @@ The operator confirmed FLEX slice A → DAX Audio RX 1. Verify that explicit
 selection against current FLEX metadata and the active stable endpoint before
 capture; channel 1 is not an inferred default. An earlier read-only active-input
 probe found ten active inputs and none DAX, although DAX devices were registered.
-No DAX utility or stream was started by that probe. Live reception remains pending.
+No DAX utility or stream was started by that probe. Later operator-started live reception produced decodes, but sustained receive qualification remains open after the recorded failures.
 
 Receive timing reports host endpoint clock calibration, not a measured global
 UTC accuracy or endpoint-to-RF delay. Both latter values remain explicitly
@@ -273,9 +316,24 @@ Transmission is unavailable in companion mode.
 The native outbox retains up to 10,000 operations, including terminal receipts.
 An archive/export flow remains a long-term operational item.
 
-A separate source-confirmed UI backlog item remains: RxPanel's successful status
-poll does not clear an earlier poll-error alert. The [incident record](RX_CLOCK_INCIDENT_2026-11-15.md)
-distinguishes that obsolete-alert risk from the fresh owner timing failure.
+The obsolete RxPanel polling-alert defect is fixed in source at `4f4d431c`:
+successful polling clears only its own error and preserves action errors.
+Installed `.4` still contains the old behavior. The
+[incident record](RX_CLOCK_INCIDENT_2026-11-15.md) distinguishes that alert from
+fresh owner timing failures; the fix does not repair capture timing.
+
+## Remaining software work after the immediate RX/needs corrections
+
+The remaining plan is not only physical acceptance. Prioritized independent
+software slices and their gates are recorded in
+[the delivery plan](PROJECT_PLAN.md#next-independent-software-slices).
+They include accepted-control receipt reconciliation, durable outbox archive/export,
+actual-owner native logbook lifecycle coverage, richer confirmation/award evidence,
+propagation-view reuse and offline TX ownership/scheduling implementation.
+Updated platform builds, source/license delivery and upstream promotion also
+remain open. Supervised radio/rotator movement, actual log-change propagation,
+TX commissioning and final installed qualification are separate gates; none is
+inferred from the passing component tests.
 
 Full Windows GNU all-targets compilation passed on exact RX runtime `e3ae1534`
 with pinned Rust 1.93.1 and locked dependencies. The isolated receipt verified

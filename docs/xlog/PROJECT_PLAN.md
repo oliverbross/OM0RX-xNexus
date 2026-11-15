@@ -100,6 +100,27 @@ M6's remaining transmit boundary is recorded in the
 enabled; offline implementation gates and supervised station acceptance remain
 separate requirements.
 
+### Next independent software slices
+
+Checkpoint: 15 November 2026, after the source-only band-map identity and
+polling-alert fixes at `4f4d431c`. Installed `.4`/xLog `1.6.30` remain unchanged.
+The immediate receive/decoded-needs corrections still need integrated tests,
+new source/version receipts and live qualification. The work below can be
+prepared independently in isolated branches without operating the station.
+
+| Priority / milestone | Concrete software work | Source seam and exit evidence |
+|---|---|---|
+| 1 / M4 | Reconcile accepted control requests with later owner observations; retain uncertain outcomes without automatic resubmission | `ui/src/xlog/App.tsx`, `api.ts`, `src-tauri/src/xlog_mode.rs` and owner command receipts. Current UI reports Accepted/awaiting observation but exposes no follow-up control status. Test delayed confirmation, rejection, replacement and disconnect through actual owner handlers. |
+| 2 / M5 | Complete Windows native create/edit/receipt/restart coverage against a disposable actual-owner SQLite workspace; design terminal receipt archive/export | `integrations/xlog/src/outbox.rs`, native queue endpoints and `QsoPanel.tsx`. Current outbox retains terminal operations and refuses new entries at 10,000. Archive must preserve uncertain work, immutable request IDs, auditability and duplicate protection across crashes. No production-log mutation is part of this software gate. |
+| 3 / M3 | Expand owner confirmation/award provenance and its presentation, then reuse propagation views without starting independent station services | `HistoryPanel.tsx`/history DTO currently expose worked/confirmed booleans; companion views reuse band/offline world maps, not the propagation engine. Add actual-producer fixtures for source-specific eligibility, corrections and revision changes; keep propagation evidence distinct from authoritative owner needs. |
+| 4 / M6 | Implement the reviewed TX draft's offline owner state machine, durable one-shot journal and independent release before a hardware backend; then modem/scheduler and bounded protocol | [TX_DESIGN_DRAFT.md](TX_DESIGN_DRAFT.md). Use fake transports/clocks and disposable journals for lost replies, blocked acquisition, stale release, restart without replay and timing bounds. Wire limits and ownership contracts require owner agreement; no TX capability or RF qualification follows from offline tests. |
+| 5 / M7–M8 | Run updated integrated frontend/native gates and prepare same-source platform artifacts, corresponding source/licenses and maintenance evidence | `scripts/xnexus`, platform build receipts and `PATCH_INVENTORY.md`. Resume resource-held Mac/Linux checks without lowering guards; audit produced artifacts, and rehearse any upstream promotion against the final integrated source. Signing/notarization and native platform lifecycle remain explicit release gates. |
+
+Physical Tune/Point/Stop, live log-change propagation, sustained DAX reception and
+TX commissioning require their own supervised acceptance. Do not close M3–M8
+because the software slices or synthetic fixtures pass, and do not describe
+unfinished software implementation as merely awaiting hardware testing.
+
 ### M1b xLog implementation checklist
 
 - Obtain owner agreement after the current worker-startup fix is committed/released.
