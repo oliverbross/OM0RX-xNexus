@@ -20,20 +20,28 @@ probes ran BelowNormal, unlike the installed Normal-priority owner; a separate
 Normal-priority diagnostic then passed 360,000 ms with 14,388 metadata records:
 14,382 publishable, one startup discard and five declared gaps, with no fatal
 result. Three publishable packets used the second clock attempt. Root/final
-results were zero and cleanup was confirmed. This is native-only capture evidence;
-exact production Buffer replay and installed paired acceptance remain pending.
-No production limit changed.
+results were zero and cleanup was confirmed. Exact production Buffer replay also
+passed: 14,382 published packets, five recovered gaps and zero timing discards.
+Installed paired acceptance remains pending. No production limit changed.
 See [the preserved diagnostic sequence](RX_CLOCK_INCIDENT_2026-11-15.md).
 
 Owner classification-cache correction
 `979b7ff748992c73ee99571eabb65b0a5e68a20e` passed 40 focused Windows host tests
 (nine needs, 20 cluster, nine projection and two worker-routing tests). The
-coordinated Nexus native scheduler/cache work remains uncommitted: tests exposed
-a submillisecond cache/view lifetime mismatch. The view floors remaining lifetime
-to zero before the precise deadline, while cache admission still used that deadline.
-The reviewed correction aligns admission with positive serialized lifetime;
-its native tests remain pending, so its acceptance is not complete.
-Neither owner-only tests nor this pending consumer change qualify live needs.
+coordinated Nexus scheduler/cache correction is integrated at
+`9383d286c480fd94820cf63a6651ef6d6f717076`: bounded pending groups preserve query
+identity across transient misses, and cache admission matches positive serialized
+lifetime. All 23 focused native tests passed; the independent-phase 179/200-row
+matrix had already passed. See [the focused evidence](NEEDS_PENDING_RETRY.md).
+The [actual owner cache/mailbox → SDK → generated FT4 native Worker chain](../../integrations/xlog-paired/NEEDS_CACHE_CHAIN.md)
+also passed using those exact product sources and owner `979b7ff7`: four queries,
+two poll classifications, same-ID 503-to-Known recovery with original timestamps
+and TTL, Unknown with continued PCM, fresh Known, Stop and normal shutdown.
+A separately reviewed Normal-priority replay used identical compiled bytes after
+the initial BelowNormal attempt failed its unchanged synthetic pacing guard.
+Both attempts are preserved; the passing Job exited 0 with zero descendants.
+Classification was synthetic, not a Swift logbook; neither this chain nor owner
+tests qualify live decoded-needs operation. Installed `.4`/`1.6.30` are unchanged.
 
 Two independent UI fixes are now on canonical main: exact band-map row-to-owner
 identity (`30ee3e98a9aab1889835186146ff093ce4a290eb`) and separate polling/action
