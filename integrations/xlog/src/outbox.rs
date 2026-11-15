@@ -4,18 +4,22 @@
 //!
 //! Enqueue and attempt markers are synced before reporting success/network dispatch.
 //! Crash after dispatch leaves NeedsReceipt, never automatic resend. Records remain
-//! bound to one persistent workspace. Terminal receipts are retained, not deleted.
-//! Atomic publication uses a same-directory rename into a never-existing filename;
+//! bound to one persistent workspace. Terminal receipts may be archived, never forgotten.
+//! Atomic publication never replaces an existing filename (Unix hard-link commit,
+//! Windows write-through move); temporary files are not authoritative.
 //! partial temporary files are not authoritative. Corrupt committed files fail closed.
 use crate::{bounded, commands::valid_request_id, frequency, CommandReceipt, CommandStatus};
 use crate::{BridgeClient, Command, Error};
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     fs::{self, File, OpenOptions},
     io::{Read, Write},
     path::{Path, PathBuf},
 };
+mod archive;
+pub use archive::ArchiveOutcome;
+const MAX_ACTIVE_ENTRIES: usize = 10_000;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -169,7 +173,7 @@ impl std::fmt::Display for OutboxError {
             Self::WorkspaceChanged => "The queued QSO belongs to a different xLog workspace",
             Self::NotFound => "Queued QSO not found",
             Self::ReceiptRequired => "Check the xLog receipt before retrying this QSO",
-            Self::Full => "The QSO queue has reached its retained-record limit",
+            Self::Full => "The active QSO queue or its retained journal files reached their limit",
         })
     }
 }
@@ -193,6 +197,8 @@ pub struct Outbox {
     root: PathBuf,
     _lock: File,
     entries: BTreeMap<String, OutboxEntry>,
+    archive_cleanup_pending: BTreeSet<String>,
+    active_limit: usize,
 }
 impl Outbox {
     /// An explicit user action, never a timer. A previous uncertain attempt is
@@ -203,7 +209,7 @@ impl Outbox {
         request_id: &str,
     ) -> Result<CommandReceipt, DeliveryError> {
         let hello = client.hello().ok_or(Error::Disconnected)?;
-        let entry = self.entry(request_id, &hello.workspace_id)?.clone();
+        let entry = self.entry(request_id, &hello.workspace_id)?;
         match entry.state {
             OutboxState::Settled(receipt) => Ok(receipt),
             OutboxState::NeedsReceipt => self.reconcile(client, request_id),
@@ -223,7 +229,9 @@ impl Outbox {
         request_id: &str,
     ) -> Result<CommandReceipt, DeliveryError> {
         let hello = client.hello().ok_or(Error::Disconnected)?;
-        self.entry(request_id, &hello.workspace_id)?;
+        if let OutboxState::Settled(receipt) = self.entry(request_id, &hello.workspace_id)?.state {
+            return Ok(receipt);
+        }
         let receipt = client
             .receipt(request_id)?
             .ok_or(OutboxError::ReceiptRequired)?;
@@ -240,7 +248,7 @@ impl Outbox {
         request_id: &str,
     ) -> Result<CommandReceipt, DeliveryError> {
         let hello = client.hello().ok_or(Error::Disconnected)?;
-        let entry = self.entry(request_id, &hello.workspace_id)?.clone();
+        let entry = self.entry(request_id, &hello.workspace_id)?;
         if entry.state != OutboxState::NeedsReceipt {
             return self.submit(client, request_id);
         }
@@ -265,21 +273,24 @@ impl Outbox {
         Ok(receipt)
     }
     pub fn open(root: impl AsRef<Path>) -> Result<Self, OutboxError> {
-        let root = root.as_ref();
-        fs::create_dir_all(root).map_err(|_| OutboxError::Io)?;
-        if fs::symlink_metadata(root)
-            .map_err(|_| OutboxError::Io)?
-            .file_type()
-            .is_symlink()
-        {
+        Self::open_with_limit(root, MAX_ACTIVE_ENTRIES)
+    }
+    // The public API always uses MAX_ACTIVE_ENTRIES. A lower internal limit
+    // lets crash/capacity tests exercise the real I/O path without 10,000 files.
+    fn open_with_limit(root: impl AsRef<Path>, active_limit: usize) -> Result<Self, OutboxError> {
+        if !(1..=MAX_ACTIVE_ENTRIES).contains(&active_limit) {
             return Err(OutboxError::Invalid);
         }
+        let root = root.as_ref();
+        fs::create_dir_all(root).map_err(|_| OutboxError::Io)?;
+        archive::checked_directory(root)?;
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
             fs::set_permissions(root, fs::Permissions::from_mode(0o700))
                 .map_err(|_| OutboxError::Io)?;
         }
+        archive::checked_optional_file(&root.join("queue.lock"))?;
         let lock = OpenOptions::new()
             .read(true)
             .write(true)
@@ -291,20 +302,38 @@ impl Outbox {
         let mut entries = BTreeMap::new();
         let mut attempts = Vec::new();
         let mut settled = Vec::new();
+        let mut archive_cleanup_pending = BTreeSet::new();
         let mut count = 0;
         for item in fs::read_dir(root).map_err(|_| OutboxError::Io)? {
             let item = item.map_err(|_| OutboxError::Io)?;
             let name = item.file_name();
             let name = name.to_str().ok_or(OutboxError::Corrupt)?;
             count += 1;
-            if count > 30_001 {
+            // 10,000 active three-file journals, lock, and two private directories.
+            // Archived contents are deliberately not enumerated at startup.
+            if count > active_limit * 3 + 3 {
                 return Err(OutboxError::Full);
             }
             if name == "queue.lock" || name.ends_with(".tmp") {
                 continue;
             }
-            if item.file_type().map_err(|_| OutboxError::Io)?.is_symlink() {
-                return Err(OutboxError::Corrupt);
+            if matches!(name, "archive-v1" | "exports-v1") {
+                archive::checked_directory(&item.path())?;
+                continue;
+            }
+            archive::checked_optional_file(&item.path())?;
+            if let Some(id) = archive::journal_id(name) {
+                if let Some(retained) = archive::read_archived(root, id).map_err(|error| {
+                    if error == OutboxError::Invalid {
+                        OutboxError::Corrupt
+                    } else {
+                        error
+                    }
+                })? {
+                    archive::validate_fragment(&item.path(), name, &retained)?;
+                    archive_cleanup_pending.insert(retained.queued.request_id);
+                    continue;
+                }
             }
             if let Some(id) = name.strip_suffix(".queued.json") {
                 let queued: QueuedQso = read_json(&item.path())?;
@@ -316,13 +345,21 @@ impl Outbox {
                 {
                     return Err(OutboxError::Corrupt);
                 }
-                entries.insert(
-                    id.to_owned(),
-                    OutboxEntry {
-                        queued,
-                        state: OutboxState::Pending,
-                    },
-                );
+                if entries.len() >= active_limit {
+                    return Err(OutboxError::Full);
+                }
+                if entries
+                    .insert(
+                        id.to_ascii_lowercase(),
+                        OutboxEntry {
+                            queued,
+                            state: OutboxState::Pending,
+                        },
+                    )
+                    .is_some()
+                {
+                    return Err(OutboxError::Corrupt);
+                }
             } else if let Some(id) = name.strip_suffix(".attempted.json") {
                 let attempt: Attempt = read_json(&item.path())?;
                 if attempt.version != 1 || attempt.request_id != id || !valid_request_id(id) {
@@ -340,16 +377,21 @@ impl Outbox {
             }
         }
         for a in attempts {
-            let e = entries.get_mut(&a.request_id).ok_or(OutboxError::Corrupt)?;
-            if e.queued.workspace_id != a.workspace_id {
+            let e = entries
+                .get_mut(&a.request_id.to_ascii_lowercase())
+                .ok_or(OutboxError::Corrupt)?;
+            if e.queued.workspace_id != a.workspace_id || e.queued.request_id != a.request_id {
                 return Err(OutboxError::Corrupt);
             }
             e.state = OutboxState::NeedsReceipt;
         }
         for r in settled {
-            let e = entries.get_mut(&r.request_id).ok_or(OutboxError::Corrupt)?;
+            let e = entries
+                .get_mut(&r.request_id.to_ascii_lowercase())
+                .ok_or(OutboxError::Corrupt)?;
             if e.state != OutboxState::NeedsReceipt
                 || e.queued.workspace_id != r.workspace_id
+                || e.queued.request_id != r.request_id
                 || !terminal(r.status)
                 || !receipt_matches_contact(&r, &e.queued.mutation)
             {
@@ -357,10 +399,15 @@ impl Outbox {
             }
             e.state = OutboxState::Settled(r);
         }
+        if entries.len() + archive_cleanup_pending.len() > active_limit {
+            return Err(OutboxError::Full);
+        }
         Ok(Self {
             root: root.to_path_buf(),
             _lock: lock,
             entries,
+            archive_cleanup_pending,
+            active_limit,
         })
     }
     pub fn entries(&self) -> Vec<OutboxEntry> {
@@ -382,19 +429,21 @@ impl Outbox {
             workspace_id: workspace_id.into(),
             mutation,
         };
-        if let Some(e) = self.entries.get(request_id) {
+        if let Some(e) = self.lookup(request_id)? {
             return if e.queued == queued {
                 Ok(())
             } else {
                 Err(OutboxError::Reused)
             };
         }
-        if self.entries.len() >= 10_000 {
+        // Incomplete archive cleanup still occupies up to three root files.
+        // Do not grant new capacity until that operation's cleanup completes.
+        if self.entries.len() + self.archive_cleanup_pending.len() >= self.active_limit {
             return Err(OutboxError::Full);
         }
         self.publish(&format!("{request_id}.queued.json"), &queued)?;
         self.entries.insert(
-            request_id.into(),
+            request_id.to_ascii_lowercase(),
             OutboxEntry {
                 queued,
                 state: OutboxState::Pending,
@@ -402,12 +451,34 @@ impl Outbox {
         );
         Ok(())
     }
-    pub fn entry(&self, request_id: &str, workspace_id: &str) -> Result<&OutboxEntry, OutboxError> {
-        let e = self.entries.get(request_id).ok_or(OutboxError::NotFound)?;
+    /// Returns an owned entry: archived terminal records are loaded only by exact ID.
+    pub fn entry(&self, request_id: &str, workspace_id: &str) -> Result<OutboxEntry, OutboxError> {
+        let e = self.lookup(request_id)?.ok_or(OutboxError::NotFound)?;
         if e.queued.workspace_id != workspace_id {
             return Err(OutboxError::WorkspaceChanged);
         }
         Ok(e)
+    }
+    fn lookup(&self, request_id: &str) -> Result<Option<OutboxEntry>, OutboxError> {
+        if !valid_request_id(request_id) {
+            return Err(OutboxError::Invalid);
+        }
+        // Archive wins even if cleanup was interrupted in this process.
+        let retained = archive::read_archived(&self.root, request_id)?;
+        let active = self.entries.get(&request_id.to_ascii_lowercase());
+        if let (Some(retained), Some(active)) = (&retained, active) {
+            if retained != active {
+                return Err(OutboxError::Corrupt);
+            }
+        }
+        let entry = retained.or_else(|| active.cloned());
+        if entry
+            .as_ref()
+            .is_some_and(|e| e.queued.request_id != request_id)
+        {
+            return Err(OutboxError::Reused);
+        }
+        Ok(entry)
     }
     /// MUST succeed before the sender performs network IO. A persisted prior attempt
     /// requires receipt reconciliation; it is not permission to send again.
@@ -429,7 +500,7 @@ impl Outbox {
             },
         )?;
         self.entries
-            .get_mut(request_id)
+            .get_mut(&request_id.to_ascii_lowercase())
             .expect("checked entry")
             .state = OutboxState::NeedsReceipt;
         Ok(())
@@ -464,57 +535,86 @@ impl Outbox {
         )?;
         let request_id = receipt.request_id.clone();
         self.entries
-            .get_mut(&request_id)
+            .get_mut(&request_id.to_ascii_lowercase())
             .expect("checked entry")
             .state = OutboxState::Settled(receipt);
         Ok(())
     }
     fn publish(&self, name: &str, value: &impl Serialize) -> Result<(), OutboxError> {
-        let data = serde_json::to_vec(value).map_err(|_| OutboxError::Invalid)?;
-        if data.len() > 32768 {
-            return Err(OutboxError::Invalid);
-        }
-        let final_path = self.root.join(name);
-        if final_path.exists() {
-            return Err(OutboxError::Corrupt);
-        }
-        // A prior partial write is never overwritten. It remains recoverable evidence.
-        let mut temp = None;
-        for suffix in 0..1024 {
-            let path = self.root.join(format!("{name}.{suffix}.tmp"));
-            match OpenOptions::new().write(true).create_new(true).open(&path) {
-                Ok(file) => {
-                    temp = Some((path, file));
-                    break;
-                }
-                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
-                Err(_) => return Err(OutboxError::Io),
-            }
-        }
-        let (path, mut file) = temp.ok_or(OutboxError::Full)?;
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            file.set_permissions(fs::Permissions::from_mode(0o600))
-                .map_err(|_| OutboxError::Io)?;
-        }
-        file.write_all(&data)
-            .and_then(|_| file.sync_all())
-            .map_err(|_| OutboxError::Io)?;
-        drop(file);
-        publish_file(&path, &final_path).map_err(|_| OutboxError::Io)?;
-        #[cfg(unix)]
-        {
-            File::open(&self.root)
-                .and_then(|d| d.sync_all())
-                .map_err(|_| OutboxError::Io)?;
-        }
-        Ok(())
+        publish_json(&self.root, name, value, 32768)
     }
+}
+fn publish_json(
+    root: &Path,
+    name: &str,
+    value: &impl Serialize,
+    max_bytes: usize,
+) -> Result<(), OutboxError> {
+    publish_json_with_hook(root, name, value, max_bytes, |_| Ok(()))
+}
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum PublicationPhase {
+    BeforePublish,
+    BeforeDirectorySync,
+}
+fn publish_json_with_hook(
+    root: &Path,
+    name: &str,
+    value: &impl Serialize,
+    max_bytes: usize,
+    mut hook: impl FnMut(PublicationPhase) -> Result<(), OutboxError>,
+) -> Result<(), OutboxError> {
+    let data = serde_json::to_vec(value).map_err(|_| OutboxError::Invalid)?;
+    if data.len() > max_bytes {
+        return Err(OutboxError::Invalid);
+    }
+    let final_path = root.join(name);
+    if archive::checked_optional_file(&final_path)? {
+        return Err(OutboxError::Corrupt);
+    }
+    // A prior partial write is never overwritten. It remains recoverable evidence.
+    let mut temp = None;
+    for suffix in 0..1024 {
+        let path = root.join(format!("{name}.{suffix}.tmp"));
+        match OpenOptions::new().write(true).create_new(true).open(&path) {
+            Ok(file) => {
+                temp = Some((path, file));
+                break;
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(_) => return Err(OutboxError::Io),
+        }
+    }
+    let (path, mut file) = temp.ok_or(OutboxError::Full)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        file.set_permissions(fs::Permissions::from_mode(0o600))
+            .map_err(|_| OutboxError::Io)?;
+    }
+    file.write_all(&data)
+        .and_then(|_| file.sync_all())
+        .map_err(|_| OutboxError::Io)?;
+    drop(file);
+    hook(PublicationPhase::BeforePublish)?;
+    publish_file(&path, &final_path).map_err(|_| OutboxError::Io)?;
+    hook(PublicationPhase::BeforeDirectorySync)?;
+    #[cfg(unix)]
+    {
+        File::open(root)
+            .and_then(|d| d.sync_all())
+            .map_err(|_| OutboxError::Io)?;
+    }
+    Ok(())
 }
 #[cfg(not(windows))]
 fn publish_file(source: &Path, destination: &Path) -> std::io::Result<()> {
-    fs::rename(source, destination)
+    // Atomic no-replace even across independent callers/processes. The file is
+    // already synced and closed. No replacing rename or copy fallback is safe.
+    // After link success an unlink/sync error means possibly published; callers
+    // must not infer that destination is absent from an error result.
+    fs::hard_link(source, destination)?;
+    fs::remove_file(source)
 }
 #[cfg(windows)]
 fn publish_file(source: &Path, destination: &Path) -> std::io::Result<()> {
