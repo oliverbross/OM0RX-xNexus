@@ -8,7 +8,8 @@ repair, installer hardening and completed SDK/native/UI integration.
 actual tools, resource limits, natural process cleanup and the NSIS warning
 qualification. The [real disposable install/uninstall](WINDOWS_INSTALLER_1.24.1-xlog.4.md)
 passed, followed by native A→B→A profile/lifecycle checks and permanent current-user
-installation. The installed application was left closed. Paired UI and physical
+installation. Subsequent normal installed launch passed and left xNexus open,
+still unpaired. Paired UI and physical
 station acceptance remain open. The candidate is unsigned; package/runtime
 source remains exact `ae35`, regardless of later documentation/tooling commits.
 Source tests, an artifact audit, native lifecycle checks and physical station
@@ -56,10 +57,11 @@ upstream pin, configuration, tools, dependencies and artifacts. xLog packaging a
 installed acceptance remain owned by the “xlog work” chat; an SDK/owner source
 test does not establish that those changes are installed. The owner reports
 1.6.27 portable/installer packages, installation and installed qualification
-passed. Current owner documentation is `7789c569` over application `16cac867`;
-normal installed handoff passed and left xLog connected. Settings automation
-stopped before pairing or capture; live pairing and reception remain pending.
-Installed xNexus remains closed awaiting the operator pairing step. Changing packaged
+passed. Current owner documentation is `bb68bbc6` over application `16cac867`;
+normal installed handoff passed and left xLog connected. The operator enabled
+xLog pairing manually; xNexus normal launch passed, but pairing-button input
+geometry failed. Both applications were left open awaiting operator pairing
+and current A/RX1 capture confirmation; live reception remains pending. Changing packaged
 source requires a new visible version, including failed qualification candidates.
 
 The fork retains KD9TAW attribution, COPYING, NOTICE, and third-party notices.

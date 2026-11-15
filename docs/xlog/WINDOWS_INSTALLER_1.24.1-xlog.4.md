@@ -88,3 +88,24 @@ the completed attempt.
 Native pairing/decoded-needs UI, live DAX reception, physical radio/rotator
 operation and installed station lifecycle remain separate pending gates.
 Unsigned installation does not establish signing or distribution qualification.
+
+## Subsequent normal installed launch and pairing handoff
+
+On 15 November 2026 the installed application was explicitly launched without
+arguments. Process-only verification completed at `2026-11-15T02:07:37.1504623Z`
+before accessibility binding: candidate PID 19740, WebView browser PID 20148,
+the normal AppData WebView profile, and exact installed executable SHA-256
+`B8BBD58EF45DA82B06D9514E43A3DB3B151F0D60506EB45CFD153BFD4486A9BE`.
+Accessibility showed version `.4`/source `ae35` and a blank unpaired view.
+
+Receipt `.build/xnexus-installer-acceptance/installed-normal-launch-cd403fcc627d4b9195fbb46fa6f231fb/launch.json`
+has SHA-256 `C069F4EB804E572976B8BD256C771CFA51E750403939789D1FF08F7B5A960D1A`.
+This verifies normal installed process/profile coordinates, not paired reception.
+
+The operator manually enabled companion pairing in xLog. Fresh owner observations
+showed its localhost endpoint/Revoke control and DAX Audio RX 1 at 48,000 Hz/two
+channels; current slice A selection/capture had not started at that observation.
+One xNexus pairing-button click failed because coordinate geometry was unavailable.
+Both apps were left open awaiting operator selection of the native pairing file,
+current A/RX1 confirmation/sharing and FT8 Start receiving. No pairing credential
+or credential path belongs in this repository. Paired UI/live RX remain unqualified.

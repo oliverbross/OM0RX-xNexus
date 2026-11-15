@@ -4,7 +4,8 @@ This private development candidate has a completed Windows build, static artifac
 audit and independent retention at exact source
 `ae35fc6435f861e38029049299833afe57de4885`. The [disposable install/uninstall](WINDOWS_INSTALLER_1.24.1-xlog.4.md)
 passed, followed by native A→B→A profile/lifecycle checks and permanent current-user
-installation. The installed application was left closed; paired UI remains pending.
+installation. Subsequent normal installed launch passed and left xNexus open,
+still unpaired; paired UI remains pending.
 It is unsigned and not a published release. See [the durable build evidence](WINDOWS_BUILD_1.24.1-xlog.4.md).
 Exact pre-version source is
 `7f08478c564382f4cc9eed775846faa9a088ba1e`.
@@ -19,9 +20,10 @@ The paired owner is canonical xLog 1.6.27 source
 `16cac86739274073ab2f8000a3916b4e37bc57a5`, whose pre-version implementation is
 `8bd486abd2e62aa079e8b4248126e1e186561452`. The xLog owner reports package,
 installation and installed qualification passed; documentation is now at
-`7789c569`. Normal installed handoff passed and left xLog open and connected;
-installed xNexus remains closed. Settings automation stopped before enabling
-pairing or capture; an operator pairing step remains pending. Installed
+`bb68bbc6`. Normal installed handoff passed and left xLog open and connected.
+The operator enabled xLog companion pairing; installed xNexus also launched
+successfully, but native pairing-button automation failed. Both apps were left
+open awaiting operator pairing and current A/RX1 capture confirmation. Installed
 qualification does not establish paired endpoint
 or physical station acceptance.
 

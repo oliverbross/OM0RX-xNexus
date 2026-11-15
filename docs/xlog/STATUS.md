@@ -7,25 +7,35 @@ binaries and physical station acceptance are separate evidence levels.
 build, static artifact audit and independent retention from clean canonical
 `ae35fc6435f861e38029049299833afe57de4885`. The [disposable install/uninstall](WINDOWS_INSTALLER_1.24.1-xlog.4.md)
 passed, followed by native A→B→A profile/lifecycle checks and permanent current-user
-installation. The installed application was left closed; paired UI remains pending.
+installation. A subsequent explicit installed launch passed; both applications
+were left open at the latest handoff, with xNexus still unpaired.
 It remains unsigned. [The build record](WINDOWS_BUILD_1.24.1-xlog.4.md) binds the
 actual tools, reviewed 12 GiB supervisor, artifacts and warning qualification.
 The packaging freeze is released for reviewed documentation/tooling integration;
 canonical `main` now includes that evidence at `78e1c288`, with application/runtime
 and packaged provenance still exact `ae35`. The xLog owner reports
 1.6.27 packages, installation and installed qualification passed. Its current
-documentation is `87fbcc9d` over application source `16cac867`. Its normal installed
+documentation is `bb68bbc6` over application source `16cac867`. Its normal installed
 handoff passed a 35-second observation and left xLog open and connected.
-Installed xNexus remains closed awaiting pairing. The project plan is not complete.
+Installed xNexus is open awaiting pairing. The project plan is not complete.
 
 At that handoff, the owner verified installed host PID 27440 and worker PID 17076,
 10.136 MHz DIGU, receive slice A, TX idle and connected FLEX/rotor/KPA/KAT.
 Settings input failed because coordinate geometry was unavailable; bounded
 activation and Ctrl+,/Tab recovery did not change the focused pane, so input
-stopped. Pairing was not enabled and capture was not started. The operator has
-been asked to open **Settings → WSJT-X → Enable and create pairing file**.
-Native `.4` paired/RX acceptance remains pending; this automation limitation
-does not establish an endpoint or radio failure.
+stopped. The operator subsequently enabled xLog companion pairing manually.
+Fresh owner accessibility observations confirmed a localhost endpoint and Revoke
+button, plus DAX Audio RX 1 at 48,000 Hz/two channels. Current slice A selection
+and capture had not been started at that observation.
+
+On 15 November at 02:07:37 UTC, installed xNexus PID 19740 and WebView browser
+PID 20148 passed normal process/profile verification. Accessibility showed `.4`
+at `ae35`, with a blank unpaired view. One pairing-button click failed because
+input geometry was unavailable, and no blind retries followed. Both applications
+were left open. The operator was asked to select the native pairing file, confirm
+current A/RX1 and enable sharing in xLog, then choose FT8 and Start receiving in
+xNexus. No credential/path is recorded here. Native paired/RX acceptance remains
+pending; this automation limitation does not establish an endpoint/radio failure.
 
 **Preserved isolation failure:** the fresh Mac `.2` profile displayed a draft from
 the prior `.1` test before pairing. Both processes exited normally and no station
@@ -81,7 +91,7 @@ installed HTTP/UI propagation. Canonical xLog is now at
 `16cac86739274073ab2f8000a3916b4e37bc57a5`, version 1.6.27. Its owner reports
 portable/installer packages, installation and installed qualification passed,
 with earlier failed guard receipts preserved. Current owner documentation is
-`7789c569`; paired endpoint and station acceptance remain separate.
+`bb68bbc6`; paired endpoint and station acceptance remain separate.
 RX evidence includes 58 SDK tests, 40 distinct companion UI tests, TypeScript
 and Vite builds, 14 browser viewport/theme cases, 14 pure DSP/assembler tests,
 five native adapter tests including both modes at five rates, two actual owner
@@ -149,7 +159,8 @@ UI acceptance has now passed A→B→A private profile/lifecycle checks, with ex
 process/isolation checks before accessibility observation. Graphics capture
 timed out; no screenshot qualification is claimed. No pairing or QSO submission
 was part of that check. Permanent current-user installation also passed and left
-the application closed. See [the exact receipts](WINDOWS_INSTALLER_1.24.1-xlog.4.md).
+the application closed at that stage. The subsequent explicit installed launch
+passed and left it open, still unpaired. See [the exact receipts](WINDOWS_INSTALLER_1.24.1-xlog.4.md).
 
 ## CI and upstream
 
