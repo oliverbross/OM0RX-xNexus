@@ -10,6 +10,7 @@ struct Fixture {
     release: Arc<(Mutex<bool>, Condvar)>,
     reads: Arc<AtomicU64>,
     entered: mpsc::Receiver<()>,
+    query_ids: Arc<Mutex<Vec<Vec<String>>>>,
     thread: Option<std::thread::JoinHandle<()>>,
 }
 impl Drop for Fixture {
@@ -23,6 +24,9 @@ impl Drop for Fixture {
     }
 }
 fn fixture() -> Fixture {
+    fixture_with_miss(false)
+}
+fn fixture_with_miss(first_miss: bool) -> Fixture {
     let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
     listener.set_nonblocking(true).unwrap();
     let endpoint = format!("http://{}", listener.local_addr().unwrap());
@@ -33,6 +37,8 @@ fn fixture() -> Fixture {
     let reads = Arc::new(AtomicU64::new(0));
     let audio_reads = reads.clone();
     let (notify, entered) = mpsc::channel();
+    let query_ids = Arc::new(Mutex::new(Vec::new()));
+    let recorded_queries = query_ids.clone();
     let origin = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap()
@@ -52,6 +58,7 @@ fn fixture() -> Fixture {
             let notify = notify.clone();
             let gate = gate.clone();
             let audio_reads = audio_reads.clone();
+            let recorded_queries = recorded_queries.clone();
             handlers.push(std::thread::spawn(move || {
                 stream.set_nonblocking(false).unwrap();
                 stream.set_read_timeout(Some(Duration::from_secs(2))).unwrap();
@@ -66,13 +73,20 @@ fn fixture() -> Fixture {
                 let value=if path=="/xlog/v1/hello" {
                     json!({"application":"OM0RX-xLog","protocol_version":1,"server_instance":"worker-fixture","workspace_id":"worker-workspace","capabilities":["snapshot.read","audio.rx","logbook.classify","rotor.stop"]})
                 } else if path=="/xlog/v1/snapshot" {
-                    json!({"protocol_version":1,"server_instance":"worker-fixture","workspace_id":"worker-workspace","revision":1,"generated_at_unix_ms":now,"max_age_ms":2000,"station":{"connected":false,"radio_id":null,"frequency_hz":null,"mode":null,"transmitting":null},"rotor":{"connected":true,"rotor_id":"fixture-rotor","azimuth_deg":0,"moving":false},"spots":[],"needs":{"generated_at_unix_ms":now,"max_age_ms":2000,"readiness":"ready","authority":authority}})
+                    json!({"protocol_version":1,"server_instance":"worker-fixture","workspace_id":"worker-workspace","revision":if first_miss {now} else {1},"generated_at_unix_ms":now,"max_age_ms":2000,"station":{"connected":false,"radio_id":null,"frequency_hz":null,"mode":null,"transmitting":null},"rotor":{"connected":true,"rotor_id":"fixture-rotor","azimuth_deg":0,"moving":false},"spots":[],"needs":{"generated_at_unix_ms":now,"max_age_ms":2000,"readiness":"ready","authority":authority}})
                 } else if path.starts_with("/xlog/v1/audio?") {
                     let sequence=audio_reads.fetch_add(1,Ordering::AcqRel)+1;
                     json!({"protocol_version":1,"server_instance":"worker-fixture","workspace_id":"worker-workspace","generated_at_unix_ms":now,"max_age_ms":1000,"state":"running","reason":null,"descriptor":{"capture_id":"00000000-0000-4000-8000-000000000001","epoch":"00000000-0000-4000-8000-000000000002","radio_id":"radio1","receiver_id":"fixture/slice-a","mapping_generation":1,"device_id":"fixture-dax","slice":"A","dax_channel":2,"frequency_hz":14074000,"mode":"DIGU","source_channels":2,"selected_channel":0,"sample_rate":48000,"sample_format":"s16le","timestamp_basis":"windows_endpoint_capture","remote_rf_latency_us":null,"utc_sync_accuracy_us":null},"oldest_sequence":sequence,"next_sequence":sequence+1,"gap":false,"chunks":[{"sequence":sequence,"first_frame":(sequence-1)*1920,"frame_count":1920,"sample0_unix_us":origin+(sequence-1)*40000,"calibration_uncertainty_us":10,"pcm_base64":"A".repeat(5120)}]})
                 } else if path=="/xlog/v1/needs/query" {
                     let request:Value=serde_json::from_slice(&body).unwrap();
+                    let attempt={let mut ids=recorded_queries.lock().unwrap();
+                        ids.push(request["queries"].as_array().unwrap().iter().map(|q|q["query_id"].as_str().unwrap().to_owned()).collect());ids.len()};
                     notify.send(()).unwrap();
+                    if first_miss && attempt==1 {
+                        let body=r#"{"error":"Synthetic owner cache miss"}"#;
+                        write!(stream,"HTTP/1.1 503 Service Unavailable\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",body.len()).unwrap();
+                        return;
+                    }
                     let released=gate.0.lock().unwrap();
                     let (_released,timeout)=gate.1.wait_timeout_while(released,Duration::from_secs(2),|value|!*value).unwrap();
                     assert!(!timeout.timed_out(),"fixture lookup was not released");
@@ -96,6 +110,7 @@ fn fixture() -> Fixture {
         release,
         reads,
         entered,
+        query_ids,
         thread: Some(thread),
     }
 }
@@ -172,5 +187,102 @@ fn actual_pcm_and_independent_stop_progress_while_needs_http_is_stalled() {
         worker.view().unwrap().rows.is_empty(),
         "late reply restored stopped rows"
     );
+    client.disconnect();
+}
+
+#[test]
+fn actual_pending503_retry_preserves_query_identity_while_pcm_and_stop_progress() {
+    let _serial = super::tests::ACTIVE_TEST_LOCK.lock().unwrap();
+    let fixture = fixture_with_miss(true);
+    let mut client = xnexus_xlog_client::BridgeClient::new(
+        &fixture.endpoint,
+        "synthetic-native-worker-needs-token",
+    )
+    .unwrap();
+    client.connect().unwrap();
+    client.poll().unwrap();
+    let stop = client.stop_handle().unwrap();
+    let worker = Worker::start_with_needs(
+        client.audio_handle().unwrap(),
+        "worker-fixture".into(),
+        "worker-workspace".into(),
+        Mode::FT8,
+        Some(client.needs_handle().unwrap()),
+    )
+    .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(1);
+    while worker.view().unwrap().route.is_none() && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    {
+        let mut state = worker.state.lock().unwrap();
+        assert!(state.view.route.is_some());
+        let row = super::tests::row(&state, "pending_original", "K1ABC");
+        state.view.rows.push(row);
+    }
+    fixture
+        .entered
+        .recv_timeout(Duration::from_secs(1))
+        .unwrap();
+    let first = Instant::now();
+    let mut polled = false;
+    loop {
+        match fixture.entered.recv_timeout(Duration::from_millis(50)) {
+            Ok(()) => break,
+            Err(mpsc::RecvTimeoutError::Timeout) => {
+                assert!(
+                    first.elapsed() < Duration::from_secs(3),
+                    "second needs request missing: phase={} reason={} rows={} PCMreads={}",
+                    worker.view().unwrap().phase,
+                    worker.view().unwrap().reason,
+                    worker.view().unwrap().rows.len(),
+                    fixture.reads.load(Ordering::Acquire)
+                );
+                // Match main client observation, never extend an old fact lease.
+                if !polled && first.elapsed() >= Duration::from_secs(1) {
+                    let stamp = client
+                        .poll()
+                        .unwrap()
+                        .needs
+                        .as_ref()
+                        .unwrap()
+                        .generated_at_unix_ms;
+                    worker.needs_snapshot_observed(stamp);
+                    polled = true;
+                }
+            }
+            Err(error) => panic!("fixture stopped before retry: {error}"),
+        }
+    }
+    let ids = fixture.query_ids.lock().unwrap().clone();
+    assert_eq!(ids.len(), 2);
+    assert_eq!(ids[0], vec!["pending_original"]);
+    assert_eq!(ids[0], ids[1]);
+    assert!(
+        first.elapsed() >= Duration::from_millis(900),
+        "retry bypassed one-second cadence"
+    );
+    let before = fixture.reads.load(Ordering::Acquire);
+    let deadline = Instant::now() + Duration::from_millis(400);
+    while fixture.reads.load(Ordering::Acquire) < before + 2 && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    assert!(
+        fixture.reads.load(Ordering::Acquire) >= before + 2,
+        "PCM stalled behind pending retry"
+    );
+    stop.stop_rotor("00000000-0000-4000-8000-000000000003", "fixture-rotor")
+        .unwrap();
+    worker.stop();
+    assert!(worker.view().unwrap().rows.is_empty());
+    assert!(!worker.view().unwrap().enabled);
+    *fixture.release.0.lock().unwrap() = true;
+    fixture.release.1.notify_all();
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while ACTIVE.load(Ordering::Acquire) && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    assert!(!ACTIVE.load(Ordering::Acquire));
+    assert!(worker.view().unwrap().rows.is_empty());
     client.disconnect();
 }

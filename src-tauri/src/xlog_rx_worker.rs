@@ -8,7 +8,7 @@ mod decoded_needs;
 #[path = "xlog_rx_needs_transport_tests.rs"]
 mod needs_transport_tests;
 use decoded_needs::{
-    Cache, Cadence, Candidate, Context as NeedsContext, Fact, Observation, Scheduler,
+    Cache, Cadence, Candidate, Context as NeedsContext, Fact, LookupSchedule, Observation,
 };
 use serde::{Deserialize, Serialize};
 use std::sync::{
@@ -291,10 +291,30 @@ impl Worker {
             let observation = needs_observation.clone();
             spawn_lookup(
                 move |queries| {
-                    if !observation.admit(client.remaining_authority_ms()) {
-                        return None;
+                    let remaining = client.remaining_authority_ms();
+                    if remaining == 0 {
+                        // Expiry is not session retirement. Keep the bounded
+                        // pending group until a fresh main-poll observation.
+                        return Lookup::Deferred;
                     }
-                    Some(client.query(queries).map_err(|_| ()))
+                    if !observation.admit(remaining) {
+                        return Lookup::Deferred;
+                    }
+                    Lookup::Attempt(client.query(queries).map_err(|error| {
+                        use xnexus_xlog_client::Error;
+                        if matches!(
+                            error,
+                            Error::Disconnected
+                                | Error::IdentityChanged
+                                | Error::Incompatible
+                                | Error::Capability
+                                | Error::Http(401 | 403 | 404)
+                        ) {
+                            LookupFailure::Retired
+                        } else {
+                            LookupFailure::Retry
+                        }
+                    }))
                 },
                 state.clone(),
                 cancel.clone(),
@@ -454,8 +474,17 @@ impl Drop for Worker {
     }
 }
 
+enum LookupFailure {
+    Retry,
+    Retired,
+}
+enum Lookup {
+    Deferred,
+    Attempt(Result<NeedsBatch, LookupFailure>),
+}
+
 fn spawn_lookup(
-    query: impl FnMut(&[NeedsQuery]) -> Option<Result<NeedsBatch, ()>> + Send + 'static,
+    query: impl FnMut(&[NeedsQuery]) -> Lookup + Send + 'static,
     state: Arc<Mutex<State>>,
     cancel: Arc<AtomicBool>,
     wake: mpsc::Receiver<()>,
@@ -471,13 +500,13 @@ fn spawn_lookup(
 }
 
 fn lookup_loop(
-    mut query: impl FnMut(&[NeedsQuery]) -> Option<Result<NeedsBatch, ()>>,
+    mut query: impl FnMut(&[NeedsQuery]) -> Lookup,
     state: Arc<Mutex<State>>,
     cancel: Arc<AtomicBool>,
     wake: mpsc::Receiver<()>,
 ) {
     let mut cache = Cache::default();
-    let mut scheduler = Scheduler::default();
+    let mut schedule = LookupSchedule::default();
     let needs_blocked = match state.lock() {
         Ok(state) => state.needs_blocked.clone(),
         Err(_) => return,
@@ -505,6 +534,7 @@ fn lookup_loop(
             state.refresh_needs();
             if state.needs_blocked.load(Ordering::Acquire) {
                 cache.clear();
+                schedule.cancel(false);
                 continue;
             }
             let retained = state
@@ -523,7 +553,7 @@ fn lookup_loop(
                 .collect::<Vec<_>>();
             (retained, candidates)
         };
-        scheduler.order(&retained, &mut candidates);
+        schedule.order(&retained, &mut candidates, Instant::now());
         let mut requests: Vec<NeedsQuery> = Vec::new();
         let mut keys: Vec<Candidate> = Vec::new();
         let mut bindings: Vec<(Candidate, String)> = Vec::new();
@@ -536,14 +566,15 @@ fn lookup_loop(
             if let Some(index) = keys.iter().position(|old| old.same_lookup(&candidate)) {
                 bindings.push((candidate, requests[index].query_id.clone()));
             } else if requests.len() < 32 {
-                let query_id = candidate.decode_id.clone();
+                let key = schedule.query_key(&candidate);
+                let query_id = key.decode_id.clone();
                 requests.push(NeedsQuery {
                     query_id: query_id.clone(),
                     callsign: candidate.callsign.clone(),
                     dial_frequency_hz: candidate.context.route.frequency_hz,
                     mode: candidate.context.decoder_mode(),
                 });
-                keys.push(candidate.clone());
+                keys.push(key);
                 bindings.push((candidate, query_id));
             }
         }
@@ -563,31 +594,74 @@ fn lookup_loop(
         }
         // No receive, main client, session, or Stop lock crosses this bounded HTTP call.
         let started = Instant::now();
-        let Some(result) = query(&requests) else {
-            continue;
+        let result = match query(&requests) {
+            Lookup::Deferred => continue,
+            Lookup::Attempt(result) => result,
         };
         cadence.attempted(started);
-        scheduler.attempted(&keys);
+        schedule.attempted(&keys, started);
         if cancel.load(Ordering::Acquire) {
             break;
         }
         let Ok(mut state) = state.lock() else {
             break;
         };
+        if needs_blocked.load(Ordering::Acquire) {
+            schedule.cancel(false);
+            cache.clear();
+            state.refresh_needs();
+            continue;
+        }
+        // Original representative rows may have been trimmed during HTTP.
+        let surviving: Vec<_> = state.view.rows.iter().filter_map(Row::candidate).collect();
+        bindings.retain(|(candidate, _)| schedule.original_survives(candidate, &surviving));
+        let mut useful = false;
         match result {
             Ok(batch) => {
-                let batch = Arc::new(batch);
-                for (candidate, query_id) in bindings {
-                    let Some(fact) = Fact::new(batch.clone(), query_id) else {
-                        continue;
+                let authoritative = batch
+                    .metadata()
+                    .is_ok_and(|metadata| metadata.authority.is_some());
+                if !authoritative {
+                    // Preserve an unavailable owner explanation without caching a
+                    // placeholder as a fact or suppressing this group's retry.
+                    let reason = batch
+                        .results()
+                        .ok()
+                        .and_then(|rows| rows.first())
+                        .and_then(|row| row.need.reason_code.as_deref());
+                    let reason = match reason {
+                        Some("refreshing") => "refreshing",
+                        Some("uncertain") => "uncertain",
+                        Some("stale") => "stale",
+                        _ => "unavailable",
                     };
-                    // Populate cache only when an original row/context still survives.
-                    if state.attach(&candidate, fact.clone()) {
-                        cache.insert(candidate, fact);
+                    for row in &mut state.view.rows {
+                        if row.candidate().is_some_and(|candidate| {
+                            bindings.iter().any(|(key, _)| *key == candidate)
+                        }) {
+                            row.fact = None;
+                            row.needs_fallback = reason;
+                            row.refresh_needs();
+                        }
+                    }
+                } else {
+                    let batch = Arc::new(batch);
+                    for (candidate, query_id) in bindings {
+                        let Some(fact) = Fact::new(batch.clone(), query_id) else {
+                            continue;
+                        };
+                        // Populate cache only when an original row/context still survives.
+                        if state.attach(&candidate, fact.clone()) {
+                            useful = true;
+                            cache.insert(candidate, fact);
+                        }
                     }
                 }
             }
-            Err(()) => {
+            Err(error) => {
+                if matches!(error, LookupFailure::Retired) {
+                    schedule.cancel(true);
+                }
                 cache.clear();
                 for row in &mut state.view.rows {
                     row.fact = None;
@@ -598,6 +672,7 @@ fn lookup_loop(
                 }
             }
         }
+        schedule.complete(useful, Instant::now());
     }
 }
 
@@ -626,6 +701,7 @@ fn context(d: &AudioDescriptor, server: &str, workspace: &str, mode: Mode) -> Re
 
 #[cfg(test)]
 mod tests {
+    use super::decoded_needs::Scheduler;
     use super::*;
     pub(super) static ACTIVE_TEST_LOCK: Mutex<()> = Mutex::new(());
     fn live_authority() -> (
@@ -669,7 +745,11 @@ mod tests {
         .unwrap();
         bridge.connect().unwrap();
         let mut audio = bridge.audio_handle().unwrap();
-        let batch = Arc::new(audio.poll().unwrap());
+        let began = Instant::now();
+        let batch = Arc::new(audio.poll().unwrap_or_else(|error| panic!(
+            "one-shot synthetic authority setup audio.poll failed: {error:?}; elapsed_ms={}; server_finished={}",
+            began.elapsed().as_millis(), server.is_finished()
+        )));
         server.join().unwrap();
         (bridge, audio, batch)
     }
@@ -1026,7 +1106,7 @@ mod tests {
                 |queries| {
                     entered_tx.send(queries.len()).unwrap();
                     release_rx.recv_timeout(Duration::from_secs(2)).unwrap();
-                    Some(Err(()))
+                    Lookup::Attempt(Err(LookupFailure::Retry))
                 },
                 state,
                 cancel,
@@ -1069,7 +1149,7 @@ mod tests {
             move |_| {
                 entered_tx.send(()).unwrap();
                 release_rx.recv_timeout(Duration::from_secs(2)).unwrap();
-                Some(Err(()))
+                Lookup::Attempt(Err(LookupFailure::Retry))
             },
             worker.state.clone(),
             worker.cancel.clone(),
@@ -1120,7 +1200,7 @@ mod tests {
             lookup_loop(
                 |_| {
                     entered_tx.send(()).unwrap();
-                    Some(Err(()))
+                    Lookup::Attempt(Err(LookupFailure::Retry))
                 },
                 state,
                 cancel,
