@@ -11,6 +11,7 @@ param(
     [Parameter(Mandatory)][string]$PackageReceipt,
     [Parameter(Mandatory)][string]$OwnerLaunchReceipt,
     [string]$PriorLaunchReceipt,
+    [ValidatePattern('^[A-Fa-f0-9]{64}$')][string]$ReviewedPriorLauncherSha256,
     [switch]$ValidateOnly
 )
 $ErrorActionPreference = 'Stop'
@@ -48,6 +49,13 @@ function Hash-Equals([string]$File, [string]$Expected) {
         (Get-FileHash -LiteralPath (Safe-Path $File) -Algorithm SHA256).Hash -ne $Expected) {
         throw "SHA256 mismatch: $File"
     }
+}
+function Same-Creation($Left, $Right) {
+    return ([datetime]$Left).ToUniversalTime().Ticks -eq ([datetime]$Right).ToUniversalTime().Ticks
+}
+function Prior-Launcher-Matches([string]$Actual,[string]$Current,[string]$Reviewed) {
+    $expected=if ($Reviewed) { $Reviewed } else { $Current }
+    return $Actual -match '^[A-Fa-f0-9]{64}$' -and $Actual -ieq $expected
 }
 function Exact-Command([string]$Line, [string]$Exe, [string]$Argument) {
     $pattern = '^\s*(?:"' + [regex]::Escape($Exe) + '"|' + [regex]::Escape($Exe) +
@@ -203,6 +211,7 @@ try {
         if ([Environment]::GetEnvironmentVariable($name)) { throw "Inherited WebView override refused: $name" }
     }
     $prior = $null
+    if ($ReviewedPriorLauncherSha256 -and !$PriorLaunchReceipt) { throw 'Reviewed prior launcher hash requires an exact prior receipt.' }
     if ($PriorLaunchReceipt) {
         $priorFile = Safe-Path $PriorLaunchReceipt
         $priorDirectory = [IO.Path]::GetDirectoryName($priorFile)
@@ -210,11 +219,11 @@ try {
             [IO.Path]::GetDirectoryName($priorDirectory) -ne $fixture -or
             [IO.Path]::GetFileName($priorDirectory) -notmatch '^candidate-launch-[a-f0-9-]{36}$') { throw 'Prior receipt is outside this launcher fixture.' }
         $prior = Read-Json $priorFile
-        if ($prior.schema -ne 1 -or $prior.status -ne 'verified-process-isolation' -or $prior.launcherSha256 -ne $launcherSha256 -or
+        if ($prior.schema -ne 1 -or $prior.status -ne 'verified-process-isolation' -or !(Prior-Launcher-Matches $prior.launcherSha256 $launcherSha256 $ReviewedPriorLauncherSha256) -or
             $prior.source -cne $ExpectedSource -or $prior.version -cne $ExpectedVersion -or
             $prior.executable -ne $exe -or $prior.executableSha256 -ne $ExpectedSha256 -or
             $prior.fixture -ne $fixture -or $prior.fixtureId -ne $marker.id -or
-            $prior.owner.pid -ne $ownerBefore.pid -or $prior.owner.creationUtc -ne $ownerBefore.creationUtc -or
+            $prior.owner.pid -ne $ownerBefore.pid -or !(Same-Creation $prior.owner.creationUtc $ownerBefore.creationUtc) -or
             $prior.owner.executable -ne $ownerBefore.executable -or $prior.owner.commandLine -cne $ownerBefore.commandLine) {
             throw 'Prior launch is not the same verified disposable candidate/owner.'
         }
@@ -252,7 +261,7 @@ try {
         executable=$exe;executableSha256=$ExpectedSha256;packageReceipt=$packageFile;
         packageReceiptSha256=(Get-FileHash -LiteralPath $packageFile -Algorithm SHA256).Hash;
         fixture=$fixture;fixtureId=$marker.id;profile=$profile;arguments=$argument;owner=$ownerBefore;
-        priorLaunchReceipt=$PriorLaunchReceipt;startedUtc=[DateTime]::UtcNow.ToString('o');webviews=@()}
+        priorLaunchReceipt=$PriorLaunchReceipt;priorLauncherSha256=$(if ($prior) { $prior.launcherSha256 } else { $null });reviewedPriorLauncherSha256=$ReviewedPriorLauncherSha256;startedUtc=[DateTime]::UtcNow.ToString('o');webviews=@()}
     $launchRecord | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $evidence 'receipt.json') -Encoding utf8NoBOM
     $null = Verify-Owner $ownerLaunch $fixture $ownerBefore.creationUtc
     Hash-Equals $exe $ExpectedSha256
