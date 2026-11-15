@@ -31,7 +31,7 @@
 // number, state codes and zone numbers are data, not prose; the award names, the services' names and
 // the mode classes' short forms are invariant tokens (INVARIANT, below), as the Awards view's are.
 import { useEffect, useState } from 'react'
-import { getCallStats } from '../api'
+import { useOperateServices } from './operateServices'
 import type { CallStats, QslChannels, StatsGrid, StatsSlot } from '../types'
 import { t } from '../i18n'
 import { CockpitPaneFrame } from './panes/CockpitPaneFrame'
@@ -96,11 +96,13 @@ export interface CallStatsPaneProps {
 /** One answer, and the question it answers: an answer to an older question is never shown. */
 interface Held {
   key: string
+  source: ReturnType<typeof useOperateServices>['api']['getCallStats']
   stats?: CallStats
   error?: string
 }
 
 export function CallStatsPane({ call, band, mode, logTick, empty }: CallStatsPaneProps) {
+  const { api: { getCallStats } } = useOperateServices()
   const c = (call ?? '').trim().toUpperCase()
   const key = `${c}|${band}|${mode}`
   const [held, setHeld] = useState<Held | null>(null)
@@ -108,16 +110,16 @@ export function CallStatsPane({ call, band, mode, logTick, empty }: CallStatsPan
     if (!c) return
     let live = true
     getCallStats(c, band, mode).then(
-      (stats) => live && setHeld({ key, stats }),
-      (e: unknown) => live && setHeld({ key, error: e instanceof Error ? e.message : String(e) }),
+      (stats) => live && setHeld({ key, source: getCallStats, stats }),
+      (e: unknown) => live && setHeld({ key, source: getCallStats, error: e instanceof Error ? e.message : String(e) }),
     )
     return () => {
       live = false
     }
     // `logTick` asks again for the same call: the answer on screen stays until the new one lands.
-  }, [c, band, mode, key, logTick])
+  }, [c, band, mode, key, logTick, getCallStats])
 
-  const answer = c && held?.key === key ? held : null
+  const answer = c && held?.key === key && held.source === getCallStats ? held : null
   // An answer without its grids' columns is no answer (a stand-in api's `{}` among them).
   const stats = answer?.error == null && Array.isArray(answer?.stats?.bands) ? answer!.stats! : null
   // What the pane says in an answer's place, over the same lines (ONE HEIGHT, above).

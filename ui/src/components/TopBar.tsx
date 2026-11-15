@@ -19,7 +19,7 @@ import { StatusLane } from './StatusLane'
 import { LiveLevelMeter } from './LiveMeters'
 import { RadioSwitcher } from './RadioSwitcher'
 import { stationProfileName } from './StationProfiles'
-import { appVersion, repairClock } from '../api'
+import { OPERATE_UNAVAILABLE, guardOperateAction, guardOperateTier, useOperateServices, type OperateAction } from './operateServices'
 import { pushToast } from '../toast'
 import { t } from '../i18n'
 import type { MessageKey } from '../i18n'
@@ -347,6 +347,7 @@ function clockRepairRefused(code: unknown): string {
  *  is disabled while anything is on the air, because a repair can move the clock mid-over; the
  *  backend refuses that too, and this only says so first. */
 function ClockRepair({ radio, keyed }: { radio: RadioStatus; keyed: boolean }) {
+  const { api: { repairClock }, can } = useOperateServices()
   const [busy, setBusy] = useState(false)
   const noteId = useId()
   const note = radio.clockOwnerNote?.trim() ? ` (${radio.clockOwnerNote.trim()})` : ''
@@ -366,7 +367,7 @@ function ClockRepair({ radio, keyed }: { radio: RadioStatus; keyed: boolean }) {
       <button
         type="button"
         className="clock-repair-btn"
-        disabled={busy || keyed}
+        disabled={busy || keyed || !can('repairClock')}
         aria-busy={busy}
         aria-describedby={noteId}
         onClick={press}
@@ -381,7 +382,28 @@ function ClockRepair({ radio, keyed }: { radio: RadioStatus; keyed: boolean }) {
   )
 }
 
-export function TopBar({
+export function TopBar(props: Props) {
+  const { adapter } = useOperateServices()
+  const guard = <A extends unknown[],>(action: OperateAction, fn: (...args: A) => void) => guardOperateAction(adapter, action, fn)
+  const optional = <A extends unknown[],>(action: OperateAction, fn?: (...args: A) => void) => fn ? guard(action, fn) : undefined
+  return <TopBarBody {...props}
+    onSetFrequency={guard('radio', props.onSetFrequency)}
+    onSetTxEnabled={on => guard(on ? 'transmit' : 'stopTransmit', props.onSetTxEnabled)(on)}
+    onSetTune={on => guard(on ? 'transmit' : 'stopTransmit', props.onSetTune)(on)}
+    onHaltTx={guard('stopTransmit', props.onHaltTx)}
+    onSetTxEven={guard('transmit', props.onSetTxEven)}
+    onSetTxCycleAuto={guard('transmit', props.onSetTxCycleAuto)}
+    onSetHoldTxFreq={guard('transmit', props.onSetHoldTxFreq)}
+    onTierChange={guardOperateTier(adapter, props.onTierChange)}
+    onSetActiveRadio={optional('radio', props.onSetActiveRadio)}
+    onSetPegLock={optional('radio', props.onSetPegLock)}
+    onSwitchStationProfile={optional('settings', props.onSwitchStationProfile)}
+    onSetOperator={optional('settings', props.onSetOperator)}
+    onStopRecording={optional('recording', props.onStopRecording)}
+  />
+}
+
+function TopBarBody({
   mycall,
   mygrid,
   radio,
@@ -422,6 +444,7 @@ export function TopBar({
   nowBar,
   listenLevel,
 }: Props) {
+  const { api: { appVersion }, canAction, canTier } = useOperateServices()
   // md and lg (features/compactChrome): the eleven tier pills are one menu button, as they are on the
   // FT screens at the small size, so the bar is one row. xl keeps the pills, which fit there.
   const { fold } = useCompactChrome()
@@ -434,8 +457,11 @@ export function TopBar({
   const countdown = (radio.nextSlotMs / 1000).toFixed(1)
   const [version, setVersion] = useState('')
   useEffect(() => {
-    appVersion().then(setVersion).catch(() => {})
-  }, [])
+    let live = true
+    setVersion('')
+    appVersion().then(v => { if (live) setVersion(v) }).catch(() => {})
+    return () => { live = false }
+  }, [appVersion])
   // The readout above prints `radio.sideband` — what Nexus BELIEVES the rig is on. The rig can
   // legitimately be somewhere else (it powered up in FM, or the operator turned the mode knob):
   // launch is a read-only act, so Nexus never commands the rig into agreement. Surface the
@@ -448,11 +474,11 @@ export function TopBar({
   // The engine refuses to arm TX on a receive-only tier; don't offer the control.
   // Stop TX stays live — disarming is always allowed, and it is the operator's way
   // out if they switched tiers mid-over.
-  const noTx = isRxOnly(tier)
+  const noTx = isRxOnly(tier) || !canAction('transmit')
   // WHY a mode cannot transmit — prose about the MODE, shown on every control it disables, so
   // it moves with the bar rather than with the deferred TX controls it happens to sit on (the
   // batch-18 ruling; the Operate strip states the same fact under `operate.strip.rxOnly.why`).
-  const NO_TX_WHY = t('topbar.rxOnly.why')
+  const NO_TX_WHY = canAction('transmit') ? t('topbar.rxOnly.why') : OPERATE_UNAVAILABLE
   const modeButton = (
     <button
       type="button"
@@ -581,7 +607,7 @@ export function TopBar({
                     ? t('topbar.stationProfile.busy')
                     : t('topbar.stationProfile.title'),
               ].filter(Boolean).join('\n')}
-              disabled={drivesAnotherStation() || stationProfileLocked || !onSwitchStationProfile}
+              disabled={drivesAnotherStation() || stationProfileLocked || !onSwitchStationProfile || !canAction('settings')}
               value={activeStationProfile ?? ''}
               onChange={(e) => onSwitchStationProfile?.(e.target.value)}
             >
@@ -683,7 +709,7 @@ export function TopBar({
             className={`op-btn monitor${radio.txEnabled ? ' on' : ''}`}
             aria-pressed={radio.txEnabled}
             onClick={() => onSetTxEnabled(!radio.txEnabled)}
-            disabled={noTx}
+            disabled={radio.txEnabled ? !canAction('stopTransmit') : noTx}
             title={
               noTx
                 ? NO_TX_WHY
@@ -699,7 +725,7 @@ export function TopBar({
             className={`op-btn tune${radio.tuning ? ' keyed' : ''}`}
             aria-pressed={radio.tuning}
             onClick={() => onSetTune(!radio.tuning)}
-            disabled={noTx}
+            disabled={radio.tuning ? !canAction('stopTransmit') : noTx}
             title={noTx ? NO_TX_WHY : 'Key a tune carrier'}
           >
             Tune
@@ -708,6 +734,7 @@ export function TopBar({
             type="button"
             className="op-btn stop"
             data-stop-control="stop-tx"
+            disabled={!canAction('stopTransmit')}
             onClick={onHaltTx}
             title="Stop transmitting immediately — cuts even an over already in flight"
           >
@@ -718,6 +745,7 @@ export function TopBar({
             className={`op-btn hold${radio.holdTxFreq ? ' on' : ''}`}
             aria-pressed={radio.holdTxFreq}
             onClick={() => onSetHoldTxFreq(!radio.holdTxFreq)}
+            disabled={!canAction('transmit')}
             title={t('topbar.holdTx.title')}
           >
             {t('topbar.holdTx.label')}
@@ -765,6 +793,7 @@ export function TopBar({
             }`}
             aria-pressed={tier === p.tier}
             onClick={() => onTierChange(p.tier)}
+            disabled={!canTier(p.tier)}
             title={tierTitle(p)}
           >
             {p.small ? <small>{p.small}</small> : null}
@@ -786,6 +815,7 @@ export function TopBar({
               icon: p.small ? <small>{p.small}</small> : undefined,
               title: tierTitle(p),
               onSelect: () => onTierChange(p.tier),
+              disabled: !canTier(p.tier),
             }))}
           />
         )}
@@ -808,6 +838,7 @@ export function TopBar({
           className={`tier-btn${radio.txCycleAuto ? ' active' : ''}`}
           aria-pressed={radio.txCycleAuto ?? false}
           onClick={() => onSetTxCycleAuto(true)}
+          disabled={!canAction('transmit')}
           title={t('topbar.txCycle.auto.title')}
         >
           {radio.txCycleAuto ? (
@@ -830,6 +861,7 @@ export function TopBar({
           className={`tier-btn${!radio.txCycleAuto && radio.txEven ? ' active' : ''}${radio.txCycleAuto && radio.txEven ? ' derived' : ''}`}
           aria-pressed={!radio.txCycleAuto && radio.txEven}
           onClick={() => onSetTxEven(true)}
+          disabled={!canAction('transmit')}
           title={t('topbar.txCycle.first.title')}
         >
           <T k="topbar.txCycle.first.label" tags={{ s: cycleCaption }} />
@@ -839,6 +871,7 @@ export function TopBar({
           className={`tier-btn${!radio.txCycleAuto && !radio.txEven ? ' active' : ''}${radio.txCycleAuto && !radio.txEven ? ' derived' : ''}`}
           aria-pressed={!radio.txCycleAuto && !radio.txEven}
           onClick={() => onSetTxEven(false)}
+          disabled={!canAction('transmit')}
           title={t('topbar.txCycle.second.title')}
         >
           <T k="topbar.txCycle.second.label" tags={{ s: cycleCaption }} />

@@ -1,4 +1,5 @@
 import type { Ref } from 'react'
+import { useOperateServices } from './operateServices'
 // ⚠️ THIS FILE IS ON THE MIGRATED LIST (i18n/hardcoded-strings.test.ts). The six rows are
 // WSJT-X's Tx1–Tx6 slots: the row NAME (`Tx 3`), the generated message text, the DX call and
 // grid, and the 73/RR73 macro suggestions are tokens and stay in the code. What moved is the
@@ -90,6 +91,7 @@ export function TxPanel({
   grip,
   stripRef,
 }: Props) {
+  const { canAction } = useOperateServices()
   const canTx = dxCall.trim().length > 0
   const rows: { n: number; text: string }[] = [
     { n: 1, text: messages.tx1 },
@@ -162,7 +164,7 @@ export function TxPanel({
       <div className="txp-rows" role="group" aria-label={t('operate.tx.rows.aria')}>
         {rows.map(({ n, text }) => {
           const isNext = nextIndex === n - 1
-          const disabled = n !== 6 && (!canTx || !text.trim())
+          const disabled = !canAction('transmit') || (n !== 6 && (!canTx || !text.trim()))
           return (
             <div key={n} className={`txp-row${isNext ? ' next' : ''}`}>
               <span

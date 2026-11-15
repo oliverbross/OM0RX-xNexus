@@ -13,7 +13,7 @@ import { FtStopControl } from './FtStopControl'
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
 import { t } from '../i18n'
 import { catSaysTxOff } from '../features/catDetail'
-import { requestWindowAttention } from '../api'
+import { OPERATE_UNAVAILABLE, useOperateServices } from './operateServices'
 import type { ModeRequest, QsoStatus, RadioStatus } from '../types'
 import { isOnAir } from '../types'
 import { modeMismatch } from './TopBar'
@@ -229,6 +229,7 @@ export function OperateQsoStrip({
   rotor,
   telemetry,
 }: Props) {
+  const { api: { requestWindowAttention }, can, canAction } = useOperateServices()
   const meterStyle = useTxMeterStyle()
   const stripRef = useRef<HTMLElement>(null)
   useParkLine(stripRef)
@@ -252,13 +253,13 @@ export function OperateQsoStrip({
   const watchdogStopped = qso?.watchdogStopped ?? false
   const txCount = qso?.txCount ?? 0
   const rpt = reportLabel(qso?.rxReport)
-  const noTx = rxOnly ?? false
+  const noTx = (rxOnly ?? false) || !canAction('transmit')
   // ATU ON (#344): `CockpitTxStrip`'s rule — a click always tunes; the menu switches the tuner out.
-  const atuMenu = useAtuSwitchOutMenu(radio?.atu === true && radio?.atuSwitchOut === true && !!onAtuBypass)
-  const atuTuneBlocked = noTx || !!radio?.atuStartTuneUnsupported
+  const atuMenu = useAtuSwitchOutMenu(radio?.atu === true && radio?.atuSwitchOut === true && !!onAtuBypass && can('atuBypass'))
+  const atuTuneBlocked = noTx || !!radio?.atuStartTuneUnsupported || !can('atuTune')
   // WHY a mode cannot transmit / cannot run a QSO — prose about the MODE, shown on every
   // control it disables, so it moves with the strip rather than with the TX controls.
-  const noTxWhy = t('operate.strip.rxOnly.why')
+  const noTxWhy = canAction('transmit') ? t('operate.strip.rxOnly.why') : OPERATE_UNAVAILABLE
   const isBeacon = beacon ?? false
   const beaconWhy = t('operate.strip.beacon.why')
   // No QSO to run on a beacon, and nothing to send on a receive-only tier.
@@ -326,7 +327,7 @@ export function OperateQsoStrip({
             className={`op-btn monitor${radio.txEnabled ? ' on' : ''}`}
             aria-pressed={radio.txEnabled}
             onClick={() => onSetTxEnabled?.(!radio.txEnabled)}
-            disabled={noTx}
+            disabled={radio.txEnabled ? !canAction('stopTransmit') : noTx}
             title={
               noTx
                 ? noTxWhy
@@ -342,7 +343,7 @@ export function OperateQsoStrip({
             className={`op-btn tune${radio.tuning ? ' keyed' : ''}`}
             aria-pressed={radio.tuning}
             onClick={() => onSetTune?.(!radio.tuning)}
-            disabled={noTx}
+            disabled={radio.tuning ? !canAction('stopTransmit') : noTx}
             title={noTx ? noTxWhy : 'Key a tune carrier'}
           >
             Tune
@@ -390,6 +391,7 @@ export function OperateQsoStrip({
             className={`op-btn hold${radio.holdTxFreq ? ' on' : ''}`}
             aria-pressed={radio.holdTxFreq}
             onClick={() => onSetHoldTxFreq?.(!radio.holdTxFreq)}
+            disabled={!canAction('transmit')}
             title={t('operate.strip.holdTx.title')}
           >
             {t('operate.strip.holdTx.label')}
@@ -526,7 +528,7 @@ export function OperateQsoStrip({
           type="button"
           className="cq-resend"
           onClick={onResend}
-          disabled={!txNow}
+          disabled={!txNow || !canAction('transmit')}
           title={t('operate.strip.resend.title')}
         >
           ↻
@@ -559,7 +561,7 @@ export function OperateQsoStrip({
           type="button"
           className="cq-log"
           onClick={onLog}
-          disabled={!dxcall && waiting === 0}
+          disabled={(!dxcall && waiting === 0) || !canAction('log')}
           title={
             waiting > 0
               ? t('operate.strip.log.titleWaiting', { count: waiting })
@@ -616,6 +618,7 @@ export function OperateQsoStrip({
         <button
           type="button"
           className={`cq-period${radio.txCycleAuto ? ' is-auto' : ''}`}
+          disabled={!canAction('transmit')}
           onClick={() => {
             // Cycle: Auto → lock 1st → lock 2nd → Auto.
             if (radio.txCycleAuto) onSetTxEven(true)
@@ -639,6 +642,7 @@ export function OperateQsoStrip({
           className={`cq-skiptx1${skipTx1 ? ' on' : ''}`}
           aria-pressed={skipTx1 ?? false}
           onClick={() => onSkipTx1(!skipTx1)}
+          disabled={!can('setSkipTx1')}
           title={t('operate.strip.skipTx1.title')}
         >
           {t('operate.strip.skipTx1.label')}

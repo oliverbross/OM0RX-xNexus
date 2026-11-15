@@ -26,6 +26,7 @@ import { addCallToWatchlist, exactCallEntry, loadWatchlist, removeWatchEntry } f
 import { endOfUtcDay, hideCall } from '../features/hideCalls'
 import { useCountryExclude } from '../features/countryExclude'
 import { openBestTimesCard } from './BestTimesCard'
+import { useOperateServices } from './operateServices'
 
 const HOUR_MS = 3600_000
 
@@ -94,6 +95,7 @@ export function CallRowMenu({
    *  keyboard back on the row. */
   onClose: () => void
 }) {
+  const { adapter } = useOperateServices()
   const countries = useCountryExclude()
   const anchor = useRef<HTMLSpanElement>(null)
   const entries = (): Js8MenuEntry[] => {
@@ -111,7 +113,7 @@ export function CallRowMenu({
       { kind: 'heading', label: call },
       // Best times first, on every call menu: it opens a card beside the row and selects, tunes and
       // works nothing (the anchor below keeps the choice from reaching the row).
-      { kind: 'item', label: t('callMenu.bestTimes'), onSelect: () => openBestTimesCard(call, row()) },
+      { kind: 'item', label: t('callMenu.bestTimes'), disabled: !!adapter, onSelect: () => { if (!adapter) openBestTimesCard(call, row()) } },
       { kind: 'sep' },
       exact
         ? { kind: 'item', label: t('callMenu.watch.remove'), onSelect: () => removeWatchEntry(exact.id) }

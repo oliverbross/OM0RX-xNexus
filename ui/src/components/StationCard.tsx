@@ -6,6 +6,7 @@
 // migrated with that registry, not here.
 
 import { useCallMenu } from './useCallMenu'
+import { useOperateServices } from './operateServices'
 import type { NeedTag, Station, Tier } from '../types'
 import { callCardTrigger, qrzPageOf } from './CallCard'
 import { t } from '../i18n'
@@ -85,6 +86,7 @@ export function StationCard({
   onSelect,
   onCall,
 }: Props) {
+  const { api: { openQrzPage }, adapter, canAction } = useOperateServices()
   const units = useUnits()
   const centroids = useEntityCentroids()
   // A right-click on the card: the call menu every list shares (Best times first).
@@ -98,7 +100,7 @@ export function StationCard({
   const chip = need ? NEED_CHIP[need] : null
   // The path "why" line, on the SELECTED card only: one outlook request for the station the
   // operator is looking at (the same keyed feed the Path card reads), never one per row.
-  const pathPred = useKeyedFeed(PATH_OUTLOOK, selected && station.grid ? station.grid : null).value
+  const pathPred = useKeyedFeed(PATH_OUTLOOK, !adapter && selected && station.grid ? station.grid : null).value
   const whyFacts = selected ? pathWhyFacts(pathPred) : null
   const why = pathWhyLine(whyFacts)
   // ONE definition of "work this station" for both gestures the card offers — the Work button
@@ -106,6 +108,7 @@ export function StationCard({
   // could have drifted apart; a caller that gets one right and the other wrong is exactly the
   // bug #183 was, one level down.
   const workThisStation = () => {
+    if (!canAction('transmit')) { adapter?.onDeniedAction('transmit'); return }
     onCall(
       station.call,
       station.grid ?? undefined,
@@ -185,6 +188,7 @@ export function StationCard({
       <button
         type="button"
         className="station-work"
+        disabled={!canAction('transmit')}
         onClick={() => workThisStation()}
         title={t('roster.card.work.title', { call: station.call })}
       >
@@ -194,7 +198,7 @@ export function StationCard({
         type="button"
         className="station-qrz"
         // The station's card, where its QRZ button opens the page this one used to.
-        {...callCardTrigger(station.call, qrzPageOf(station.call), true)}
+        {...callCardTrigger(station.call, qrzPageOf(station.call, openQrzPage), true)}
         onDoubleClick={(e) => e.stopPropagation()}
       >
         {QRZ_LABEL}

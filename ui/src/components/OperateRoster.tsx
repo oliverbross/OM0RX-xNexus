@@ -25,7 +25,7 @@ import {
 } from '../grid'
 import { useEntityCentroids } from '../features/entityCentroids'
 import { KM_PER_MI, fmtDistanceKm, useUnits } from '../units'
-import { getDeclination } from '../api'
+import { useOperateServices } from './operateServices'
 import { NEED_CHIP } from '../features/needVisuals'
 import { alertsForSurface, chaseRank, confirmOnlyOnWorkedBand, isActivityTag, strongestNeed } from '../features/needs'
 import { isIgnored } from '../txMessages'
@@ -204,6 +204,7 @@ export function OperateRoster({
   sort: keptSort,
   onSort,
 }: Props) {
+  const { api: { getDeclination, openQrzPage } } = useOperateServices()
   // QTH magnetic declination (WMM) — the Brg column's tooltip shows the compass
   // heading a rotator zeroed on magnetic north needs.
   const units = useUnits()
@@ -212,7 +213,7 @@ export function OperateRoster({
     getDeclination()
       .then(setDeclination)
       .catch(() => {})
-  }, [])
+  }, [getDeclination])
   const [ownSort, setOwnSort] = useState<RosterSort>(DEFAULT_ROSTER_SORT)
   const sort = keptSort ?? ownSort
   const setSort = onSort ?? setOwnSort
@@ -751,7 +752,7 @@ export function OperateRoster({
                   <button
                     type="button"
                     className="qrz-link"
-                    {...callCardTrigger(s.call, qrzPageOf(s.call), true)}
+                    {...callCardTrigger(s.call, qrzPageOf(s.call, openQrzPage), true)}
                     onDoubleClick={(e) => e.stopPropagation()}
                   >
                     ↗

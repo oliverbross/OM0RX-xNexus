@@ -27,7 +27,7 @@ import {
   type DecodeFilter,
   type DecodeSort,
 } from '../decodeHistory'
-import { getDecodeRefill } from '../api'
+import { useOperateServices } from './operateServices'
 import { DECODE_HIDE_B4_EVENT, DECODE_HIDE_B4_SCOPE_EVENT, type DecodeHideB4Scope, loadDecodeFilter, loadDecodeHideB4, loadDecodeHideB4Scope, loadDecodeHideBlocked, loadDecodeHideConfirmed, loadDecodeNewestTop, saveDecodeFilter, saveDecodeHideB4, saveDecodeHideB4Scope, saveDecodeHideBlocked, saveDecodeHideConfirmed, saveDecodeNewestTop } from '../operateFilters'
 import { isHiddenByCountry, useCountryExclude } from '../features/countryExclude'
 import { isCallHidden, isCallHiddenScoped, useHideCalls } from '../features/hideCalls'
@@ -310,6 +310,7 @@ export function OperateDecodes({
   hideExcludedCountries = true,
   myGrid = '',
 }: Props) {
+  const { api: { getDecodeRefill } } = useOperateServices()
   // Cockpit-owned history when provided (survives layout remounts); private otherwise.
   const localHistRef = useRef<DecodeHistory | null>(null)
   if (history == null && localHistRef.current == null) {
@@ -1158,6 +1159,7 @@ const DecodeRowView = memo(function DecodeRowView({
   watchColor,
   menuOpen,
 }: DecodeRowViewProps) {
+  const { api: { openQrzPage } } = useOperateServices()
   const hlStyle = hlEntry
     ? {
         backgroundColor: hlEntry.bg ?? undefined,
@@ -1362,7 +1364,7 @@ const DecodeRowView = memo(function DecodeRowView({
           <button
             type="button"
             className="qrz-link-call decode-qrz"
-            {...callCardTrigger(d.from, qrzPageOf(d.from), true)}
+            {...callCardTrigger(d.from, qrzPageOf(d.from, openQrzPage), true)}
             onDoubleClick={(e) => e.stopPropagation()}
           >
             {DECODE_TOKENS.qrz}

@@ -22,7 +22,7 @@
 // sheet owns them.
 import { useEffect, useRef, useState } from 'react'
 import type { AppSnapshot } from '../types'
-import { setSplit } from '../api'
+import { OPERATE_UNAVAILABLE, useOperateServices } from './operateServices'
 import { t } from '../i18n'
 
 /** kHz per ± press. One is the pile-up convention; the operator holds for more. */
@@ -52,6 +52,8 @@ interface Props {
 }
 
 export function SplitControl({ snap, onSnap, onError, unavailable }: Props) {
+  const { api: { setSplit }, can } = useOperateServices()
+  unavailable = unavailable ?? (can('setSplit') ? undefined : { title: OPERATE_UNAVAILABLE })
   const allowed = unavailable == null
   // Dead with no printed mark: the reason rides on each disabled button instead.
   const quietReason = unavailable && !unavailable.mark ? unavailable.title : undefined

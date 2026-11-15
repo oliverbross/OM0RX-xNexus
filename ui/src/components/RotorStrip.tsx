@@ -14,16 +14,7 @@
 // azimuth in degrees and the true/magnetic marks are data, and the three annunciator plates
 // below are the instrument's own vocabulary.
 import { useEffect, useRef, useState, type CSSProperties } from 'react'
-import {
-  getDeclination,
-  getSatTrackStatus,
-  getSatTransponder,
-  getSettings,
-  readRotator,
-  setSatTransponder,
-  stopRotator,
-  stopSatTrack,
-} from '../api'
+import { useOperateServices } from './operateServices'
 import type { SatTrackStatus, SatTransponderHeld } from '../types'
 import { magneticDeg } from '../grid'
 import { pushToast } from '../toast'
@@ -74,34 +65,52 @@ const chipStyle: CSSProperties = {
 }
 
 export function RotorStrip({ active = true, targetCall, onPointAt, onOpenSettings }: RotorStripProps) {
+  const services = useOperateServices()
+  const { api: { getDeclination, getSatTrackStatus, getSatTransponder, getSettings,
+    readRotator, setSatTransponder, stopRotator, stopSatTrack }, can, canAction, adapter } = services
   // null = never read (no rotator / daemon down) → the strip hides itself.
-  const [az, setAz] = useState<number | null>(null)
-  const [declination, setDeclination] = useState<number | null>(null)
+  const [readAz, setAz] = useState<number | null>(null)
+  const [readDeclination, setDeclination] = useState<number | null>(null)
   // Satellite auto-track owning the rotor right now (Satellites section's loop).
   // Shown so the operator knows WHY the needle is moving on its own — and so
   // the ■ button stops the LOOP, not just one slew it would immediately redo.
-  const [satTrack, setSatTrack] = useState<SatTrackStatus | null>(null)
+  const [readSatTrack, setSatTrack] = useState<SatTrackStatus | null>(null)
   // A transponder HELD with no armed track (the QO-100/park case, and any pick
   // made before AOS). The hold owns the dial — section entry and tier flips
   // now stand down for it (the sat-FT batch) — so it must be visible from the
   // operating cockpits, not only inside the Satellites section: a dial that
   // won't re-home with no visible owner is the same trust failure the track
   // chip exists for.
-  const [held, setHeld] = useState<SatTransponderHeld | null>(null)
+  const [readHeld, setHeld] = useState<SatTransponderHeld | null>(null)
   // Rotor CONFIGURED in settings (model-launched rotctld or external host) —
   // splits "no rotor in this station" (render nothing) from "configured but
   // not answering" (render a dim, honest placeholder: a configured rotor that
   // silently vanishes reads as a missing feature — operator report from the
   // FT cockpit).
-  const [configured, setConfigured] = useState(false)
-  const alive = useRef(true)
+  const [readConfigured, setConfigured] = useState(false)
+  const [readingSource, setReadingSource] = useState(services.api)
+  const current = readingSource === services.api
+  const az = current ? readAz : null
+  const declination = current ? readDeclination : null
+  const satTrack = current ? readSatTrack : null
+  const held = current ? readHeld : null
+  const configured = current && readConfigured
+  const sourceRef = useRef(services.api)
+  sourceRef.current = services.api
+  const ownsSource = () => sourceRef.current === services.api
 
   useEffect(() => {
+    let alive = true
+    setAz(null)
+    setDeclination(null)
+    setSatTrack(null)
+    setHeld(null)
+    setConfigured(false)
+    setReadingSource(services.api)
     if (!active) return
-    alive.current = true
     getSettings()
       .then((st) => {
-        if (alive.current) setConfigured((st.rotatorModel ?? 0) > 0 || st.rotatorHost.trim() !== '')
+        if (alive) setConfigured((st.rotatorModel ?? 0) > 0 || st.rotatorHost.trim() !== '')
       })
       .catch(() => {})
     // One single-flight poll (#335): `read_rotator` and `get_sat_transponder` take the engine
@@ -116,13 +125,13 @@ export function RotorStrip({ active = true, targetCall, onPointAt, onOpenSetting
       ]),
     )
     getDeclination()
-      .then((d) => alive.current && setDeclination(d))
+      .then((d) => alive && setDeclination(d))
       .catch(() => {})
     return () => {
-      alive.current = false
+      alive = false
       stop()
     }
-  }, [active])
+  }, [active, services.api, getSettings, getDeclination, readRotator, getSatTrackStatus, getSatTransponder])
 
   // Is Doppler driving a radio surface at all? Read from the DTO's `mode` —
   // the engine's own per-tick answer (a pass-only track drives nothing and
@@ -180,9 +189,10 @@ export function RotorStrip({ active = true, targetCall, onPointAt, onOpenSetting
             type="button"
             style={chipStyle}
             aria-label={t('rotor.strip.release.aria')}
+            disabled={!can('setSatTransponder')}
             onClick={() => {
               setSatTransponder(held.name, null)
-                .then(() => setHeld(null))
+                .then(() => { if (ownsSource()) setHeld(null) })
                 .catch((e) =>
                   pushToast(
                     t('rotor.strip.release.failed', {
@@ -249,6 +259,7 @@ export function RotorStrip({ active = true, targetCall, onPointAt, onOpenSetting
             type="button"
             style={chipStyle}
             aria-label={t('rotor.strip.trackStop.aria')}
+            disabled={!can('stopSatTrack')}
             onClick={() => {
               stopSatTrack()
                 .then(() => setSatTrack(null))
@@ -267,6 +278,14 @@ export function RotorStrip({ active = true, targetCall, onPointAt, onOpenSetting
           </button>
         </span>
       )
+    // The paired owner's emergency Stop remains reachable without an azimuth
+    // reading or a fabricated Nexus rotator-settings object.
+    if (adapter && can('stopRotator')) return <>
+      <span className="mono">{ROTOR_PLATE} —</span>
+      <button type="button" style={chipStyle} title={t('rotor.strip.stop.title')}
+        onClick={() => void stopRotator().catch(e => pushToast(String(e), 'error'))}>■</button>
+      {satChip}
+    </>
     if (!configured) return satChip
     // The dim chip's whole job is the model/port — a rotator that is configured and silent is
     // nearly always wired to the wrong port. So where the host can navigate, the chip IS the
@@ -404,6 +423,7 @@ export function RotorStrip({ active = true, targetCall, onPointAt, onOpenSetting
             type="button"
             style={chipStyle}
             onClick={() => onPointAt(targetCall, false)}
+            disabled={!canAction('rotator')}
             title={t('rotor.strip.pointAt.title', { call: targetCall })}
           >
             → {targetCall}
@@ -423,6 +443,7 @@ export function RotorStrip({ active = true, targetCall, onPointAt, onOpenSetting
             type="button"
             style={chipStyle}
             onClick={() => onPointAt(targetCall, true)}
+            disabled={!canAction('rotator')}
             title={t('rotor.strip.pointAtLong.title', { call: targetCall })}
           >
             {LONG_PATH}
@@ -432,11 +453,23 @@ export function RotorStrip({ active = true, targetCall, onPointAt, onOpenSetting
       <button
         type="button"
         style={chipStyle}
+        disabled={!can('stopRotator')}
         onClick={() => {
+          if (adapter) {
+            // An owner's emergency Stop must not queue behind another service.
+            const stopping = stopRotator()
+            const tracking = can('stopSatTrack') ? stopSatTrack() : Promise.resolve()
+            void Promise.all([stopping, tracking]).then(() => {
+              if (ownsSource()) setSatTrack(null)
+            }).catch(e => {
+              if (ownsSource()) pushToast(t('rotor.stop.failed', { error: e instanceof Error ? e.message : String(e) }), 'error')
+            })
+            return
+          }
           // ALWAYS stop the track first (no-op when idle): the local satTrack
           // poll is up to 2 s stale, and a bare rotor stop inside that window
           // would be undone by the loop's next 3 s tick. Belt-and-braces halt.
-          stopSatTrack()
+          ;(can('stopSatTrack') ? stopSatTrack() : Promise.resolve())
             .then(() => {
               setSatTrack(null)
               return stopRotator()

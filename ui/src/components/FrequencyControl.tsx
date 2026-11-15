@@ -10,6 +10,7 @@ import { bandChipInk, bandColor } from '../bandColors'
 import { t } from '../i18n'
 import { FrequencyReadout } from './FrequencyReadout'
 import { BandMenu } from './BandMenu'
+import { useOperateServices } from './operateServices'
 
 interface Props {
   channels: BandChannel[]
@@ -70,6 +71,7 @@ export function FrequencyControl({
   showModeToggle = true,
   onSet,
 }: Props) {
+  const { canAction } = useOperateServices()
   const active = useMemo(
     () => findActive(channels, dialMhz, mode),
     [channels, dialMhz, mode],
@@ -110,6 +112,7 @@ export function FrequencyControl({
         // condition (BandMenu.tsx). The Settings `full` variant keeps its select below.
         <div className="freq-channel-wrap">
           <BandMenu
+            disabled={!canAction('radio')}
             triggerClassName="freq-channel"
             value={active ? chanKey(active) : null}
             onPick={selectChannel}
@@ -138,6 +141,7 @@ export function FrequencyControl({
         {variant === 'full' && <span className="settings-label">{t('freq.channel.label')}</span>}
         <select
           className="freq-channel"
+          disabled={!canAction('radio')}
           value={selectValue}
           onChange={(e) => selectChannel(e.target.value)}
           title={active ? active.note : t('freq.channel.title')}
@@ -177,6 +181,7 @@ export function FrequencyControl({
             dialMhz={dialMhz}
             size="hero"
             editable
+            disabled={!canAction('radio')}
             onCommit={(v) => onSet(v, bandLabelForMhz(v), mode)}
           />
         </div>
@@ -195,6 +200,7 @@ export function FrequencyControl({
               className={`freq-mode-btn${mode === md ? ' active' : ''}`}
               aria-pressed={mode === md}
               onClick={() => setMode(md)}
+              disabled={!canAction('radio')}
             >
               {md}
             </button>

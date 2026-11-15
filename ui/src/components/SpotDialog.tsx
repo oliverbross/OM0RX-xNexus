@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { postSpot } from '../api'
+import { useOperateServices } from './operateServices'
 import { pushToast } from '../toast'
 import { t } from '../i18n'
 import { parseOperatorNumber } from '../numInput'
@@ -40,6 +40,7 @@ export function SpotDialog({
   freqMhz: number
   defaultComment: string
 }) {
+  const { api: { postSpot }, can } = useOperateServices()
   const [call, setCall] = useState(initialCall)
   const [freq, setFreq] = useState('')
   const [comment, setComment] = useState(defaultComment)
@@ -62,7 +63,7 @@ export function SpotDialog({
   // happy about it. The `canSpot` guard below is what turns an unreadable entry into a
   // greyed-out button instead of a wrong spot in front of everyone.
   const freqNum = parseOperatorNumber(freq)
-  const canSpot = call.trim().length > 0 && Number.isFinite(freqNum) && freqNum > 0
+  const canSpot = can('postSpot') && call.trim().length > 0 && Number.isFinite(freqNum) && freqNum > 0
 
   const submit = async () => {
     if (!canSpot || busy) return

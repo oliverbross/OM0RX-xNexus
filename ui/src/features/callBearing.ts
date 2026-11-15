@@ -11,7 +11,7 @@
 // is the desktop's, and Nexus Remote offers it nothing new. It draws no bearing rather than one the station
 // would not turn to.
 import { useEffect, useState } from 'react'
-import { rotatorBearingToCall } from '../api'
+import { useOperateServices } from '../components/operateServices'
 import { ROTATOR_POLL_MS } from './rotorTargets'
 import { pollSingleFlight } from '../singleFlight'
 import type { CallBearing } from '../types'
@@ -48,25 +48,26 @@ const NONE: ReadonlyMap<string, CallAim> = new Map()
  * answer is only ever looked up by its own call. No entry until the station has answered.
  */
 export function useCallBearings(calls: readonly string[]): ReadonlyMap<string, CallAim> {
+  const { api: { rotatorBearingToCall } } = useOperateServices()
   // One key per set of calls: the order a list is drawn in is no reason to ask again.
   const key = [...new Set(calls.filter(Boolean))].sort().join(' ')
-  const [aims, setAims] = useState<ReadonlyMap<string, CallAim>>(NONE)
+  const [held, setHeld] = useState<{ source: typeof rotatorBearingToCall; aims: ReadonlyMap<string, CallAim> } | null>(null)
   useEffect(() => {
     if (!key) return
     const list = key.split(' ')
     return pollSingleFlight('call bearings', ROTATOR_POLL_MS, (owns) =>
       Promise.allSettled(list.map((call) => rotatorBearingToCall(call))).then((answers) => {
         if (!owns()) return
-        setAims(
+        setHeld({ source: rotatorBearingToCall, aims:
           new Map(
             answers.map((a, i): [string, CallAim] => [
               list[i],
               a.status === 'rejected' ? { why: noBearing(a.reason) } : isBearing(a.value) ? { bearing: a.value } : { why: null },
             ]),
           ),
-        )
+        })
       }),
     )
-  }, [key])
-  return key ? aims : NONE
+  }, [key, rotatorBearingToCall])
+  return key && held?.source === rotatorBearingToCall ? held.aims : NONE
 }
