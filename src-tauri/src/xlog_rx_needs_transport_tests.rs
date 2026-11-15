@@ -330,6 +330,9 @@ fn actual_worker_pcm_waterfall_flushes_gap_and_accepts_new_epoch_despite_old_cur
         std::thread::sleep(Duration::from_millis(5));
     };
     assert_eq!(first.spectrum.row.len(), 640);
+    let observed = worker.view().unwrap();
+    assert!(observed.rows.is_empty());
+    assert_eq!(observed.current_context.as_ref(), Some(&first.context));
     assert!(
         first.spectrum.row.iter().all(|v| *v == 0.0),
         "actual synthetic silence, not fabricated warming-up bins"
@@ -345,6 +348,7 @@ fn actual_worker_pcm_waterfall_flushes_gap_and_accepts_new_epoch_despite_old_cur
         std::thread::sleep(Duration::from_millis(5));
     }
     assert!(worker.view().unwrap().route.is_none());
+    assert!(worker.view().unwrap().current_context.is_none());
     assert!(worker.spectrum(None).unwrap().is_none());
     fixture.audio_phase.store(2, Ordering::Release);
     let deadline = Instant::now() + Duration::from_secs(2);
@@ -391,6 +395,10 @@ fn actual_worker_pcm_waterfall_flushes_gap_and_accepts_new_epoch_despite_old_cur
     assert_eq!(after_gap.context.route, resumed.context.route);
     assert!(after_gap.context.worker_epoch > resumed.context.worker_epoch);
     assert!(after_gap.source_origin_frame > resumed.source_origin_frame);
+    assert_eq!(
+        worker.view().unwrap().current_context.as_ref(),
+        Some(&after_gap.context)
+    );
     worker.stop();
     assert!(worker.spectrum(None).unwrap().is_none());
     let deadline = Instant::now() + Duration::from_secs(2);
@@ -427,6 +435,10 @@ fn actual_worker_pcm_waterfall_flushes_gap_and_accepts_new_epoch_despite_old_cur
     assert_ne!(
         replacement.context.worker_instance,
         after_gap.context.worker_instance
+    );
+    assert_eq!(
+        restarted.view().unwrap().current_context.as_ref(),
+        Some(&replacement.context)
     );
     restarted.stop();
     let deadline = Instant::now() + Duration::from_secs(2);
