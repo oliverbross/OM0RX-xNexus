@@ -1,22 +1,36 @@
-import type { InputHTMLAttributes } from 'react'
+import { useEffect, useReducer, useSyncExternalStore, type InputHTMLAttributes } from 'react'
 import { t } from '../i18n'
 import { useFocusReturn } from '../focusReturn'
 import type { CardDraft } from '../features/contactCard'
 import { detailText, mapDetailField, referenceText, type DetailField, type OwnerContactFields } from '../features/ownerContactDetail'
 import { ContactCardSurface, type OwnerContactCardProps } from './ContactCard'
+import { confirmDialog } from '../confirm'
+import type { OwnerEditFields } from '../xlog/draftStore'
+import { ownerEditorMessage } from '../features/ownerEditorMessages'
 
 const absent: DetailField<string> = { state: 'unavailable', value: null, reason: 'unsupported' }
 const noop = () => {}
+const noSubscribe = () => noop
+const zero = () => 0
+const editKeys: Partial<Record<keyof CardDraft,keyof OwnerEditFields>> = {
+  date:'date',timeOn:'time',freq:'frequency',rstSent:'rstSent',rstRcvd:'rstReceived',grid:'grid',comment:'comment',
+}
 /** Provider name and glyph, as on the original card. */
 const QRZ_PAGE = 'QRZ ↗'
 
 /** No native service imports, subscription or write callbacks. A current input
  * is already admitted by its caller; this body cannot fetch or renew it. */
-export function OwnerContactCardBody({ external, onClose }: OwnerContactCardProps) {
+export function OwnerContactCardBody({ external, onClose, editor: suppliedEditor }: OwnerContactCardProps) {
+  const editor=suppliedEditor?.contactId===external.contactId?suppliedEditor:undefined
+  useSyncExternalStore(editor?.subscribe??noSubscribe,editor?.version??zero)
+  const [,tick]=useReducer((n:number)=>n+1,0)
+  // Display expiry only. This timer neither reads the owner nor grants a lease.
+  useEffect(()=>{if(!editor)return;const timer=setInterval(tick,100);return()=>clearInterval(timer)},[editor])
+  const editing=editor?.inspect()
   const returnFocus = useFocusReturn(true)
   const unavailable = t('contactCard.owner.unavailable')
   const read = external.read
-  const detail = read.state === 'current' ? read.detail : null
+  const detail = editing ? editing.detail : read.state === 'current' ? read.detail : null
   const matched = detail?.schema_version === 1 && detail.contact_id === external.contactId
   const f = detail && matched && detail.status === 'found' ? detail.fields : null
   function value<T>(field: DetailField<T> | undefined, format?: (v: T) => string): string {
@@ -57,15 +71,22 @@ export function OwnerContactCardBody({ external, onClose }: OwnerContactCardProp
   }
   // Strings are only form presentation, never a LoggedQso or mutation payload.
   const draft = Object.fromEntries(Object.entries(mapping).map(([key, field]) => [key, value(field)])) as unknown as CardDraft
+  if(editing?.base){draft.call=editing.base.callsign;draft.band=editing.base.band;draft.mode=editing.base.mode}
+  if(editing?.fields)for(const [cardKey,editKey] of Object.entries(editKeys) as [keyof CardDraft,keyof OwnerEditFields][]){
+    draft[cardKey]=editing.fields[editKey]
+  }
+  const set=(key:keyof CardDraft,text:string)=>{const editable=editKeys[key];if(editable)editor?.set(editable,text)}
   const box = (key: keyof CardDraft, label: string, extra: InputHTMLAttributes<HTMLInputElement> = {}) => (
     <label className="logbook-field">
       <span>{label}</span>
-      <input className="settings-input" {...extra} value={draft[key]} readOnly
+      <input className="settings-input" {...extra} value={draft[key]} readOnly={!editing?.editable||!editKeys[key]}
+        maxLength={editing&&key==='timeOn'?16:extra.maxLength}
+        onChange={editKeys[key]?(event)=>set(key,event.target.value):undefined}
         autoComplete="off" spellCheck={false} aria-label={label}
         aria-description={mapping[key].state === 'unavailable' ? unavailable : undefined} />
     </label>
   )
-  const message = read.state !== 'current' ? read.message
+  const message = editing ? ownerEditorMessage(editing) : read.state !== 'current' ? read.message
     : !matched ? t('contactCard.owner.mismatch')
     : detail?.status === 'deleted' ? t('contactCard.owner.deleted')
     : detail?.status === 'not_found' ? t('contactCard.owner.notFound')
@@ -84,6 +105,7 @@ export function OwnerContactCardBody({ external, onClose }: OwnerContactCardProp
           <button type="button" className="callcard-qrz" disabled title={unavailable}>{QRZ_PAGE}</button>
         </div>
         <p className="settings-hint" role="status">{message}</p>
+        {!editing?.busy&&editing?.receipt?.message&&<p className="settings-hint" role="status">{editing.receipt.message}</p>}
       </div>
     </div>
   )
@@ -96,12 +118,37 @@ export function OwnerContactCardBody({ external, onClose }: OwnerContactCardProp
     <h3 className="qso-detail-heading">{t('contactCard.recent')}</h3>
     <p className="qso-detail-bare">{t('contactCard.owner.dependentUnavailable')}</p>
   </section>
+  async function leave(then:()=>void){
+    const policy=editor?.closePolicy()??'close'
+    if(policy==='blocked')return
+    if(policy==='confirm-discard'){
+      const confirmed=await confirmDialog({title:t('contactCard.discard.title',{call:draft.call}),
+        body:t('contactCard.discard.body'),confirmLabel:t('contactCard.discard.confirm'),cancelLabel:t('contactCard.discard.keep')})
+      if(!confirmed||!editor?.discard())return
+    }
+    then()
+  }
+  async function reload(){
+    if(!editor?.inspect().canReload)return
+    if(editor.inspect().dirty&&!await confirmDialog({title:t('contactCard.discard.title',{call:draft.call}),
+      body:t('contactCard.editor.reloadBody'),confirmLabel:t('contactCard.discard.confirm'),cancelLabel:t('contactCard.discard.keep')}))return
+    editor.reload()
+  }
+  const actions=editing&&editor?<>
+    {editing.canInspectQueue&&<button type="button" className="log-rowbtn" onClick={()=>void editor.inspectQueue()}>{t('contactCard.editor.queueCheck')}</button>}
+    {editing.canRetryQueue&&<button type="button" className="log-rowbtn" onClick={()=>void editor.retryQueue()}>{t('contactCard.editor.queueRetry')}</button>}
+    {editing.canSubmit&&<button type="button" className="settings-save" onClick={()=>void editor.submit()}>{t('contactCard.editor.submit')}</button>}
+    {editing.canReconcile&&<button type="button" className="log-rowbtn" onClick={()=>void editor.reconcile()}>{t('contactCard.editor.receiptCheck')}</button>}
+    {editing.canReload&&<button type="button" className="log-rowbtn" onClick={()=>void reload()}>{t('contactCard.editor.reload')}</button>}
+  </>:undefined
   return <ContactCardSurface
-    commentPolicy="readonly-multiline"
-    call={draft.call} draft={draft} fields={[]} err={null} busy={false} dirty={false}
-    canSave={false} notResent={[]} facts={facts} box={box}
-    program={(key, label) => box(key, label)} set={noop} setField={noop} setFields={noop}
-    leave={async (then) => then()} onClose={onClose} onSave={(event) => event?.preventDefault()}
+    commentPolicy={editing?'owner-multiline':'readonly-multiline'} commentEditable={editing?.editable??false} extendedEditing={false}
+    call={draft.call} draft={draft} fields={[]} err={editing?.error?t('contactCard.editor.failure'):null} busy={editing?.busy??false} dirty={editing?.dirty??false}
+    canSave={editing?.canSave??false} notResent={[]} facts={facts} box={box}
+    program={(key, label) => box(key, label)} set={set} setField={noop} setFields={noop}
+    editingNote={editing?<span className="logbook-editing-note" role="status">{message}</span>:undefined}
+    extraActions={actions} saveLabel={editing?t('contactCard.editor.queue'):undefined}
+    leave={leave} onClose={onClose} onSave={async(event)=>{event?.preventDefault();await editor?.save()}}
     returnFocus={returnFocus} header={head} iota={null} confirmation={confirmation}
     path={null} awards={null} recent={recent} history={null}
   />

@@ -94,6 +94,27 @@
 import type { Message } from './types'
 
 export const EN = {
+  'contactCard.editor.pending': "Local operation pending. Keep this card open.",
+  'contactCard.editor.editing': "Edit the supported fields, then queue and submit the correction.",
+  'contactCard.editor.invalid': "Check the date, frequency and field limits.",
+  'contactCard.editor.storage': "The existing draft is preserved. Draft storage needs recovery.",
+  'contactCard.editor.changed': "The owner or contact changed. Your draft is retained; reload explicitly.",
+  'contactCard.editor.queueUnknown': "Queue outcome unknown. Inspect the local queue before retrying the same correction.",
+  'contactCard.editor.queued': "Correction queued locally. It has not been applied to xLog.",
+  'contactCard.editor.uncertain': "Outcome unverified. Check the receipt for this same correction.",
+  'contactCard.editor.accepted': "xLog accepted the request; application is not confirmed.",
+  'contactCard.editor.observed': "xLog reported observed; application is not confirmed.",
+  'contactCard.editor.rejected': "xLog rejected this correction. Your draft is retained.",
+  'contactCard.editor.applied': "xLog confirmed this exact correction was applied.",
+  'contactCard.editor.unavailable': "A current authenticated contact and write access are required. Your draft is retained.",
+  'contactCard.editor.queueCheck': "Inspect queue",
+  'contactCard.editor.queueRetry': "Retry queueing",
+  'contactCard.editor.submit': "Submit to xLog",
+  'contactCard.editor.receiptCheck': "Check receipt",
+  'contactCard.editor.reload': "Reload contact",
+  'contactCard.editor.queue': "Queue correction",
+  'contactCard.editor.failure': "The operation could not be verified. Retained data has been preserved.",
+  'contactCard.editor.reloadBody': "Reload the current contact and discard this local correction? Retained xLog contacts and outbox receipts are not deleted.",
   // Owner classifications are labels, never independent award calculations.
   'xlog.need.needed': 'Needed',
   'xlog.need.worked': 'Worked',
