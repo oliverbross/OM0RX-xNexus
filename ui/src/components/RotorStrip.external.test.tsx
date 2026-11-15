@@ -14,9 +14,9 @@ describe('original RotorStrip owner presentation', () => {
   it('shows real azimuth then unknown at the original deadline while keeping Stop with no native readers', async () => {
     vi.useFakeTimers(); let now = 100; vi.spyOn(performance, 'now').mockImplementation(() => now)
     const external = source(); render(<RotorStrip external={external} />)
-    expect(screen.getByText('171°T')).toBeTruthy()
+    expect(screen.getByText('171.0°T')).toBeTruthy()
     now = 500; await act(async () => { await vi.advanceTimersByTimeAsync(100) })
-    expect(screen.queryByText('171°T')).toBeNull(); expect(screen.getByText('—')).toBeTruthy()
+    expect(screen.queryByText('171.0°T')).toBeNull(); expect(screen.getByText('—')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'Stop rotation NOW' }))
     expect(external.stop).toHaveBeenCalledOnce()
     for (const method of Object.values(native)) expect(method).not.toHaveBeenCalled()
