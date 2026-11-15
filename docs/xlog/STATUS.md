@@ -14,7 +14,7 @@ The packaging freeze is released for reviewed documentation/tooling integration;
 canonical `main` now includes that evidence at `78e1c288`, with application/runtime
 and packaged provenance still exact `ae35`. The xLog owner reports
 1.6.27 packages, installation and installed qualification passed. Its current
-documentation is `7789c569` over application source `16cac867`. Its normal installed
+documentation is `87fbcc9d` over application source `16cac867`. Its normal installed
 handoff passed a 35-second observation and left xLog open and connected.
 Installed xNexus remains closed awaiting pairing. The project plan is not complete.
 
