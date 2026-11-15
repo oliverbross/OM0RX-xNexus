@@ -361,12 +361,13 @@ impl Worker {
                 if !decode_state.lock().is_ok_and(|mut state| state.accepts(job.epoch)) { continue; }
                 if last_epoch != Some(job.epoch) { decoder.reset(); last_epoch = Some(job.epoch); }
                 let host_time = job.period.host_period_start_unix_us;
-                let result = CompleteFrame::from_period(job.period).and_then(|frame| decoder.decode(frame));
+                let result = CompleteFrame::from_period(job.period).and_then(|frame| decoder.decode_native(frame));
                 if decode_cancel.load(Ordering::Acquire) { break; }
                 let Ok(mut state) = decode_state.lock() else { break; };
                 if !state.accepts(job.epoch) { continue; }
                 match result {
                     Ok(period) => {
+                        let period = period.into_presentation();
                         let Some(route) = state.view.route.clone() else { continue; };
                         let row_context = NeedsContext { worker_instance:worker_instance.clone(), worker_epoch:job.epoch, server_instance:decode_server.clone(), workspace_id:decode_workspace.clone(), route, decoder_mode:mode };
                         let clock = Clock { timestamp_basis:period.clock.timestamp_basis.into(), host_mapping_uncertainty_us:period.clock.host_mapping_uncertainty_us, calibration_uncertainty_us:period.clock.calibration_uncertainty_us, utc_sync_accuracy_us:period.clock.utc_sync_accuracy_us, remote_rf_latency_us:period.clock.remote_rf_latency_us, sample_alignment_offset_ns:period.clock.sample_alignment_offset_ns, resampler_center_offset_ns:period.clock.resampler_center_offset_ns };
