@@ -121,9 +121,9 @@ profile/lifecycle acceptance. Subsequent normal installed launch passed and left
 xNexus open, still unpaired; paired UI acceptance remains pending. Updated Linux/macOS
 checks and packages, physical DAX reception, clock/route qualification, signing
 and distribution remain separate. Digital TX is neither implemented nor enabled.
-The xLog owner reports 1.6.27 packages, installation and installed qualification
-passed. Current documentation is `bb68bbc6` over application `16cac867`; ordinary
-handoff subsequently passed and left xLog connected. The operator manually enabled
-xLog pairing, but xNexus pairing-button automation failed. Both apps were left
-open awaiting pairing/capture confirmation. No hardware or live station acceptance
-is implied.
+The xLog owner now reports 1.6.28 packages, installation and normal handoff passed;
+documentation is `92d6547` over application `eb3cf702`. The unchanged xNexus `.4`
+paired live with 1.6.27, then encountered its owner clock error. The correction
+is installed in 1.6.28, but the new manual receive outcome remains pending. See
+[the incident evidence](RX_CLOCK_INCIDENT_2026-11-15.md). No successful physical
+decoding or live station qualification is implied.

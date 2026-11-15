@@ -150,10 +150,11 @@ replay above remains separate evidence.
 The [Windows `.4` build and artifact audit](WINDOWS_BUILD_1.24.1-xlog.4.md)
 subsequently passed at exact source `ae35fc6435f861e38029049299833afe57de4885`;
 paired native acceptance and physical DAX reception remain separate gates.
-Canonical xLog 1.6.27 at `16cac86739274073ab2f8000a3916b4e37bc57a5` contains
-the reviewed owner source. Its owner reports packages, installation and installed
-qualification passed; current documentation is `bb68bbc6`. Normal installed
-handoff passed and left xLog connected. The operator enabled xLog pairing; normal
-installed xNexus launch passed but native pairing-button automation failed.
-Both apps were left open awaiting pairing/capture confirmation. The installed endpoint still requires
-paired UI and physical station acceptance.
+Installed xLog 1.6.28 at `eb3cf7024f7355c16346282646c7d2d62fb6bb7c` contains
+the reviewed owner source and the correction for the subsequent live clock
+failure. Packages, installation and normal handoff passed; current owner
+documentation is `92d6547`. Native pairing with the earlier 1.6.27 passed, but
+zero decoded rows/needs were observed during its clock failure. A fresh 1.6.28
+manual receive outcome remains pending; live decoded-needs and physical station
+acceptance are not established by the source tests or installed correction.
+See [the preserved incident](RX_CLOCK_INCIDENT_2026-11-15.md).

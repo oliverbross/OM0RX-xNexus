@@ -8,7 +8,7 @@ observation correctly. This qualifies that narrow live pairing/display path.
 
 Receive then reported the owner's clock-validation error. Two observations
 46 seconds apart showed zero decoded rows and no decoded-needs evidence.
-The operator stopped RX sharing; it remains stopped. Successful pairing does
+The operator stopped RX sharing at the end of that failed attempt. Successful pairing does
 not qualify live decoding, classification, physical controls or transmission.
 
 Private receipt under the xLog workspace:
@@ -32,8 +32,36 @@ so the bound holds for any subscriber origin. Per-packet wall-step, frame,
 flags and liveness guards must remain. This is not permission to invent samples,
 resample away timing evidence or claim measured global UTC/RF accuracy.
 
-The owner implementation, deterministic tests, new xLog version, package and
-installed acceptance are pending. No xNexus runtime change is proposed for this
-incident. After owner qualification, repeat live receive and decoded-needs
-acceptance before promoting either capability. The broader project, TX and
-updated platform/distribution gates remain incomplete.
+## Owner correction installed; live repeat pending
+
+xLog 1.6.28 now includes timing fix `389281bf` and restart UI change `b233a991`.
+The owner reports 16 Rust and four UI tests passed. Independent replay checked
+718,201 subscriber-origin pairs with a worst bound of 17,521 microseconds.
+This supports the corrected admission calculation, not physical decoding.
+No xNexus runtime/package change was made; `.4` remains exact `ae35`.
+
+The installed owner source is `eb3cf7024f7355c16346282646c7d2d62fb6bb7c`,
+with current documentation at `92d6547`. Under the xLog workspace's
+`.build/releases/1.6.28/acceptance/`, verified receipts are:
+
+| Evidence | SHA-256 | Scope |
+|---|---|---|
+| `installed-verification.json` | `34C091A585D009426CC53D47AF34B06078AEAEE1369B011F87CF54F61FF313FE` | 3,254 payload entries verified; 11 profile files preserved, including RX binding |
+| `normal-handoff.json` | `A505524D364E63AC26FE10B49A1BEEABE74853BE7D58F3DD10464867EAF40420` | 37.715 seconds/12 samples; host 20200 and worker 13980; diagnostics off, left open |
+| `candidate-six-minute.summary.json` | `8D0DAC82B2A79B9400D6952A687D7FE2642F00E378893DA7D1802BAA0C6E0BA3` | 132 samples, 1,569 replies, zero transport failures/worker retirements, ordinary close |
+
+The exact owner installer SHA-256 is
+`7a25a76bb4556b3c0e1cbae1a7a2a1dd7707c3a8d32c60c30472335d676a8ed6`.
+The six-minute harness initially expected `reference_resolve` for a blank draft;
+source review corrected that criterion to `reference_schedule`. The same retained
+evidence contains four schedule calls, including one at 355.927 seconds. The
+original harness failure remains preserved; no external download is claimed.
+Host compilation passed in 11m18s, but its exact MSVC telemetry-helper guard
+failure and separately reviewed narrow cleanup qualification remain recorded.
+Worker, Portable and Installer jobs exited naturally and passed.
+
+The operator has been asked to pair the new owner session, confirm A/RX1 sharing
+and start FT8 again. The new receiving outcome is pending: live 1.6.28 RX and
+decoded-needs are **not yet qualified**. The 1.6.27 failure above remains a
+failure. Repeat live receive/needs acceptance before promoting either capability;
+the broader project, TX and updated platform/distribution gates remain incomplete.

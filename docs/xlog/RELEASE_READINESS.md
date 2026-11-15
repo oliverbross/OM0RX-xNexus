@@ -56,12 +56,12 @@ Only clean canonical `main` may be packaged. Build receipts bind the exact sourc
 upstream pin, configuration, tools, dependencies and artifacts. xLog packaging and
 installed acceptance remain owned by the “xlog work” chat; an SDK/owner source
 test does not establish that those changes are installed. The owner reports
-1.6.27 portable/installer packages, installation and installed qualification
-passed. Current owner documentation is `bb68bbc6` over application `16cac867`;
-normal installed handoff passed and left xLog connected. The operator enabled
-xLog pairing manually; xNexus normal launch passed, but pairing-button input
-geometry failed. Both applications were left open awaiting operator pairing
-and current A/RX1 capture confirmation; live reception remains pending. Changing packaged
+1.6.28 packages, installation and normal installed handoff passed. Current owner
+documentation is `92d6547` over application `eb3cf702`. It contains the correction
+for the [1.6.27 live clock failure](RX_CLOCK_INCIDENT_2026-11-15.md); a new manual
+pairing/receive outcome remains pending. Exact `0d01248b` Mac TypeScript also
+passed, but Vite/native checking was held before launch by the next resource
+admission gate. Live RX/needs and the remaining platform gates stay open. Changing packaged
 source requires a new visible version, including failed qualification candidates.
 
 The fork retains KD9TAW attribution, COPYING, NOTICE, and third-party notices.

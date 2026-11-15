@@ -9,25 +9,28 @@ build, static artifact audit and independent retention from clean canonical
 passed, followed by native A→B→A profile/lifecycle checks and permanent current-user
 installation. A subsequent explicit installed launch passed; both applications
 were left open. The operator subsequently completed live native pairing, but
-receive failed an owner clock guard and RX sharing is now stopped.
+receive failed an owner clock guard and RX sharing was stopped. The owner fix is
+now installed as xLog 1.6.28; a fresh manual pairing/receive outcome is pending.
 It remains unsigned. [The build record](WINDOWS_BUILD_1.24.1-xlog.4.md) binds the
 actual tools, reviewed 12 GiB supervisor, artifacts and warning qualification.
 The packaging freeze is released for reviewed documentation/tooling integration;
 canonical `main` now includes that evidence at `78e1c288`, with application/runtime
 and packaged provenance still exact `ae35`. The xLog owner reports
-1.6.27 packages, installation and installed qualification passed. Its current
-documentation is `bb68bbc6` over application source `16cac867`. Its normal installed
-handoff passed a 35-second observation and left xLog open and connected.
+1.6.28 packages, installation and installed verification passed. Its current
+documentation is `92d6547` over application source `eb3cf702`. Normal installed
+handoff passed 37.715 seconds/12 samples and left xLog open with diagnostics off.
 Installed xNexus paired with the real workspace/protocol 1 and displayed live
 DIGU correctly. Two observations over 46 seconds showed the owner clock error,
 zero decoded rows and no decoded-needs evidence. The operator stopped RX sharing.
 An owner metadata-only probe identified 10–17 ms endpoint sample-clock residuals
-against existing 2 ms guards; a narrowly reviewed owner fix and new xLog candidate
-remain pending. See [the incident and exact evidence](RX_CLOCK_INCIDENT_2026-11-15.md).
+against existing 2 ms guards. The reviewed owner correction and restart UI passed
+16 Rust/four UI tests and independent origin-pair replay, then shipped in 1.6.28.
+Fresh live RX/needs acceptance is still pending; installation does not turn the
+earlier failure into a pass. See [the incident and exact evidence](RX_CLOCK_INCIDENT_2026-11-15.md).
 The project plan is not complete; live RX/needs, physical controls, TX and updated
 platform/distribution qualification remain open.
 
-At that handoff, the owner verified installed host PID 27440 and worker PID 17076,
+At the earlier 1.6.27 handoff, the owner verified host PID 27440 and worker PID 17076,
 10.136 MHz DIGU, receive slice A, TX idle and connected FLEX/rotor/KPA/KAT.
 Settings input failed because coordinate geometry was unavailable; bounded
 activation and Ctrl+,/Tab recovery did not change the focused pane, so input
@@ -72,7 +75,7 @@ new implementation still requires its own source tests and candidate qualificati
 | M1 | 80 client tests plus exact replay of 40 Swift needs replies; actual owner HTTP and SQLite restart/receipt tests; base bridge merged into canonical xLog | Paired installed-application acceptance |
 | M2 | Separate companion startup; no local station services; `.4` Windows A→B→A private profiles and ordinary lifecycle passed | Final candidate native pairing and installed station lifecycle |
 | M3 | xLog-authoritative call/DXCC needs, band/world maps, selected-call history; owner/SDK/native/UI tests and integrated Windows all-targets check passed; `.4` Windows artifact audited | Paired UI; installed classification propagation; richer confirmation/award policy evidence |
-| M4 | Owner-mediated tune/point and independent Stop; connection-bound Stop fix merged after 95 focused and 1,164 full native tests; xLog 1.6.27 installed qualification passed | Paired UI and physical control qualification |
+| M4 | Owner-mediated tune/point and independent Stop; connection-bound Stop fix merged after 95 focused and 1,164 full native tests; current xLog 1.6.28 installation/handoff passed | Paired UI and physical control qualification |
 | M5 | Durable outbox and atomic owner write/receipt; restart, replay and edit-conflict tests | Paired native GUI acceptance; queue archive/export design |
 | M6 | FLEX slice A → DAX Audio RX 1 selected; bounded owner PCM, client, FIR/period assembler, threaded native FT8/FT4 decoder and receive UI; generated FT4 to needs chain passed | Confirm live mapping/endpoint; active reception and clock/route qualification; TX implementation and supervised qualification |
 | M7 | Distinct identity, repaired profile construction, reviewed installer guards; `.4` Windows build, audit, retention, A→B→A, disposable install/uninstall and permanent installation passed | Paired installed station acceptance |
@@ -96,11 +99,11 @@ records 42 passing owner tests and replay of 23 publication plus six independent
 classification exports through the actual Rust projector. They include row
 absence, stale classification becoming Unknown, band/mode differences and
 paper/LoTW/eQSL confirmation cases. This is worker-to-projector evidence, not
-installed HTTP/UI propagation. Canonical xLog is now at
-`16cac86739274073ab2f8000a3916b4e37bc57a5`, version 1.6.27. Its owner reports
+installed HTTP/UI propagation. Installed xLog is now at
+`eb3cf7024f7355c16346282646c7d2d62fb6bb7c`, version 1.6.28. Its owner reports
 portable/installer packages, installation and installed qualification passed,
 with earlier failed guard receipts preserved. Current owner documentation is
-`bb68bbc6`; paired endpoint and station acceptance remain separate.
+`92d6547`; repeat live RX/needs and station acceptance remain separate.
 RX evidence includes 58 SDK tests, 40 distinct companion UI tests, TypeScript
 and Vite builds, 14 browser viewport/theme cases, 14 pure DSP/assembler tests,
 five native adapter tests including both modes at five rates, two actual owner
@@ -122,15 +125,21 @@ before container creation at 6.35 GiB physical headroom, below its 7 GiB gate;
 updated SDK/UI and desktop checks have not run. See
 [the Linux evidence](../../scripts/xnexus/linux/PROVISIONING.md).
 
-The updated Mac check reached 35% admission briefly, then fell below that
+An earlier updated Mac check reached 35% admission briefly, then fell below that
 threshold before TypeScript started. No frontend/compiler child launched;
 source, cache and earlier archive preservation passed, with no remaining owned
 processes. Held receipt SHA-256:
 `4019b0fda7a90e1db07d57500b42ae8fad3dd4f9eb3d08151d231de8bb459405`.
-The latest Mac resource probe was 32%, below the 35% admission threshold, with
-no new frontend/compiler child. These holds do not qualify the updated source
-on either platform. Windows `.4` subsequently passed the separate optimized
-build and artifact audit; physical DAX reception is still unqualified.
+A subsequent exact `0d01248b` run passed TypeScript, then held before Vite because
+the next step missed its 35% admission threshold. Initial availability was 39%,
+37% at TypeScript admission, and the 29% runtime minimum stayed above the 20%
+floor. No Vite/native child ran; runner exit 1, no owned process group remained,
+and source/cache/archive preservation passed. Receipt on the Mac:
+`/Users/oliver/Projects/OM0RX-xNexus-integrated-needs-check/target/integrated-check-20261115T022950Z-cb7a009f/receipt.json`,
+SHA-256 `7ba5cc2afa5e2c271220d017afa9e319a0521665617544e795b0fed84a1a7d1e`.
+No retry, package or UI launch followed. TypeScript success does not qualify
+the remaining updated Mac or Linux gates. Windows `.4` passed its separate
+optimized build/artifact audit; physical DAX decoding is still unqualified.
 
 Earlier canonical xLog integrated the bridge and receive owner at
 `5efffc1a23af68157e3c564eb2aa345256bea90a`. Validation includes 1,154 native

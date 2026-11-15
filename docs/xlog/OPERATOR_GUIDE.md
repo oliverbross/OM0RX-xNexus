@@ -39,7 +39,7 @@ history row without an exact edit revision is view-only.
 
 ## Control the station
 
-Installed xLog 1.6.27 includes the connection-identity fix described in
+Installed xLog 1.6.28 includes the connection-identity fix described in
 [STATUS.md](STATUS.md), and its installed application qualification passed.
 Paired physical rotator movement and Stop still require station acceptance.
 

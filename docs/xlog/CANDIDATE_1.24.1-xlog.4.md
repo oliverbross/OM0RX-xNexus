@@ -16,16 +16,13 @@ commit changes only the five version manifests and candidate documentation.
 The upstream pin remains `c88740a94172b3e78ae587d62bd0a54394d1e85f`.
 The separate upstream merge/serial-alias review is not included.
 
-The paired owner is canonical xLog 1.6.27 source
-`16cac86739274073ab2f8000a3916b4e37bc57a5`, whose pre-version implementation is
-`8bd486abd2e62aa079e8b4248126e1e186561452`. The xLog owner reports package,
-installation and installed qualification passed; documentation is now at
-`bb68bbc6`. Normal installed handoff passed and left xLog open and connected.
-The operator enabled xLog companion pairing; installed xNexus also launched
-successfully, but native pairing-button automation failed. Both apps were left
-open awaiting operator pairing and current A/RX1 capture confirmation. Installed
-qualification does not establish paired endpoint
-or physical station acceptance.
+The currently installed owner is xLog 1.6.28 source
+`eb3cf7024f7355c16346282646c7d2d62fb6bb7c`, with documentation at `92d6547`.
+Its package, installation and normal handoff checks passed. This replaces 1.6.27,
+which paired successfully but failed live RX on an owner clock guard. The owner
+timing/restart correction is now installed; a fresh manual pairing/FT8 receive
+outcome is pending. See [the failure and correction evidence](RX_CLOCK_INCIDENT_2026-11-15.md).
+There is no xNexus runtime change and no live-RX qualification claim.
 
 ## Changes and qualification
 
@@ -44,9 +41,10 @@ The last test uses a synthetic classifier; it is separate from the actual Swift
 wire replay and does not exercise a live logbook or DAX hardware.
 
 Updated Linux tooling fixtures and cache seeding passed, but contract/desktop
-checks were held for host memory. Updated Mac checking remains held; the latest
-32% resource probe was below its 35% admission threshold, with no new frontend
-or compiler child. Earlier `.3` evidence does not qualify this new source.
+checks were held for host memory. Updated exact `0d01248b` Mac TypeScript passed,
+then the next 35% admission gate held Vite before launch; no Vite/native child
+ran. [The ledger](STATUS.md) preserves its receipt and earlier admission holds.
+Earlier `.3` evidence does not qualify this new source.
 Windows private profile/lifecycle, disposable install/uninstall and permanent
 installation passed. Native paired acceptance remains open. The operator confirmed FLEX slice A → DAX Audio RX 1 and an
 unlocked, available desktop. Exact live mapping, endpoint reception and timing
