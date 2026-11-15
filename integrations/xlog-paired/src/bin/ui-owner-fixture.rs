@@ -7,6 +7,9 @@ use companion_bridge::Bridge;
 #[cfg(feature = "owner-audio")]
 #[path = "../ui_fixture_audio.rs"]
 mod ui_fixture_audio;
+#[cfg(feature = "owner-needs-cache")]
+#[path = "../ui_fixture_needs_cache.rs"]
+mod ui_fixture_needs_cache;
 use serde_json::{json, Value};
 use std::{
     collections::HashMap,
@@ -90,6 +93,11 @@ fn main() {
     );
     let has_audio = synthetic_audio != "off";
     let has_needs = synthetic_audio == "generated-ft4";
+    let needs_delivery = marker.get("needs_delivery").and_then(Value::as_str).unwrap_or("direct");
+    assert!(matches!(needs_delivery,"direct"|"scheduled-cache"));
+    assert!(needs_delivery=="direct" || has_needs,"scheduled cache requires generated FT4");
+    #[cfg(not(feature = "owner-needs-cache"))]
+    assert_eq!(needs_delivery,"direct","rebuild with owner-needs-cache for scheduled delivery");
     #[cfg(not(feature = "owner-audio"))]
     assert_eq!(
         synthetic_audio, "off",
@@ -141,11 +149,17 @@ fn main() {
     let evidence = root.join("events.jsonl");
     let needs_stop = root.join("STOP_NEEDS");
     assert!(!needs_stop.exists(), "fresh needs fixture required");
+    #[cfg(feature = "owner-needs-cache")]
+    let scheduled_needs=(needs_delivery=="scheduled-cache").then(||Arc::new(ui_fixture_needs_cache::ScheduledNeeds::start(root.clone())));
+    #[cfg(feature = "owner-needs-cache")]
+    let scheduled_provider=scheduled_needs.clone();
     let bridge=Bridge::start("xnexus-disposable-ui-fixture".into(),Arc::new(move|request|{
         use std::io::Write;
         let mut state=owner.lock().unwrap();
         if let Some(request)=request{
             if let Some(batch) = request.get("needs_query") {
+                #[cfg(feature = "owner-needs-cache")]
+                if let Some(scheduled)=scheduled_provider.as_ref(){return scheduled.query(batch);}
                 let mut event=std::fs::OpenOptions::new().create(true).append(true).open(&evidence).unwrap();
                 writeln!(event,"{}",json!({"synthetic_needs_query":batch,"at_unix_ms":now()})).unwrap();
                 event.sync_all().unwrap();
@@ -192,6 +206,8 @@ fn main() {
             snapshot["needs"] = json!({"generated_at_unix_ms":now(),"max_age_ms":2000,
                 "readiness":if ready {"ready"} else {"unavailable"},
                 "authority":if ready { synthetic_authority() } else {Value::Null}});
+            #[cfg(feature = "owner-needs-cache")]
+            if let Some(scheduled)=scheduled_provider.as_ref(){snapshot["needs"]=scheduled.metadata();}
         }
         Ok(snapshot)
     })).unwrap();
@@ -235,6 +251,8 @@ fn main() {
         std::thread::sleep(Duration::from_millis(200));
     }
     bridge.revoke();
+    #[cfg(feature = "owner-needs-cache")]
+    if let Some(scheduled)=scheduled_needs {scheduled.stop();}
 }
 
 fn synthetic_authority() -> Value {
