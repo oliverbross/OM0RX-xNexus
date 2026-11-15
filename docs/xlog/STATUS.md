@@ -30,7 +30,14 @@ and installed at 05:56:28 UTC, with 3,254 payload files verified and all 11 prof
 files preserved. Private candidate and installed marked launches/ordinary closes
 passed. Normal installed handoff passed 36.5624911 seconds/13 samples, host 6540
 and worker 24672, diagnostics off and stable FLEX/DCU; xLog was left open.
-New 1.6.30 pairing/receiving confirmation and live RX/needs remain pending. The earlier tests
+The operator completed new 1.6.30 pairing/receiving. Sixteen native observations
+from 06:07:09.881 to 06:11:38.140 UTC showed actual new FT8 periods, rows increasing
+56→123→179→200, and 64→72 live cluster Needed rows with scores/reasons. Before
+six minutes, `RX device/timestamp discontinuity (0x80004005); restart sharing.`
+cleared the route/rows. The healthy-RX soak stopped immediately, with no input;
+apps were left open. Decoded-call needs showed Awaiting/unavailable/expired,
+never qualified Needed/Worked. Native failure cause remains unconfirmed and
+bounded read-only diagnosis/instrumentation is underway. The earlier tests
 are not retroactively reclassified as actual retained-owner wiring proof.
 It remains unsigned. [The build record](WINDOWS_BUILD_1.24.1-xlog.4.md) binds the
 actual tools, reviewed 12 GiB supervisor, artifacts and warning qualification.
@@ -57,7 +64,7 @@ generated FT4 recovery after actual declared-gap/timing discards. These results
 do not qualify live receive/needs; the 1.6.29 candidate is now superseded.
 Owner `stopped` state retains the companion subscription
 and can resume on a new valid descriptor, so this is not a terminal UI-state claim.
-Both live failures remain preserved; see [the incident and exact evidence](RX_CLOCK_INCIDENT_2026-11-15.md).
+All three live failures remain preserved; see [the incident and exact evidence](RX_CLOCK_INCIDENT_2026-11-15.md).
 The project plan is not complete; live RX/needs, physical controls, TX and updated
 platform/distribution qualification remain open.
 

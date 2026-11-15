@@ -129,10 +129,42 @@ replay. Both fixes are in clean, published xLog 1.6.30 candidate
 `8795606bdbb5ac029287518a826f189d8873d117`, implementation
 `4025ee6f057e811343a506ea131bba9acd1ea312`. Package, installation and normal
 handoff subsequently passed, with [exact receipts](RETAINED_CLUSTER_INCIDENT_2026-11-15.md).
-New operator pairing/receiving confirmation and live receive/needs acceptance
-remain pending; the prior installed 1.6.28 failures stay preserved.
+The subsequent live 1.6.30 attempt is recorded below; the prior installed 1.6.28
+failures stay preserved.
 No xNexus runtime edit, version change or rebuild is required by the
 tested recovery compatibility result.
+
+## Live 1.6.30 decoded FT8, then failed before six minutes
+
+After the operator confirmed new 1.6.30 pairing/sharing/FT8 steps, 16 native
+accessibility samples spanned `2026-11-15T06:07:09.881Z` through
+`2026-11-15T06:11:38.140Z`. Real FT8 rows increased from 56 to 123 to 179 and
+then the 200-row display limit, with newly decoded periods. The observed route
+was slice A/DAX RX 1, 10.136 MHz DIGU, 48 kHz stereo, selected input channel 1.
+The live cluster also displayed 64→72 Needed rows with owner scores/reasons.
+These are concrete live decoding/cluster observations, not a completed soak.
+
+Before six minutes, the owner reported:
+
+> RX device/timestamp discontinuity (0x80004005); restart sharing.
+
+Rows and route cleared. The native healthy-receive soak stopped immediately;
+both applications were left open and no input was performed. A separate owner
+process/socket observer may finish, but cannot establish uninterrupted RX.
+The cause of this native E_FAIL remains unconfirmed; bounded read-only needs
+diagnosis and targeted native failure instrumentation are being prepared.
+
+Decoded-call needs also remain unqualified. Twelve fresh decoded rows initially
+showed Awaiting, then lookup/classification unavailable or expired; no decoded
+row was observed with Needed/Worked evidence. Cluster Needed rows are a separate
+path and do not qualify decoded-call classification or natural RX recovery.
+
+The private receipt is
+`.build/xnexus-native-acceptance/live-rx-1.6.30-20261115.json`, SHA-256
+`AE56584FF4F74CD91DACD440333C1EB924351E71A8F5CFA21BD5730FE54866C0`.
+It records a failed live attempt. No station calls, workspace/device identifiers
+or credentials are reproduced here. All prior failures and synthetic recovery
+results retain their original scope; live RX stability and decoded needs remain open.
 
 ## Separate UI backlog: obsolete polling alert
 

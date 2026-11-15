@@ -91,5 +91,10 @@ Normal installed handoff then passed 36.5624911 seconds/13 samples with host
 PID 6540 and worker PID 24672, diagnostics off and stable FLEX/DCU connections;
 xLog was left open. Receipt `normal-handoff.json` in that acceptance directory
 has SHA-256 `DCB5CF2266801907212F077B7A2976F9E734F124CF53100D627DF68283963D05`.
-The operator has been asked to complete new 1.6.30 pairing/sharing/FT8 receiving.
-That confirmation and live cluster/RX/needs qualification remain pending.
+The operator subsequently completed new 1.6.30 pairing/sharing/FT8 receiving.
+Native observation showed 64→72 live Needed cluster rows with owner scores/reasons,
+providing positive installed propagation evidence for this corrected path.
+Actual FT8 decoding also progressed, but a native device/timestamp discontinuity
+ended the receive soak before six minutes. Decoded-call needs did not establish
+Needed/Worked evidence; cluster propagation does not qualify that separate path.
+See [the failed live attempt and receipt](RX_CLOCK_INCIDENT_2026-11-15.md).
