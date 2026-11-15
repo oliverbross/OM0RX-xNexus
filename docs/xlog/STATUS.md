@@ -14,7 +14,7 @@ operating UI with xLog services underneath. M6 TX is required and remains
 unfinished software work, not merely waiting for a hardware test.
 
 The original-interface host is committed at
-`ceb0ef61bb1360d8979ddb8bb329a06ad5e9c4f4`; checkpoint `b84610861` also includes
+`ceb0ef61bb1360d8979ddb8bb329a06ad5e9c4f4`; checkpoint `3487e4e2e` also includes
 the original Spots view, the read-only original contact-card surface, a strict
 contact-detail codec, bounded SDK/native/frontend readers, the original global
 rotor strip and updated notice tooling. The tested rotor helper,
@@ -44,6 +44,12 @@ the installed application or qualify a paired native station candidate:
 | [Original global rotor strip](OWNER_ROTOR_STRIP.md) (`26d2d6841`) | 24 owner, 12 native and 406 catalog cases, full TypeScript/Vite and nine original-host browser cases passed. Exact retained Stop remains available through telemetry expiry, pending work and poll failure; actual connection/target replacement retires its authority. No physical movement is claimed. |
 | [Point poll and settlement tracking](POINT_POLL_EVIDENCE_DRAFT.md) (`5b9429500`) | 64 focused cases, nine original-host browser cases and final full TypeScript/Vite passed. All 407 catalog assertions passed; the original aggregate runner failed its obsolete 406-count expectation and remains preserved with a separate read-only qualification record. A narrow request-ID type correction produced byte-identical emitted JavaScript. The explicit dispatch entry is not yet mounted to a Point control; no physical movement is claimed. |
 | [Supported original contact editor](ORIGINAL_CONTACT_EDITOR_SOURCE_DRAFT.md) (`b84610861`) | 85 follow-up cases across controller/editor/storage/recovery, 436 catalog cases, full strict TypeScript and eight actual-card browser cases passed. Six supported owner fields reuse the original form; Queue, Submit and Applied remain separate. Multiline Enter, immutable operation recovery and legacy Clear were checked. Earlier product/fixture failures remain preserved. The controller and original card are qualified separately from the pending host mount. |
+| [Original Recent/Recall editor mount](ORIGINAL_CONTACT_HOST_SOURCE.md) (`c77846cb4`) | Exact UUID gestures, retained local drafts, explicit saved-correction Resume and the existing connection dialog above a dirty card are now integrated. Final 68 focused tests, 436 serial catalog checks, strict TypeScript/Vite and three viewport/six layout browser cases passed. Initial Recall scheduling, unreachable TypeScript branches and a parallel catalog timeout remain preserved with narrow corrections. No actual-owner SQLite or installed-native acceptance is claimed. |
+| [Passive bearing body](../../integrations/xlog/fixtures/BEARING_PROVENANCE.md) (`c00a6795e`) and [independent client](../../integrations/xlog/fixtures/BEARING_CLIENT_DRAFT.md) (`37c0c0f1d`) | Twelve body tests replay the unchanged actual Swift corpus. The final SDK gate listed 173 tests: 170 passed and three existing external-input tests were ignored; all-target Clippy passed. Original snapshot deadlines, exact station binding and conditional local context retirement preserve the main RX/control lane. Earlier test-only representation/call/freshness failures remain preserved. |
+| [Selection-fenced native bearing lane](BEARING_NATIVE_DRAFT.md) (`29ad2ed5a`) | Nineteen bearing and 13 unchanged contact tests passed, with fresh SDK/native modules and natural process retirement. Selection invalidation occurs before busy/context capture, and serialization retains the SDK lease. No full Tauri, frontend Point, physical rotor or installed endpoint acceptance follows. |
+| [Offline original Station adapter](../../integrations/xlog-tx-sequence/VALIDATION.md) (`829e5d1cb`) | Six waveform goldens and 22 adapter tests passed. The actual Station state advances only after an explicit fake actual-start event, preserving exact operation bytes, period high-water and release identity. Runtime sequencing remains unwired. |
+| [Maintained actual-owner replay](../../integrations/xlog-tx-paired/VALIDATION.md) (`4e1bac82e`) | All 18 paired cases and three owner-root/build guards plus two corpus negative guards passed. Actual owner modules are imported from an explicitly selected, hash-pinned xLog source root, without copying implementation. ACK/Permit do not advance Station; the fake sink retains the complete immutable operation. No live endpoint, scheduler, audio stream or PTT is exercised. |
+| Accepted native decode-period preservation (`3487e4e2e`) | All eight decoder and 36 existing worker tests passed, including actual generated FT8/FT4. Native decode records and full owner/context/clock data survive until the existing worker acceptance boundary; the presentation DTO remains unchanged. Receipt `C30D85498BAACCF6CCCD088DDEC34F9E0B0C27D0A7B4DB9AB574072BD8356FB6` records natural retirement and unchanged inputs. No Station feed or TX control is wired by this slice; full integrated native checking remains separate. |
 | [Locked notices and exact resource coverage](SOURCE_DELIVERY_GAPS.md) (`e1799c3f1`) | Offline generation/check covers 531 normal-edge desktop crates; 13 Node and nine Python controls passed. Historical notice mappings were checked without modifying retained artifacts. Complete corresponding-source/model provenance and platform release gates remain open. |
 
 The actual original window now passes isolated frontend/browser qualification.
@@ -101,21 +107,25 @@ lane tests are separate runtime evidence. Receipt:
 The near-cap peak and retained source/tool/cache inventories are recorded in the
 native validation document, without implying a linked test or packaged pass.
 
-M5 next mounts the qualified by-ID read and supported original editor from the
-actual Recent/Recall gestures. That host work remains uncommitted and untested:
-it must check synchronous current read/write authority, respect close/replacement
-guards and retain the durable outbox's immutable operation identity. A draft may
-remain editable during a refresh without granting stale submission authority;
-known revision changes must preserve the draft and require explicit resolution.
-The compact history projection alone does not establish full contact or
-confirmation completeness. Point tracking is committed, but its UI dispatch,
-bearing transport and physical outcome qualification remain separate work.
+M5's qualified by-ID read and supported original editor are now mounted from the
+actual Recent/Recall gestures. Synchronous current read/write checks, guarded
+close/replacement, dirty typing through withheld reads and explicit same-ID
+recovery passed the stated frontend/browser gates. Submission still requires a
+fresh matching full base and revision. A known contradictory base, tombstone or
+read-only answer preserves the draft and requires explicit resolution. Compact
+history alone does not establish contact/confirmation completeness. Actual-owner
+native create/edit/receipt/restart, full Logbook/create and terminal archive
+remain open. Point tracking and bearing transport are committed; Point UI
+dispatch and physical outcome qualification remain separate work.
 
 xLog's passive bearing producer at `9d7555d5` passed its actual Core build and
 13 Swift tests. Its four-state exported fixture is retained with SHA-256
 `307BD860A42BC5A3191FA0F421BFCA32AB0C27CC44DF0843840AE0F57B43FE8D`.
-The endpoint is still in qualification and is not installed. The xNexus pure
-body codec is uncommitted qualification work: its initial run passed 11 cases
+The authenticated endpoint is committed in xLog `54ee814e`; it is not installed.
+Its 17 Swift, 169 Bridge plus 11 functional, host compilation and six filtered
+actual-host worker tests passed their respective gates. Earlier stale-capability
+expectation and retained compiler-helper failures remain failures. The xNexus
+body codec is committed at `c00a6795e`: its initial run passed 11 cases
 and failed the actual replay's JSON integer-versus-float representation
 comparison. The unchanged producer body decoded successfully; a test-only
 correction preserves all integer identities and compares only declared
@@ -123,20 +133,29 @@ floating-point fields numerically. The corrected, separate run passed all 12
 cases and SDK all-target Clippy with unchanged producer bytes, natural exit and
 zero descendants; receipt SHA-256 is
 `BDF723495350690E04683A0ADE79E419828480F7B4100AC32954DD056FEA3CCC`.
-This pure body-codec evidence does not qualify the endpoint or client transport.
+This pure body-codec evidence is distinct from the later client/native gates
+listed above and does not by itself qualify the endpoint or transport.
 
 The [TX sequence implementation plan](TX_SEQUENCE_ADAPTER_PLAN.md) is committed
-at `4d21abcf7`. An isolated, not-yet-committed offline adapter now reuses the
+at `4d21abcf7`. The committed offline adapter (`829e5d1cb`) reuses the
 actual Nexus Station state machine, retains prepared bytes and accepts only an
 explicit fake actual-start event. Its 22 tests and the existing six waveform
 goldens passed fresh compilation of the actual adapter/preparer modules against
 source-equivalent retained dependencies. The bounded Job exited naturally with
 zero descendants; receipt SHA-256 is
 `0E11EAF98C21C20A04651556E82090843C87B57F90A74C49870586BF204D564E`.
-Cargo/Clippy and actual-owner manifest/body replay are separate gates. It
-provides no scheduler, output device,
+Full Cargo/Clippy is not claimed by that direct-module gate. The later maintained
+actual-owner replay (`4e1bac82e`) passed 18 cases and its build/corpus refusal
+controls, with receipt `69252C6DAE98779C1142830955A5FFB62DE4912421ED10B404B155FDE35A3D82`.
+It provides no scheduler, output device,
 transmit endpoint or RF permission. The actual manifest transfer, exact physical
 ownership/release and original operating-control wiring remain unfinished.
+The xLog owner also committed the immutable prepared-period adapter (`6369fc47`)
+and pure output-timing planner (`cbfaf6c9`), with 42 and 32 focused tests
+respectively. These explicit-input/fake-output gates do not implement a live
+clock provider or calibrated digital backend. A read-only Windows output
+metadata probe is prepared separately; RX slice A / DAX RX1 does not establish
+a transmit route, channel map, power policy or timing calibration.
 M2 and M3–M8 remain open. No new package, version, RF test or installation is
 claimed by this source checkpoint.
 
@@ -303,11 +322,11 @@ new implementation still requires its own source tests and candidate qualificati
 |---|---|---|
 | M0 | Complete: full upstream history, private fork, fetch-only upstream, nine tracked milestones | Maintain upstream review and patch inventory |
 | M1 | 80 client tests plus exact replay of 40 Swift needs replies; actual owner HTTP and SQLite restart/receipt tests; base bridge merged into canonical xLog | Paired installed-application acceptance |
-| M2 | Separate companion startup; no local station services; `.4` Windows A→B→A private profiles and ordinary lifecycle passed | Restore the original Nexus operating interface over xLog services; diagnostic dashboard is not the final product; qualify native pairing/lifecycle |
+| M2 | Actual original operating window, Spots, Recent/Recall editor/reconnect and global rotor strip passed their stated frontend/browser gates; no local station services | New same-source native candidate, private lifecycle and paired installed acceptance; diagnostic dashboard remains internal scaffolding |
 | M3 | xLog-authoritative call/DXCC needs, band/world maps, selected-call history; owner/SDK/native/UI tests and generated cache/FT4 chain passed; `.5` internal Windows artifact audited | Original operating UI integration; installed classification propagation; richer confirmation/award policy evidence |
-| M4 | Owner-mediated tune/point and independent Stop; connection-bound Stop fix merged after 95 focused and 1,164 full native tests; owner reports 1.6.31 installation/private checks and normal handoff passed | Paired UI and physical control qualification |
-| M5 | Durable outbox and atomic owner write/receipt; restart, replay and edit-conflict tests | Paired native GUI acceptance; queue archive/export design |
-| M6 | FLEX slice A → DAX Audio RX 1 selected; bounded owner PCM, client, FIR/period assembler, threaded native FT8/FT4 decoder and receive UI; generated FT4 to needs chain passed | Confirm live mapping/endpoint; active reception and clock/route qualification; TX implementation and supervised qualification |
+| M4 | Owner-mediated controls/independent Stop, exact retained rotor identity, poll/settlement tracking and passive bearing SDK/native lane passed their respective source gates | Original explicit Point UI, integrated native check, paired installed and physical control qualification |
+| M5 | Durable outbox/atomic owner receipts plus exact-ID original contact editor and explicit recovery passed their stated component/browser gates | Actual-owner native GUI create/edit/receipt/restart; full Logbook/create workflow and terminal archive/export |
+| M6 | Owner PCM/assembler/native decode/receive UI and native-record preservation; original offline Station and actual-owner prepared-period replay passed | Runtime Station feed, live context and timing construction, bounded TX protocol, calibrated output/release backend and supervised station qualification |
 | M7 | Distinct identity, repaired profile construction, reviewed installer guards; `.4` installed acceptance and `.5` internal-only build/audit/retention passed | New original-interface candidate and paired installed station acceptance; no `.5` upgrade |
 | M8 | `.4`/`.5` Windows artifacts audited; Mac .3 A→B→A isolation and exact .3 Linux contract/desktop checks passed | Current notices/resource coverage, updated Linux/Mac packages, paired UI, native lifecycle, signing and distribution qualification |
 
