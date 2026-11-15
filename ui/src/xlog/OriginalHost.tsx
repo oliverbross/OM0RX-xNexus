@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { TopBar } from '../components/TopBar'
 import { ModeNav } from '../components/ModeNav'
 import { OperateCockpit } from '../components/OperateCockpit'
+import { RotorStrip } from '../components/RotorStrip'
 import { StationList } from '../components/StationList'
 import { SpotsPanel } from '../components/SpotsPanel'
 import { Dialog } from '../components/ui/Dialog'
@@ -22,6 +23,7 @@ import { useOwnerReceiver } from './useOwnerReceiver'
 import { useOwnerSpectrum } from './useOwnerSpectrum'
 import { spectrumApi, spectrumContextKey } from './spectrumApi'
 import { ownerOperatingModel } from './ownerOperatingModel'
+import { createOwnerRotor } from './ownerRotor'
 import { ownerCockpitPresentation } from './ownerCockpitPresentation'
 import { ownerDecodeEntries, ownerRoster } from './ownerDecodeEntries'
 import { installOwnerLogBoundary, unavailableOwnerLog } from './ownerLogBoundary'
@@ -80,26 +82,21 @@ export function OriginalHost({ api = bridge, receiver = rxApi, spectrumTransport
   const spotSource = useMemo(() => ownerSpotsSource({ view, lease: connection.lease, session },
     () => currentSpots.current, row => selectCall(row.callsign)), [view, connection.lease, session])
   const canTune = fresh && model.station?.transmitting === false && !!model.station.radio_id && capabilities.includes('station.tune')
-  const canStopRotor = view.paired && capabilities.includes('rotor.stop')
-  const stopTarget = useRef<{ session: number; id: string } | null>(null)
-  if (stopTarget.current?.session !== session) stopTarget.current = null
-  if (model.rotor?.rotor_id) stopTarget.current = { session, id: model.rotor.rotor_id }
+  const rotorOwner = useRef(createOwnerRotor())
+  const rotorInput = { api, view, lease: connection.lease, session }
+  const currentRotorInput = useRef(rotorInput)
+  currentRotorInput.current = rotorInput
+  const rotor = rotorOwner.current.present(rotorInput, () => currentRotorInput.current,
+    connection.isCurrentConnection, connection.command, now)
   const services = useMemo<OperateServiceAdapter>(() => {
     const actions = new Set<OperateAction>(['decoder', 'rxMarker'])
     if (canTune) actions.add('radio')
-    if (canStopRotor) actions.add('stopRotator')
     return {
       actions, tiers: rx.view.enabled || rx.pending ? new Set<Tier>([rx.mode]) : FT_MODES,
       onDeniedAction: () => setNotice('This control is not available through xLog.'),
       handlers: {
         getSpectrumRow: spectrum.getSpectrumRow,
         appVersion: async () => `${__XNEXUS_VERSION__} · ${__BUILD_ID__}`,
-        readRotator: async () => current.current.model.rotor?.azimuth_deg ?? null,
-        stopRotator: async () => {
-          const target = stopTarget.current
-          if (!target || target.session !== current.current.model.session) throw new Error('No xLog rotator target is known.')
-          await current.current.connection.command({ kind: 'rotor.stop', rotor_id: target.id })
-        },
         setFrequency: async (dialMhz, _band, mode) => {
           const station = current.current.model.station
           if (!current.current.capabilities.includes('station.tune') || !current.current.model.fresh || !station?.radio_id || station.transmitting !== false) throw new Error('A current idle xLog radio is required.')
@@ -108,7 +105,7 @@ export function OriginalHost({ api = bridge, receiver = rxApi, spectrumTransport
         },
       },
     }
-  }, [api, session, fresh, model.rotor?.rotor_id, canTune, canStopRotor, rx.view.enabled, rx.pending, rx.mode, spectrum.getSpectrumRow])
+  }, [api, session, fresh, canTune, rx.view.enabled, rx.pending, rx.mode, spectrum.getSpectrumRow])
   const logSource = useMemo(() => unavailableOwnerLog('A current xLog history answer is unavailable.'), [session])
   const nav = useMemo(() => Object.fromEntries(allFeatureIds().map(id => [id, id === 'operate' || id === 'spots'])) as Record<ReturnType<typeof allFeatureIds>[number], boolean>, [])
   const denied = () => setNotice(model.transmit.reason)
@@ -126,6 +123,7 @@ export function OriginalHost({ api = bridge, receiver = rxApi, spectrumTransport
     <button className="op-btn" disabled={rx.pending || rx.view.enabled || !fresh || !capabilities.includes('audio.rx')}
       onClick={() => receive(true)}>Start receiving</button>
     <button className="op-btn" disabled={!rx.view.enabled && !rx.pending} onClick={() => receive(false)}>Stop receiving</button>
+    <RotorStrip external={rotor} />
     <span role="status">{rx.pollError || rx.actionError || connection.actionError || connection.pollError || notice ||
       (connection.receipt ? `xLog control: ${connection.receipt.status}${connection.receipt.message ? ` — ${connection.receipt.message}` : ''}` : rx.view.reason)}</span>
   </div>
@@ -147,7 +145,7 @@ export function OriginalHost({ api = bridge, receiver = rxApi, spectrumTransport
           <OperateCockpit snap={snap} theme={theme} tier={rx.mode} services={services}
             external={{ decodes: { contextKey: decodeContext, entries },
               recent: history.recent, history: history.recall,
-              spectrumResetKey: `${spectrum.resetKey}:${page}` }}
+              spectrumResetKey: `${spectrum.resetKey}:${page}`, rotorInGlobalHeader: true }}
             onTierChange={selectMode} onSourceChange={denied}
             onTune={(hz, target) => { if (target === 'rx' && Number.isFinite(hz)) setMarkerHz(Math.max(0, Math.min(5000, hz))); else denied() }}
             onCall={denied} onSetTxLevel={denied} bandPlan={NO_BAND_PLAN} onSetFrequency={tune}

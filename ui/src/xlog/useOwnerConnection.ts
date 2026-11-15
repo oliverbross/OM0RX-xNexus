@@ -5,6 +5,8 @@ import { leaseSnapshot, type SnapshotLease } from './ownerOperatingModel'
 
 const message = (error: unknown) => error instanceof Error ? error.message : String(error)
 
+export interface OwnerConnectionScope { session: number; connectionToken: string; serverInstance: string; workspaceId: string }
+
 /** Connection lifecycle only. Mounting reads status; it never pairs, starts RX,
  * changes a radio, opens a feed, or starts the upstream station engine. */
 export function useOwnerConnection(api: Bridge = bridge) {
@@ -29,7 +31,15 @@ export function useOwnerConnection(api: Bridge = bridge) {
   const epoch = useRef(0)
   const commandSequence = useRef(0)
   const live = useRef(true)
+  const acceptedView = useRef<View>(disconnected)
+  const isCurrentConnection = (scope: OwnerConnectionScope) => {
+    const accepted = acceptedView.current
+    return live.current && currentApi.current === api && epoch.current === scope.session && accepted.paired
+      && accepted.connection_token === scope.connectionToken && accepted.hello?.server_instance === scope.serverInstance
+      && accepted.hello.workspace_id === scope.workspaceId
+  }
   const accept = (next: View, started: number, control = controlGeneration.current, pendingAtStart = ordinaryPending.current) => {
+    acceptedView.current = next
     setView(next)
     setLease(!pendingAtStart && !ordinaryPending.current && control === controlGeneration.current
       ? leaseSnapshot(next, started, Date.now()) : null)
@@ -37,6 +47,7 @@ export function useOwnerConnection(api: Bridge = bridge) {
   useEffect(() => {
     live.current = true
     const generation = ++epoch.current
+    acceptedView.current = disconnected
     ordinaryPending.current = false; controlGeneration.current++
     setSession(generation); setView(disconnected); setLease(null)
     setPollError(''); setActionError(''); setReceipt(null); setBusy(false)
@@ -77,6 +88,7 @@ export function useOwnerConnection(api: Bridge = bridge) {
   async function connection(kind: 'import' | 'connect' | 'disconnect' | 'forget') {
     if (currentApi.current !== api) return
     const generation = ++epoch.current
+    acceptedView.current = disconnected
     ordinaryPending.current = false; controlGeneration.current++
     setSession(generation); setBusy(true); setActionError(''); setPollError(''); setReceipt(null)
     setLease(null); setView(old => ({ ...old, connected: false, snapshot: null }))
@@ -129,5 +141,5 @@ export function useOwnerConnection(api: Bridge = bridge) {
   }
   return { view, lease, session, busy: heldView.api === api && busy,
     pollError: heldView.api === api ? pollError : '', actionError: heldView.api === api ? actionError : '',
-    receipt: heldView.api === api ? receipt : null, now, connection, command }
+    receipt: heldView.api === api ? receipt : null, now, connection, command, isCurrentConnection }
 }
