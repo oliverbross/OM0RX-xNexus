@@ -3,11 +3,26 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { QsoPanel } from './QsoPanel'
 import { bridge, type Bridge, type OutboxEntry } from './api'
-import { DRAFT_KEY, newSavedDraft, saveDraft } from './draftStore'
+import { DRAFT_KEY, newSavedDraft, saveDraft, saveOwnerEditorDraft } from './draftStore'
+import { ownerEditFields } from './ownerEditFields'
+import producer from './fixtures/contact-detail-producer.json'
 
 const api = (): Bridge => ({ ...bridge, outbox: vi.fn(async () => []), enqueue: vi.fn(async () => []) })
 beforeEach(() => window.localStorage.clear())
 describe('recoverable, workspace-bound QSO drafts', () => {
+  it.each(['owner','unknown'] as const)('stale Clear preserves a newly occupied %s record and does not dispatch',kind=>{
+    const native=api();render(<QsoPanel api={native} enabled connected workspace="workspace-a" />)
+    if(kind==='owner'){
+      const base=producer.found.editability.base
+      saveOwnerEditorDraft({version:2,kind:'owner_contact_edit',request_id:'11111111-1111-4111-8111-111111111111',
+        workspace_id:'workspace-a',base_revision:1,base,fields:ownerEditFields(base),frozen:{...base}},null)
+    }else window.localStorage.setItem(DRAFT_KEY,'{"version":99,"keep":"unknown owner"}')
+    const before=window.localStorage.getItem(DRAFT_KEY)
+    fireEvent.click(screen.getByRole('button',{name:'Clear draft'}))
+    expect(window.localStorage.getItem(DRAFT_KEY)).toBe(before)
+    expect(screen.getByRole('alert').textContent).toContain('preserved')
+    expect(native.enqueue).not.toHaveBeenCalled()
+  })
   it('restores unfinished fields and the same request ID without automatic submission', async () => {
     const native = api()
     const first = render(<QsoPanel api={native} enabled connected workspace="workspace-a" />)

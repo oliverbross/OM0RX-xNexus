@@ -25,6 +25,7 @@ import { useId, useMemo, useState, useSyncExternalStore } from 'react'
 import type { FieldEdit, QsoEdit, RowAnswer, RowRef } from '../api'
 import { qrzLookup } from '../api'
 import type { OwnerContactRead } from '../features/ownerContactDetail'
+import type { OwnerContactEditor } from '../features/ownerContactEditor'
 import { OwnerContactCardBody } from './OwnerContactCardBody'
 import type { ReactNode } from 'react'
 import type { LoggedQso } from '../types'
@@ -167,6 +168,8 @@ function errorText(e: CardError): string {
 
 export interface OwnerContactCardProps {
   external: { contactId: string; scopeKey: string; read: OwnerContactRead }
+  /** Caller-owned outside the read-key remount; omitted means read-only. */
+  editor?: OwnerContactEditor
   onClose: () => void
 }
 
@@ -568,7 +571,12 @@ q.id && (
 export interface ContactCardSurfaceProps {
   /** Native entry keeps its established one-line/Enter-submit behavior. Owner
    * details are inert multiline presentation, even if edit controls evolve. */
-  commentPolicy?: 'native' | 'readonly-multiline'
+  commentPolicy?: 'native' | 'readonly-multiline' | 'owner-multiline'
+  commentEditable?: boolean
+  extendedEditing?: boolean
+  editingNote?: ReactNode
+  extraActions?: ReactNode
+  saveLabel?: string
   call: string; timeKnown?: boolean; draft: CardDraft; fields: CardField[]
   err: string | null; busy: boolean; dirty: boolean; canSave: boolean
   notResent: string[]; facts: [string, string][]
@@ -586,7 +594,8 @@ export interface ContactCardSurfaceProps {
 
 export function ContactCardSurface({call, timeKnown, draft, fields, err, busy, dirty, canSave, notResent, facts,
   box, program, set, setField, setFields, leave, onClose, onSave, returnFocus,
-  header, iota, confirmation, path, awards, recent, history, commentPolicy = 'native'}: ContactCardSurfaceProps) {
+  header, iota, confirmation, path, awards, recent, history, commentPolicy = 'native',
+  commentEditable = canSave, extendedEditing = true, editingNote, extraActions, saveLabel}: ContactCardSurfaceProps) {
   return (
     <Dialog
       open
@@ -642,19 +651,20 @@ export function ContactCardSurface({call, timeKnown, draft, fields, err, busy, d
               <textarea
                 className="settings-input logbook-comment"
                 value={draft.comment}
-                onChange={commentPolicy === 'native' ? (e) => set('comment', oneLineTyped(e.target)) : undefined}
+                onChange={commentPolicy === 'native' ? (e) => set('comment', oneLineTyped(e.target))
+                  : commentPolicy === 'owner-multiline' ? (e) => set('comment', e.target.value) : undefined}
                 onKeyDown={commentPolicy === 'native' ? (e) => {
                   if (e.key !== 'Enter') return
                   e.preventDefault()
                   e.currentTarget.form?.requestSubmit()
                 } : undefined}
                 rows={2}
-                readOnly={commentPolicy === 'readonly-multiline' || !canSave}
+                readOnly={commentPolicy === 'readonly-multiline' || !commentEditable}
               />
             </label>
             <label className="logbook-field logbook-field-wide">
               <span>{t('logbook.field.notes.label')}</span>
-              <textarea className="settings-input logbook-notes" value={draft.notes} onChange={(e) => set('notes', e.target.value)} rows={3} readOnly={!canSave} />
+              <textarea className="settings-input logbook-notes" value={draft.notes} onChange={(e) => set('notes', e.target.value)} rows={3} readOnly={!extendedEditing || !canSave} />
             </label>
           </div>
         </section>
@@ -688,7 +698,7 @@ export function ContactCardSurface({call, timeKnown, draft, fields, err, busy, d
                       className="settings-input mono"
                       value={f.value}
                       onChange={(e) => setField(i, { value: typedLines(f, e.target.value) })}
-                      readOnly={own || f.removed || !canSave}
+                      readOnly={!extendedEditing || own || f.removed || !canSave}
                       aria-label={f.tag || t('contactCard.field.value')}
                       spellCheck={false}
                       rows={Math.min(6, Math.max(2, f.value.split('\n').length))}
@@ -698,13 +708,13 @@ export function ContactCardSurface({call, timeKnown, draft, fields, err, busy, d
                       className="settings-input mono"
                       value={f.value}
                       onChange={(e) => setField(i, { value: e.target.value })}
-                      readOnly={own || f.removed || !canSave}
+                      readOnly={!extendedEditing || own || f.removed || !canSave}
                       aria-label={f.tag || t('contactCard.field.value')}
                       spellCheck={false}
                       autoComplete="off"
                     />
                   )}
-                  {!own && canSave && (
+                  {extendedEditing && !own && canSave && (
                     <button
                       type="button"
                       className="log-rowbtn"
@@ -723,7 +733,7 @@ export function ContactCardSurface({call, timeKnown, draft, fields, err, busy, d
               )
             })}
           </div>
-          {canSave && (
+          {extendedEditing && canSave && (
             <button
               type="button"
               className="export-btn"
@@ -756,7 +766,7 @@ export function ContactCardSurface({call, timeKnown, draft, fields, err, busy, d
               {err}
             </span>
           )}
-          {!canSave && <span className="logbook-editing-note">{t('contactCard.readOnly')}</span>}
+          {editingNote ?? (!canSave && <span className="logbook-editing-note">{t('contactCard.readOnly')}</span>)}
           {/* Your own station's fields are saved, and LoTW keeps the contact it was sent: say so. */}
           {canSave && notResent.length > 0 && (
             <span className="logbook-editing-note contact-card-lotw-note" role="status">
@@ -766,8 +776,9 @@ export function ContactCardSurface({call, timeKnown, draft, fields, err, busy, d
           <button type="button" className="logconfirm-discard" onClick={() => void leave(onClose)}>
             {t('contactCard.cancel')}
           </button>
+          {extraActions}
           <button type="submit" className="settings-save" disabled={!canSave || !dirty || busy}>
-            {t('logbook.form.save')}
+            {saveLabel ?? t('logbook.form.save')}
           </button>
         </div>
       </form>

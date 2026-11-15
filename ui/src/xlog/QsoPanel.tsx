@@ -3,12 +3,13 @@ import { useEffect, useRef, useState } from 'react'
 import { bandLabelForMhz } from '../band'
 import type { Bridge, DeliveryAction, OutboxEntry, QsoDraft, Spot } from './api'
 import { HistoryPanel } from './HistoryPanel'
-import { loadDraft, newSavedDraft, saveDraft, type SavedDraft } from './draftStore'
+import { explicitlyClearLegacyDraft, loadDraft, newSavedDraft, saveDraft, type SavedDraft } from './draftStore'
 
 const text = (error: unknown) => error instanceof Error ? error.message : String(error)
 
 export function QsoPanel({ api, enabled, connected, workspace, selected, readEnabled = false }: { api: Bridge; enabled: boolean; connected: boolean; workspace: string | null; selected?: Spot; readEnabled?: boolean }) {
   const [initial] = useState(loadDraft)
+  const retainedRaw = useRef(initial.raw)
   const [record, setRecord] = useState(initial.value)
   const [storageError, setStorageError] = useState(initial.error)
   const [locked, setLocked] = useState(initial.locked)
@@ -26,8 +27,12 @@ export function QsoPanel({ api, enabled, connected, workspace, selected, readEna
   useEffect(() => { mounted.current = true; return () => { mounted.current = false } }, [])
   function persist(next: SavedDraft, clear = false): boolean {
     if (locked && !clear) return false
-    setRecord(next)
-    try { saveDraft(next); setStorageError(''); setLocked(false); return true }
+    if (!clear) setRecord(next)
+    try {
+      if (clear) retainedRaw.current = explicitlyClearLegacyDraft(next, retainedRaw.current)
+      else { saveDraft(next); retainedRaw.current = JSON.stringify(next) }
+      setRecord(next); setStorageError(''); setLocked(false); return true
+    }
     catch (error) { setStorageError(text(error)); return false }
   }
   useEffect(() => { let active = true; api.outbox().then(entries => { if (active) setQueue(entries) }).catch(error => { if (active) setMessage(text(error)) }); return () => { active = false } }, [api])
