@@ -6,6 +6,7 @@ import { TopBar } from '../components/TopBar'
 import { ModeNav } from '../components/ModeNav'
 import { OperateCockpit } from '../components/OperateCockpit'
 import { StationList } from '../components/StationList'
+import { SpotsPanel } from '../components/SpotsPanel'
 import { Dialog } from '../components/ui/Dialog'
 import { OperateServices, type OperateAction, type OperateServiceAdapter } from '../components/operateServices'
 import { OPERATE_PANELS, usePanelLayout } from '../features/panelState'
@@ -24,6 +25,7 @@ import { ownerOperatingModel } from './ownerOperatingModel'
 import { ownerCockpitPresentation } from './ownerCockpitPresentation'
 import { ownerDecodeEntries, ownerRoster } from './ownerDecodeEntries'
 import { installOwnerLogBoundary, unavailableOwnerLog } from './ownerLogBoundary'
+import { ownerSpotsSource } from './ownerSpots'
 
 const NO_BAND_PLAN: BandChannel[] = []
 const NO_NATIVE_NEEDS = new Map<string, NeedTag>()
@@ -48,6 +50,7 @@ export function OriginalHost({ api = bridge, receiver = rxApi, spectrumTransport
   const [markerHz, setMarkerHz] = useState(1500)
   const [selectedCall, selectCall] = useState<string | null>(null)
   const [layout, setLayout] = useState<'classic' | 'roster'>('classic')
+  const [page, setPage] = useState<'operate' | 'spots'>('operate')
   const [theme, setTheme] = useState<'dark' | 'light'>('dark')
   const [scale, setScale] = useState(1)
   const [connectionOpen, setConnectionOpen] = useState(false)
@@ -71,6 +74,11 @@ export function OriginalHost({ api = bridge, receiver = rxApi, spectrumTransport
     ...(snap.radio.band ? { band: snap.radio.band, exactMode: rx.mode } : {}) } : null, historyTransport)
   const current = useRef({ model, connection, capabilities })
   current.current = { model, connection, capabilities }
+  const spotInput = { view, lease: connection.lease, session }
+  const currentSpots = useRef(spotInput)
+  currentSpots.current = spotInput
+  const spotSource = useMemo(() => ownerSpotsSource({ view, lease: connection.lease, session },
+    () => currentSpots.current, row => selectCall(row.callsign)), [view, connection.lease, session])
   const canTune = fresh && model.station?.transmitting === false && !!model.station.radio_id && capabilities.includes('station.tune')
   const canStopRotor = view.paired && capabilities.includes('rotor.stop')
   const stopTarget = useRef<{ session: number; id: string } | null>(null)
@@ -102,7 +110,7 @@ export function OriginalHost({ api = bridge, receiver = rxApi, spectrumTransport
     }
   }, [api, session, fresh, model.rotor?.rotor_id, canTune, canStopRotor, rx.view.enabled, rx.pending, rx.mode, spectrum.getSpectrumRow])
   const logSource = useMemo(() => unavailableOwnerLog('A current xLog history answer is unavailable.'), [session])
-  const nav = useMemo(() => Object.fromEntries(allFeatureIds().map(id => [id, id === 'operate'])) as Record<ReturnType<typeof allFeatureIds>[number], boolean>, [])
+  const nav = useMemo(() => Object.fromEntries(allFeatureIds().map(id => [id, id === 'operate' || id === 'spots'])) as Record<ReturnType<typeof allFeatureIds>[number], boolean>, [])
   const denied = () => setNotice(model.transmit.reason)
   const selectMode = (tier: Tier) => { if (tier === 'FT8' || tier === 'FT4') rx.selectMode(tier) }
   const tune = (mhz: number, _band: string, mode: string) => {
@@ -129,13 +137,17 @@ export function OriginalHost({ api = bridge, receiver = rxApi, spectrumTransport
         onSetTxCycleAuto={denied} onSetHoldTxFreq={denied}
         hideTxControls hideFrequencyControl ftScreen alarmCell nowBar={status} />
       <div className="shell">
-        <ModeNav view="operate" mode="qso" enabled={nav} tier={rx.mode}
-          canSelect={selected => selected === 'operate'} onSelect={() => {}} onDigitalMode={denied} />
-        <div className="operate-host">
+        <ModeNav view={page} mode="qso" enabled={nav} tier={rx.mode}
+          canSelect={selected => selected === 'operate' || selected === 'spots'}
+          onSelect={selected => { if (selected === 'operate' || selected === 'spots') setPage(selected) }}
+          onDigitalMode={mode => { if (mode === 'digital') setPage('operate'); else denied() }} />
+        {/* Use the upstream keep-alive host: hidden collapses it and active pauses
+            its polls/renderer. RX ownership and global Stop remain above it. */}
+        <div className="operate-host" hidden={page !== 'operate'}>
           <OperateCockpit snap={snap} theme={theme} tier={rx.mode} services={services}
             external={{ decodes: { contextKey: decodeContext, entries },
               recent: history.recent, history: history.recall,
-              spectrumResetKey: spectrum.resetKey }}
+              spectrumResetKey: `${spectrum.resetKey}:${page}` }}
             onTierChange={selectMode} onSourceChange={denied}
             onTune={(hz, target) => { if (target === 'rx' && Number.isFinite(hz)) setMarkerHz(Math.max(0, Math.min(5000, hz))); else denied() }}
             onCall={denied} onSetTxLevel={denied} bandPlan={NO_BAND_PLAN} onSetFrequency={tune}
@@ -143,8 +155,9 @@ export function OriginalHost({ api = bridge, receiver = rxApi, spectrumTransport
             onFreetext={denied} onLog={denied} onOverrideTx={denied} onHaltTx={denied}
             onSetTxEnabled={denied} onSetTune={denied} onSetHoldTxFreq={denied}
             roster={roster} needByCall={NO_NATIVE_NEEDS} selectedCall={selectedCall} onSelect={selectCall}
-            onClearSelection={() => selectCall(null)} layoutMode={layout} onLayoutMode={setLayout} panels={panels} active />
+            onClearSelection={() => selectCall(null)} layoutMode={layout} onLayoutMode={setLayout} panels={panels} active={page === 'operate'} />
         </div>
+        {page === 'spots' && <SpotsPanel external={spotSource} selectedCall={selectedCall} />}
       </div>
       <Dialog open={connectionOpen} onOpenChange={setConnectionOpen} title="xLog connection"
         description="Enable companion sharing in xLog, then open its pairing file here. Radio and logbook ownership stays in xLog.">

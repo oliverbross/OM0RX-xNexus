@@ -34,6 +34,16 @@
 import type { PartialCatalog } from './index'
 
 export const IT: PartialCatalog = {
+  "spots.owner.hint": "Osservazioni fornite da xLog. Selezionare una riga non sintonizza la radio e non trasmette.",
+  "spots.owner.unavailable": "Le osservazioni attuali di xLog non sono disponibili.",
+  "spots.owner.empty": "Questa istantanea di xLog non contiene osservazioni.",
+  "spots.owner.source": "Fonte",
+  "spots.owner.assessment": "Valutazione xLog",
+  "spots.owner.filtersUnavailable": "Questa fonte non offre filtri per segnalatore, licenza, stato e data del QSO.",
+  "spots.owner.select": "Seleziona {{call}} · {{hz}} Hz · {{source}}. Nessun comando alla radio.",
+  "spots.owner.unknown": "Sconosciuto · {{reason}}",
+  "spots.owner.needed": "Necessario · Punteggio xLog {{score}} · {{reasons}}",
+  "spots.owner.worked": "Collegato · Punteggio xLog {{score}} · {{reasons}}",
   "settings.station.legend": "Operatore e radio",
   "settings.station.callsign.label": "Nominativo",
   "settings.station.callsign.hint": "Il nominativo della tua stazione (obbligatorio).",

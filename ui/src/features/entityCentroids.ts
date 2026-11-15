@@ -51,12 +51,13 @@ export function loadEntityCentroids(): Promise<ReadonlyMap<string, LatLon>> {
  * grid-derived bearings, so a pane rendered before the table lands (or in a host
  * that has no backend at all) shows fewer azimuths rather than wrong ones.
  */
-export function useEntityCentroids(): ReadonlyMap<string, LatLon> | null {
+export function useEntityCentroids(enabled = true): ReadonlyMap<string, LatLon> | null {
   const { api, adapter } = useOperateServices()
   const [held, setHeld] = useState<{ source: typeof api; centroids: ReadonlyMap<string, LatLon> } | null>(null)
   useEffect(() => {
     let live = true
     setHeld(null)
+    if (!enabled) return
     // An injected station never consumes the independent engine's window cache.
     const load = adapter ? async () => new Map((await api.getDxccEntityLocations()).map(
       ([name, lat, lon]): [string, LatLon] => [name, { lat, lon }])) : loadEntityCentroids
@@ -68,6 +69,6 @@ export function useEntityCentroids(): ReadonlyMap<string, LatLon> | null {
     return () => {
       live = false
     }
-  }, [adapter, api])
-  return held?.source === api ? held.centroids : null
+  }, [adapter, api, enabled])
+  return enabled && held?.source === api ? held.centroids : null
 }

@@ -23,6 +23,16 @@
 import type { PartialCatalog } from './index'
 
 export const JA: PartialCatalog = {
+  "spots.owner.hint": "xLog が提供する観測情報です。行を選択しても無線機の同調や送信は行いません。",
+  "spots.owner.unavailable": "現在の xLog 観測情報は利用できません。",
+  "spots.owner.empty": "この xLog スナップショットには観測情報がありません。",
+  "spots.owner.source": "情報源",
+  "spots.owner.assessment": "xLog の評価",
+  "spots.owner.filtersUnavailable": "この情報源では、報告局、免許、州、交信日のフィルターは利用できません。",
+  "spots.owner.select": "{{call}} を選択 · {{hz}} Hz · {{source}}。無線機へのコマンドはありません。",
+  "spots.owner.unknown": "不明 · {{reason}}",
+  "spots.owner.needed": "未交信対象 · xLog スコア {{score}} · {{reasons}}",
+  "spots.owner.worked": "交信済み · xLog スコア {{score}} · {{reasons}}",
   "remote.controlLocalHint": "ブラウザーを承認すると、局の操作（対応する受信機、無線機、アンプの操作）と、局のあらゆる送信を止める Stop TX が許可されます。ライブがオンなら、このウィンドウをライブで見て、ここと同じように Nexus を使うこともできます（送信を含む）。制限する場合は、ここで取り消してください。取り消すとライブも終了します。",
   // remote parity batch 1
   "remote.b1.rotatorPointing": "ローテーターを{{call}}に向けています。",

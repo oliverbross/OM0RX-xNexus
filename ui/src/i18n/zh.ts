@@ -26,6 +26,16 @@
 import type { PartialCatalog } from './index'
 
 export const ZH: PartialCatalog = {
+  "spots.owner.hint": "由 xLog 提供的观测信息。选择行不会调谐或发射。",
+  "spots.owner.unavailable": "当前 xLog 观测信息不可用。",
+  "spots.owner.empty": "此 xLog 快照未提供观测信息。",
+  "spots.owner.source": "来源",
+  "spots.owner.assessment": "xLog 评估",
+  "spots.owner.filtersUnavailable": "此来源不提供报告台、执照、州或通联日期筛选。",
+  "spots.owner.select": "选择 {{call}} · {{hz}} Hz · {{source}}。不发送电台命令。",
+  "spots.owner.unknown": "未知 · {{reason}}",
+  "spots.owner.needed": "需要通联 · xLog 评分 {{score}} · {{reasons}}",
+  "spots.owner.worked": "已通联 · xLog 评分 {{score}} · {{reasons}}",
   "settings.station.legend": "操作员与电台",
   "settings.station.callsign.label": "呼号",
   "settings.station.callsign.hint": "本台呼号（必填）。",

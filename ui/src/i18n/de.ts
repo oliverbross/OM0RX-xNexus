@@ -18,6 +18,16 @@
 import type { PartialCatalog } from './index'
 
 export const DE: PartialCatalog = {
+  "spots.owner.hint": "Von xLog bereitgestellte Beobachtungen. Die Zeilenauswahl stimmt das Funkgerät nicht ab und sendet nicht.",
+  "spots.owner.unavailable": "Aktuelle xLog-Beobachtungen sind nicht verfügbar.",
+  "spots.owner.empty": "Dieser xLog-Snapshot enthält keine Beobachtungen.",
+  "spots.owner.source": "Quelle",
+  "spots.owner.assessment": "xLog-Bewertung",
+  "spots.owner.filtersUnavailable": "Filter nach Melder, Lizenz, Bundesstaat und QSO-Datum sind für diese Quelle nicht verfügbar.",
+  "spots.owner.select": "{{call}} auswählen · {{hz}} Hz · {{source}}. Kein Funkgerätebefehl.",
+  "spots.owner.unknown": "Unbekannt · {{reason}}",
+  "spots.owner.needed": "Benötigt · xLog-Punktzahl {{score}} · {{reasons}}",
+  "spots.owner.worked": "Gearbeitet · xLog-Punktzahl {{score}} · {{reasons}}",
   "remote.controlLocalHint": "Wenn du einen Browser freigibst, erhält er die Stationssteuerung: unterstützte Empfänger-, Funkgeräte- und Verstärkerfunktionen sowie Stop TX, das jede Aussendung der Station beendet. Ist Streamen eingeschaltet, kann er damit auch dieses Fenster streamen und Nexus so nutzen, wie du es hier tun würdest, Senden eingeschlossen. Um einen Browser einzuschränken, entziehe sie ihm hier; das beendet auch seinen Stream.",
   // remote parity batch 1
   "remote.b1.rotatorPointing": "Der Rotor wird auf {{call}} gedreht.",

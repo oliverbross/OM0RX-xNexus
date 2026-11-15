@@ -4671,6 +4671,16 @@ export const EN = {
   // curated "what to work" list and this is the firehose, and they already word their
   // filters and empty states differently.
   'spots.title': 'Spots',
+  'spots.owner.hint': 'Observations supplied by xLog. Selecting a row does not tune or transmit.',
+  'spots.owner.unavailable': 'Current xLog observations are unavailable.',
+  'spots.owner.empty': 'No observations supplied in this xLog snapshot.',
+  'spots.owner.source': 'Source',
+  'spots.owner.assessment': 'xLog assessment',
+  'spots.owner.filtersUnavailable': 'Reporter, licence, state and worked-date filters are unavailable from this source.',
+  'spots.owner.select': 'Select {{call}} · {{hz}} Hz · {{source}}. No radio command.',
+  'spots.owner.unknown': 'Unknown · {{reason}}',
+  'spots.owner.needed': 'Needed · xLog score {{score}} · {{reasons}}',
+  'spots.owner.worked': 'Worked · xLog score {{score}} · {{reasons}}',
   'spots.countFiltered': 'of {{count}}',
   'spots.hint': 'every spot on the air — single-click to work it',
   'spots.search.placeholder': 'Search call · entity · spotter · freq…  (PA* works)',
