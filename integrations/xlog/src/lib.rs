@@ -149,6 +149,7 @@ pub struct Snapshot {
 }
 
 pub mod audio;
+pub mod contact_detail;
 mod commands;
 pub mod needs;
 mod station_identity;
