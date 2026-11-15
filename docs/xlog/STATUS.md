@@ -16,6 +16,12 @@ attempt, but at 04:07:59 UTC it failed a distinct 50 ms uncertainty guard
 Installed 1.6.28 sharing remains stopped. The reviewed recovery correction is in
 clean, pushed xLog 1.6.29 candidate `1ff361bfa4f0d1f92c1f1f0323f9dcd166f1da44`;
 its build is underway, not yet reported packaged or installed.
+Installation of that frozen candidate and owner closure are now held for a
+separately confirmed [retained-cluster reply-shape defect](RETAINED_CLUSTER_INCIDENT_2026-11-15.md).
+The host/projector read an extra `response.result` level, guaranteeing empty
+companion cluster output even for a nonempty retained owner payload. A reviewed
+patch is prepared, but canonical correction and compiled regression remain
+pending. Installed 1.6.28 is unchanged; planned 1.6.30 will combine fixes after tests.
 It remains unsigned. [The build record](WINDOWS_BUILD_1.24.1-xlog.4.md) binds the
 actual tools, reviewed 12 GiB supervisor, artifacts and warning qualification.
 The packaging freeze is released for reviewed documentation/tooling integration;

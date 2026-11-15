@@ -1,8 +1,15 @@
 # Contact changes and companion need status
 
-The actual xLog worker mutation and production Rust projection chain passed a
-serialized acceptance matrix on 14 November 2026. This is source/test evidence,
-not installed host, native UI or physical station acceptance.
+The actual xLog worker mutation exports and production Rust classifier projection
+passed a serialized acceptance matrix on 14 November 2026. This is source/test
+evidence, not installed host, native UI or physical station acceptance.
+
+**Scope correction, 15 November:** the replay supplied a handwritten retained
+envelope with an extra `response.result` level, matching the erroneous consumer
+instead of the actual ClusterSession producer. Its 23 exports establish mapping
+of worker classifications, not retained-owner wiring. The newly confirmed
+[reply-shape incident](RETAINED_CLUSTER_INCIDENT_2026-11-15.md) requires a real
+producer-to-consumer regression; no compiled correction is claimed yet.
 
 ## Owner mutations
 
@@ -33,9 +40,10 @@ changes were needed to pass these tests.
 xLog checker source `e44364bc67fdbfcf2abf026a9f67b0415ade7a39` directly includes
 the production `companion_projection.rs`; it does not duplicate the classifier.
 It consumes the worker's unchanged result and supplies a fresh native observation
-envelope with `available=true` and `needs_invalid=false`. Therefore the test
-exercises the actual worker refresh-state gate rather than an invented native
-invalidation flag. The separate host mutation fence has its own production tests.
+envelope with `available=true` and `needs_invalid=false`. The test exercises
+worker refresh-state mapping, but its extra nested RPC envelope bypasses the
+actual retained producer shape. Separate host mutation-fence tests also did not
+establish that missing producer-to-consumer connection.
 
 All 23 exports passed an independent case matrix: 16 verified present-row needs
 and seven verified deliberate absence. All retained rows during refresh projected
