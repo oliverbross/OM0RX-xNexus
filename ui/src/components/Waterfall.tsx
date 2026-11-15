@@ -9,7 +9,7 @@
 // `waterfall.ts` and are not this batch's file. The one thing drawn on the canvas that IS prose
 // is the paused chip, and it comes from the catalog.
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type Ref } from 'react'
-import { getSpectrumRow } from '../api'
+import { useOperateServices } from './operateServices'
 import { sampleLut, type ColormapName } from '../colormaps'
 import { drawScaleStrip, scaleStripHeight, scaleTicks, SCALE_MIN_GAP_PX } from '../freqScale'
 import {
@@ -417,6 +417,7 @@ export function Waterfall({
   passbandHz,
   passbandMode,
 }: Props) {
+  const { api: { getSpectrumRow } } = useOperateServices()
   const canvasRef = useRef<HTMLCanvasElement>(null)
   // Separate transparent overlay for the axis + Rx/Tx markers, so they are NEVER baked into
   // the scrolling spectrum canvas (a moved marker used to freeze into the image and scroll up
@@ -1274,9 +1275,9 @@ export function Waterfall({
       rowTimeAtRef.current = null
       release()
     }
-    // intentionally run once; live props read via refs
+    // Live display props read via refs; replace the loop when its station service changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [getSpectrumRow])
 
   // Shown again: restart the loop that stopped while hidden (after the canvas effect, so on the
   // mount it finds the loop already running and does nothing).

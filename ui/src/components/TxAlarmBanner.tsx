@@ -32,7 +32,7 @@
 // the station's, as the CAT status's are, and pass through verbatim; the radio's name and the time
 // are invariant tokens.
 import { useEffect, useState } from 'react'
-import { dismissTxAlarm } from '../api'
+import { useOperateServices } from './operateServices'
 import { withErrorToast } from '../toast'
 import { subscribeStatus, type StatusItem } from '../status'
 import { t } from '../i18n'
@@ -69,6 +69,7 @@ export function TxAlarmBanner({
    *  (cockpit-panes.css `.ch-txalarm-own`). Beside a TX state it does not. */
   ownLine?: boolean
 }) {
+  const { api: { dismissTxAlarm }, can } = useOperateServices()
   const critical = useCriticalLane()
   const shown = alarms?.[0]
   const entries: string[] = [
@@ -101,6 +102,7 @@ export function TxAlarmBanner({
         <button
           type="button"
           className="ch-txalarm-dismiss"
+          disabled={!can('dismissTxAlarm')}
           aria-label={t('common.dismiss')}
           title={t('cockpit.txAlarm.dismiss.title')}
           onClick={() =>

@@ -19,6 +19,7 @@ import { FrequencyReadout } from './FrequencyReadout'
 import { useWheelTune } from '../useWheelTune'
 import { t } from '../i18n'
 import { catDetailText } from '../features/catDetail'
+import { useOperateServices } from './operateServices'
 
 /** The header's annunciator plates — state, not prose: the CAT link's ✓/✗ pill. */
 const CAT_OK = 'CAT ✓'
@@ -189,6 +190,7 @@ export function CockpitHeader({
   catStatus,
   pinned = false,
 }: CockpitHeaderProps) {
+  const { canAction } = useOperateServices()
   const powerValue = power?.value
   const radio = snap.radio
   const catOk = radio.catOk === true
@@ -291,7 +293,7 @@ export function CockpitHeader({
               }
             >
               <span>{power.label ?? t('cockpit.header.power.label')}</span>
-              <WheelRange wheelStep={power.wheelStep} disabled={powerValue == null}
+              <WheelRange wheelStep={power.wheelStep} disabled={powerValue == null || !canAction('transmit')}
                 type="range"
                 min={0}
                 max={power.unit === '%' ? 100 : 1}
@@ -370,7 +372,7 @@ export function CockpitHeader({
             dialMhz={dial}
             size="hero"
             editable={onCommitDial != null}
-            disabled={!catOk}
+            disabled={!catOk || !canAction('radio')}
             // TX-red means "you must not key here", so it is the LICENCE's answer, not the UI
             // band table's. Derived from `!bandLabelForMhz(dial)` it alarm-coloured the readout
             // for a whole off-band session — and receiving off the ham bands (WWV, shortwave,

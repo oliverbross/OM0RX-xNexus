@@ -26,6 +26,7 @@
 // in the code, and the reading beside it is a measurement this module formats invariantly.
 import { useEffect, useRef, useState } from 'react'
 import { getMeters } from '../api'
+import { OPERATE_UNAVAILABLE, useOperateServices } from './operateServices'
 import type { MeterReadout } from '../types'
 import { LevelMeter, rxLevelDb } from './LevelMeter'
 import { t } from '../i18n'
@@ -110,11 +111,43 @@ if (typeof document !== 'undefined') {
 /** Subscribe to ONE selected meter value. Re-renders the caller only when that value
  * changes; `active=false` (a hidden kept-alive host) unsubscribes entirely and reads
  * at-rest. */
-function useMeterValue<T>(select: (m: MeterReadout) => T, active: boolean): T {
-  const [value, setValue] = useState<T>(() => select(active ? current : REST))
+function useMeterValue<T>(select: (m: MeterReadout) => T, active: boolean): T | null {
+  const { api, adapter, can } = useOperateServices()
+  const [value, setValue] = useState<T>(() => select(active && !adapter ? current : REST))
+  const [available, setAvailable] = useState(!adapter)
+  const [readingSource, setReadingSource] = useState<typeof api | null>(null)
   const selectRef = useRef(select)
   selectRef.current = select
   useEffect(() => {
+    // Explicit station adapters never subscribe to the independent engine bus or
+    // adopt its cached readings. Single flight and retirement fence each reader.
+    if (adapter) {
+      let live = true
+      let pending = false
+      let answeredAt = 0
+      setAvailable(false)
+      setValue(selectRef.current(REST))
+      if (!active || !can('getMeters')) return
+      const read = async () => {
+        if (live && performance.now() - answeredAt >= METER_STALE_MS) setAvailable(false)
+        if (!live || pending || document.visibilityState === 'hidden') return
+        pending = true
+        try {
+          const reading = await api.getMeters()
+          if (live) {
+            answeredAt = performance.now()
+            setValue(selectRef.current(reading))
+            setReadingSource(api)
+            setAvailable(true)
+          }
+        } catch {
+          if (live) setAvailable(false)
+        } finally { pending = false }
+      }
+      void read()
+      const timer = window.setInterval(() => void read(), METER_POLL_MS)
+      return () => { live = false; window.clearInterval(timer) }
+    }
     if (!active) {
       setValue(selectRef.current(REST))
       return
@@ -131,8 +164,8 @@ function useMeterValue<T>(select: (m: MeterReadout) => T, active: boolean): T {
       subscribers.delete(notify)
       reconcilePolling()
     }
-  }, [active])
-  return value
+  }, [active, adapter, api, can])
+  return adapter && (!available || readingSource !== api) ? null : value
 }
 
 /** The live CAT S-meter reading (dB rel S9; null = "—"), for the cockpit hosts. An
@@ -163,14 +196,18 @@ export function LiveLevelMeter({
   variant?: 'compact' | 'full'
   active?: boolean
 }) {
+  const { can } = useOperateServices()
   const rxLevel = useMeterValue((m) => m.rxLevel, active)
+  if (!can('getMeters') || rxLevel === null) return <span aria-label={label} title={OPERATE_UNAVAILABLE}>—</span>
   return <LevelMeter value={rxLevel} label={label} variant={variant} />
 }
 
 /** The live "NN dB" text readout beside the Settings RX Level meter — same subscription,
  * same containment reasoning as [`LiveLevelMeter`]. */
 export function LiveRxLevelDb({ active = true }: { active?: boolean }) {
+  const { can } = useOperateServices()
   const rxLevel = useMeterValue((m) => m.rxLevel, active)
+  if (!can('getMeters') || rxLevel === null) return <span title={OPERATE_UNAVAILABLE}>—</span>
   return (
     <>
       {Math.round(rxLevelDb(rxLevel))} {DB}

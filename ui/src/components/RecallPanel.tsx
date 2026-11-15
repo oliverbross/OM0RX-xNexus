@@ -8,7 +8,7 @@ import type { LoggedQso } from '../types'
 import type { CallHistory } from '../features/callHistory'
 import type { ContestDupeVerdict } from '../features/contestDupe'
 import type { PotaDupe } from '../features/potaActivation'
-import { openExternalUrl, openQrzPage } from '../api'
+import { useOperateServices } from './operateServices'
 import { gridMapUrl } from '../grid'
 import { withErrorToast } from '../toast'
 import { useCallBearings } from '../features/callBearing'
@@ -189,6 +189,7 @@ export function recallCardClass(bounded?: boolean, kept?: boolean): string {
 }
 
 export function RecallPanel(props: Props) {
+  const { api: { openExternalUrl, openQrzPage }, can } = useOperateServices()
   const { call, band, name, qth, state, grid, country, image, myGrid, hist, newEntity, newBandSlot, newModeSlot, contestDupe = 'none', contestLogsDupes = false, contestDupeByBand = true, activating = false, potaDupe = null, hasLookup = true, bounded = false, kept = false, onOpenLog, latestNote, historyNotice, calling, onShowCall, onRemove, hideNote, paneTitle, grip, full = false } = props
   const units = useUnits()
   const c = call.trim()
@@ -251,6 +252,7 @@ export function RecallPanel(props: Props) {
         // The QRZ photo's focus guard: a click must not pull the caret out of the log form.
         onMouseDown={(e) => e.preventDefault()}
         onClick={() => void withErrorToast(() => openExternalUrl(mapUrl), t('recall.grid.map.error', { grid: sq }))}
+        disabled={!can('openExternalUrl')}
       >
         {sq}
       </button>
@@ -449,6 +451,7 @@ export function RecallPanel(props: Props) {
           // browser-default focus-on-mousedown must not yank the caret out of the log form
           // mid-entry — the opened browser window takes over; nothing in-app moves or scrolls.
           onMouseDown={(e) => e.preventDefault()}
+          disabled={!can('openQrzPage')}
           onClick={() =>
             void withErrorToast(() => openQrzPage(cu), t('recall.qrz.error', { call: cu }))
           }
