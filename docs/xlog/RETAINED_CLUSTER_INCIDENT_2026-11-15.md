@@ -61,9 +61,35 @@ The frozen 1.6.29 optimized native compile completed in 18m31s with root exit 0.
 Its sole retained VCTIP helper caused lifecycle exit 125; cleanup confirmed zero
 processes. The candidate is superseded and was never packaged or installed.
 The actual baseline, corrected regression, related tests and export replay are
-now recorded above. Installed 1.6.28 is unchanged. Clean, published xLog 1.6.30
+now recorded above. Clean, published xLog 1.6.30
 candidate `8795606bdbb5ac029287518a826f189d8873d117` combines receive recovery and
 cluster-shape corrections; its parent is implementation `4025ee6f`. The exact
-remote main tip and that ancestry were verified. Package and installation are
-still pending, so no fix deployment is claimed. No xNexus runtime edit is part
-of this record. Live cluster/needs and receive qualification remain open.
+remote main tip and that ancestry were verified. It was subsequently packaged
+and installed at 05:56:28 UTC on 15 November, replacing 1.6.28. No xNexus runtime
+edit is part of this record. Live cluster/needs and receive qualification remain open.
+
+## Installed 1.6.30 checkpoint
+
+Package evidence is retained under the xLog workspace at
+`.build/releases/1.6.30/package-run-20261115-052240-0067855e`.
+Worker, Portable and Installer completed naturally with exit 0 and zero final
+processes. Host compilation passed in 15m16s/root exit 0; the exact signed sole
+VCTIP helper caused guard exit 125 and cleanup to zero. The separately reviewed
+Host qualification preserves that lifecycle failure rather than relabelling it.
+
+The current-user installer is 60,813,293 bytes, SHA-256
+`9cfd48da1af7d0c954ea3617f80af9d2c03d075ee21bf043635b9b06fcfa6f0a`.
+Payload manifest SHA-256:
+`7079d12518f7e618e6645d0c2eb2e0af9d2ad6ea8b080daf43dddc86377fd231`.
+The installation verified 3,254 payload files and preserved all 11 profile files.
+Receipt `.build/releases/1.6.30/acceptance/installed-verification.json` has SHA-256
+`FF04FF58DC2BBCC1C10BBEAD163ECA6D03BF8FFBB37537C61724260EFE33443C`.
+The private candidate and installed marked launches/ordinary closes passed.
+Installed marked receipt SHA-256:
+`6BD2AF46B483ACBED1A140848B889EDB3481C2C18EBFB7874B03519112BB3915`.
+Normal installed handoff then passed 36.5624911 seconds/13 samples with host
+PID 6540 and worker PID 24672, diagnostics off and stable FLEX/DCU connections;
+xLog was left open. Receipt `normal-handoff.json` in that acceptance directory
+has SHA-256 `DCB5CF2266801907212F077B7A2976F9E734F124CF53100D627DF68283963D05`.
+The operator has been asked to complete new 1.6.30 pairing/sharing/FT8 receiving.
+That confirmation and live cluster/RX/needs qualification remain pending.

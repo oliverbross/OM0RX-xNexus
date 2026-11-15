@@ -12,7 +12,8 @@ of worker classifications, not retained-owner wiring. The newly confirmed
 producer-to-consumer failing-then-passing regression, 20 cluster/nine projection
 and 127 bridge tests, plus corrected replay of all 23 publication/six classification
 exports with unchanged inputs. Correction `4025ee6f` is published in candidate
-1.6.30 source `8795606b`; package/install and live propagation remain pending.
+1.6.30 source `8795606b`; package/install and normal handoff subsequently passed.
+Fresh operator pairing and live propagation remain pending, as recorded in that incident.
 
 ## Owner mutations
 

@@ -9,16 +9,15 @@ build, static artifact audit and independent retention from clean canonical
 passed, followed by native A→B→A profile/lifecycle checks and permanent current-user
 installation. A subsequent explicit installed launch passed; both applications
 were left open. The operator subsequently completed live native pairing, but
-receive failed an owner clock guard and RX sharing was stopped. The owner fix is
-now installed as xLog 1.6.28. The operator confirmed a fresh pairing/sharing/FT8
+receive failed an owner clock guard and RX sharing was stopped. The first owner
+fix shipped in xLog 1.6.28. The operator confirmed a fresh pairing/sharing/FT8
 attempt, but at 04:07:59 UTC it failed a distinct 50 ms uncertainty guard
 (50,459 microseconds). No decoded rows/needs were observed or receive soak started.
-Installed 1.6.28 sharing remains stopped. The reviewed recovery correction is in
+Sharing was stopped. The reviewed recovery correction was included in
 clean, pushed xLog 1.6.29 candidate `1ff361bfa4f0d1f92c1f1f0323f9dcd166f1da44`;
 its optimized native compile completed in 18m31s with root exit 0. A retained
 MSVC VCTIP helper caused lifecycle exit 125; cleanup confirmed zero processes.
-That candidate is superseded and was never packaged or installed. Owner closure
-remains held for a
+That candidate was superseded and never packaged or installed because of a
 separately confirmed [retained-cluster reply-shape defect](RETAINED_CLUSTER_INCIDENT_2026-11-15.md).
 The host/projector read an extra `response.result` level, guaranteeing empty
 companion cluster output even for a nonempty retained owner payload. The
@@ -26,17 +25,21 @@ actual producer regression reproduced the missing classification/logbook revisio
 then passed after correction `4025ee6f057e811343a506ea131bba9acd1ea312`.
 Related 20 cluster/nine projection tests, 127 bridge tests and 29 unchanged-input
 export replays passed. Clean, published xLog 1.6.30 candidate
-`8795606bdbb5ac029287518a826f189d8873d117` combines both fixes; package and
-installation remain pending. Installed 1.6.28 is unchanged. The earlier tests
+`8795606bdbb5ac029287518a826f189d8873d117` combines both fixes and was packaged
+and installed at 05:56:28 UTC, with 3,254 payload files verified and all 11 profile
+files preserved. Private candidate and installed marked launches/ordinary closes
+passed. Normal installed handoff passed 36.5624911 seconds/13 samples, host 6540
+and worker 24672, diagnostics off and stable FLEX/DCU; xLog was left open.
+New 1.6.30 pairing/receiving confirmation and live RX/needs remain pending. The earlier tests
 are not retroactively reclassified as actual retained-owner wiring proof.
 It remains unsigned. [The build record](WINDOWS_BUILD_1.24.1-xlog.4.md) binds the
 actual tools, reviewed 12 GiB supervisor, artifacts and warning qualification.
 The packaging freeze is released for reviewed documentation/tooling integration;
 canonical `main` now includes that evidence at `78e1c288`, with application/runtime
-and packaged provenance still exact `ae35`. The xLog owner reports
-1.6.28 packages, installation and installed verification passed. Its current
-documentation is `92d6547` over application source `eb3cf702`. Normal installed
-handoff passed 37.715 seconds/12 samples and left xLog open with diagnostics off.
+and packaged provenance still exact `ae35`. The earlier xLog 1.6.28 handoff passed
+37.715 seconds/12 samples with diagnostics off; this historical result does not
+replace the separately passed 1.6.30 installed handoff. Its [installation and handoff evidence](RETAINED_CLUSTER_INCIDENT_2026-11-15.md)
+preserves the separate Host VCTIP lifecycle failure and reviewed qualification.
 Installed xNexus paired with the real workspace/protocol 1 and displayed live
 DIGU correctly. Two observations over 46 seconds showed the owner clock error,
 zero decoded rows and no decoded-needs evidence. The operator stopped RX sharing.
