@@ -17,6 +17,24 @@ export interface Spot {
   dxcc_status?: string | null
   need: { status: NeedStatus; score: number; reasons: string[] }
 }
+export interface StationIdentityBinding {
+  workspace_generation: string
+  worker_generation: number
+  settings_revision: number
+  identity_epoch: string
+  identity_revision: number
+  operating_module: 'normal_logging'
+}
+/** Saved owner identity; usable only with its current validated Snapshot. Never TX authority. */
+export interface StationIdentity {
+  schema_version: 1
+  source: 'saved_station_settings'
+  state: 'current' | 'incomplete' | 'unavailable'
+  mycall: string | null
+  mygrid: string | null
+  binding: StationIdentityBinding | null
+  transmit_authority: false
+}
 export interface Snapshot {
   protocol_version: number
   server_instance: string
@@ -27,6 +45,7 @@ export interface Snapshot {
   station: { connected: boolean; radio_id: string | null; frequency_hz: number | null; mode: string | null; transmitting: boolean | null }
   rotor: { connected: boolean; rotor_id: string | null; azimuth_deg: number | null; moving: boolean | null }
   spots: Spot[]
+  station_identity?: StationIdentity | null
 }
 export interface Hello {
   application: string

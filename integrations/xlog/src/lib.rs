@@ -144,12 +144,18 @@ pub struct Snapshot {
     pub spots: Vec<Spot>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub needs: Option<needs::NeedsMetadata>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub station_identity: Option<StationIdentity>,
 }
 
 pub mod audio;
 mod commands;
 pub mod needs;
+mod station_identity;
 pub use commands::{Command, CommandReceipt, CommandStatus, StopClient};
+pub use station_identity::{
+    IdentityBinding, IdentitySource, IdentityState, OperatingModule, StationIdentity,
+};
 mod history;
 pub mod outbox;
 pub use history::{History, HistoryCell, HistoryContact};
@@ -177,6 +183,9 @@ impl Snapshot {
         if self.server_instance != hello.server_instance || self.workspace_id != hello.workspace_id
         {
             return Err(Error::IdentityChanged);
+        }
+        if let Some(identity) = &self.station_identity {
+            identity.validate(&self.workspace_id)?;
         }
         if !(1..=MAX_AGE_MS).contains(&self.max_age_ms)
             || self.generated_at_unix_ms > now.saturating_add(2000)
