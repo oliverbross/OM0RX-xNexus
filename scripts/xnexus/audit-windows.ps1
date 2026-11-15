@@ -163,6 +163,13 @@ try {
         $verified+=@{name=$item.name;sha256=$item.sha256;payloadPaths=@($payloadMatches.FullName)}
     }
     $audit.verifiedResources=$verified
+    # Verify all mapped notice/license/provenance text at its exact destination.
+    # Source hashes were captured before the build; basename-only matches cannot
+    # satisfy this check (several resources are named THIRD-PARTY.txt).
+    if (!$build.distribution.noticeResources) { throw 'Build receipt lacks mapped notice coverage; do not retrofit an old candidate receipt.' }
+    $noticeReport=Join-Path $evidence 'notice-resources.json'
+    Run 'node' @((Join-Path $PSScriptRoot 'notice-resources.mjs'),$repo,$build.distribution.configPath,$payload,$receiptPath,$noticeReport) (Join-Path $evidence 'notice-resources.log')
+    $audit.noticeResources=@{reportPath=$noticeReport;sha256=(Hash $noticeReport);helperSha256=(Hash (Join-Path $PSScriptRoot 'notice-resources.mjs'))}
     $audit.payloadExecutableSha256=(Hash $apps[0].FullName)
     $payloadInfo=$apps[0].VersionInfo
     $audit.payloadExecutable=@{path=$apps[0].FullName;bytes=$apps[0].Length;sha256=$audit.payloadExecutableSha256
