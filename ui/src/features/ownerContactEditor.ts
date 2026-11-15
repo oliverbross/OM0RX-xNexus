@@ -36,6 +36,8 @@ export interface OwnerEditorView {
 export function createOwnerContactEditor(options: {
   contactId: string; source: () => OwnerEditorSource | null; port: Port
   now?: () => number; requestId?: () => string
+  /** Host-only local draft typing. Never grants enqueue/delivery authority. */
+  localTyping?: boolean
 }) {
   const now=options.now??(()=>performance.now()),newId=options.requestId??(()=>crypto.randomUUID())
   const load=loadOwnerEditorDraft(),listeners=new Set<()=>void>(),deadlines=new WeakMap<OwnerContactDetail,number>()
@@ -44,6 +46,7 @@ export function createOwnerContactEditor(options: {
   if(record&&!sameId(record.base.contact_id,options.contactId)){record=null;blocked='occupied'}
   let version=0,busy=false,disposed=false,error:string|null=null,entry:OutboxEntry|null=null,receipt:Receipt|null=null
   let clockBad=false,lastClock:number|null=null
+  let typingSeed:{scope:string;workspace:string;revision:number;base:QsoDraft}|null=null
   let operation:OwnerEditorStatus|null=record?.frozen?'frozen':null
   const emit=()=>{version++;for(const listener of listeners)listener()}
   function readClock():number|null{
@@ -59,15 +62,20 @@ export function createOwnerContactEditor(options: {
       || !Number.isSafeInteger(source.connection.generation)||source.connection.generation<0) return null
     return source
   }
-  function admitted(requireWrite = true): OwnerEditorSource | null {
+  function currentRead(): OwnerEditorSource | null {
     const source=connection(),read=source?.read
-    if (!source||!read||requireWrite&&!source.connection.writeGranted) return null
+    if (!source||!read) return null
     if(read.binding.token!==source.connection.token||read.binding.serverInstance!==source.connection.serverInstance
       ||read.binding.workspaceId!==source.connection.workspaceId||read.binding.generation!==source.connection.generation)return null
     const first=deadlines.get(read.detail)??read.deadlineMono
     deadlines.set(read.detail,Math.min(first,read.deadlineMono))
     const current=readClock()
     if (current===null||!Number.isFinite(read.deadlineMono)||!Number.isFinite(first)||current>=Math.min(first,read.deadlineMono)) return null
+    return source
+  }
+  function admitted(requireWrite = true): OwnerEditorSource | null {
+    const source=currentRead(),read=source?.read
+    if (!source||!read||requireWrite&&!source.connection.writeGranted) return null
     const d=read.detail,b=d.editability.base
     if (d.schema_version!==1||d.status!=='found'||d.contact_id!==options.contactId||!d.fields)return null
     if(requireWrite&&(!d.editability.allowed||!allowed.every(k=>d.editability.allowed_fields.includes(k))
@@ -87,8 +95,19 @@ export function createOwnerContactEditor(options: {
   }
   function inspect(): OwnerEditorView {
     const source=admitted(),facts=admitted(false),connected=connection(),matching=record?matched(source):!!source
+    if(options.localTyping){
+      if(readClock()===null||!connected?.connection.writeGranted||typingSeed&&typingSeed.scope!==scope(connected))typingSeed=null
+      const observed=currentRead()?.read?.detail
+      // Refresh/expiry can withhold evidence; a known contradictory answer is
+      // different. Preserve the draft but stop typing until explicit resolution.
+      if(typingSeed&&observed&&(!source||observed.contact_revision!==typingSeed.revision
+        ||!observed.editability.base||!sameQso(observed.editability.base,typingSeed.base)))typingSeed=null
+      if(!typingSeed&&source&&matching&&source.read?.detail.editability.base)typingSeed={
+        scope:scope(source),workspace:source.connection.workspaceId,revision:source.read.detail.contact_revision!,
+        base:clone(source.read.detail.editability.base)}
+    }
     const candidate=facts?.read?.detail.editability.base
-    const base=record?.base??(candidate&&wireQso(candidate)?candidate:null)
+    const base=record?.base??typingSeed?.base??(candidate&&wireQso(candidate)?candidate:null)
     const fields=record?.fields??(base?ownerEditFields(base):null)
     const q=base&&fields?ownerEditQso(base,fields):null
     const dirty=!!base&&!!fields&&JSON.stringify(fields)!==JSON.stringify(ownerEditFields(base))
@@ -109,7 +128,7 @@ export function createOwnerContactEditor(options: {
     return {base:base?clone(base):null,fields:fields?{...fields}:null,requestId:record?.request_id??null,status,error,
       receipt:receipt?{...receipt}:null,detailCurrent:record?matched(facts):!!facts,
       detail:(!record||matched(facts))?facts?.read?.detail??null:null,
-      editable:!disposed&&!busy&&!blocked&&!frozen&&matching,
+      editable:!disposed&&!busy&&!blocked&&!frozen&&(matching||!!typingSeed),
       dirty,busy,canSave:!disposed&&!busy&&!blocked&&!frozen&&matching&&dirty&&!!q,
       canSubmit:!disposed&&!busy&&!blocked&&frozen&&pending&&matching,
       canReconcile:!disposed&&!busy&&frozen&&!!connected&&connected.connection.workspaceId===record?.workspace_id&&!terminal,
@@ -121,9 +140,11 @@ export function createOwnerContactEditor(options: {
   function set<K extends keyof OwnerEditFields>(key: K,value: OwnerEditFields[K]): boolean {
     if (!inspect().editable)return false
     const source=admitted()
-    if (!source?.read?.detail.editability.base)return false
-    const next:OwnerEditorDraft=record??{version:2,kind:'owner_contact_edit',request_id:newId(),workspace_id:source.connection.workspaceId,
-      base_revision:source.read.detail.contact_revision!,base:clone(source.read.detail.editability.base),fields:ownerEditFields(source.read.detail.editability.base),frozen:null}
+    const seed=typingSeed??(source?.read?.detail.editability.base?{workspace:source.connection.workspaceId,
+      revision:source.read.detail.contact_revision!,base:source.read.detail.editability.base}:null)
+    if (!record&&!seed)return false
+    const next:OwnerEditorDraft=record??{version:2,kind:'owner_contact_edit',request_id:newId(),workspace_id:seed!.workspace,
+      base_revision:seed!.revision,base:clone(seed!.base),fields:ownerEditFields(seed!.base),frozen:null}
     const result=persist({...next,fields:{...next.fields,[key]:value}})
     emit();return result
   }
@@ -193,18 +214,18 @@ export function createOwnerContactEditor(options: {
   function reload(): boolean {
     if(!inspect().canReload)return false
     if(record){try{clearOwnerEditorDraft(raw!)}catch(e){error=e instanceof Error?e.message:String(e);emit();return false}}
-    record=null;raw=null;entry=null;receipt=null;operation=null;error=null;emit();return true
+    record=null;raw=null;entry=null;receipt=null;operation=null;error=null;typingSeed=null;emit();return true
   }
   /** Explicit unqueued discard only; never deletes a possibly queued intent. */
   function discard(): boolean {
     if(busy||disposed||blocked||record?.frozen)return false
     if(record&&raw!==null){try{clearOwnerEditorDraft(raw)}catch(e){error=e instanceof Error?e.message:String(e);emit();return false}}
-    record=null;raw=null;error=null;emit();return true
+    record=null;raw=null;error=null;typingSeed=null;emit();return true
   }
   return {contactId:options.contactId,inspect,set,save:()=>enqueue(false),retryQueue:()=>enqueue(true),inspectQueue,
     submit:()=>deliver('submit'),reconcile:()=>deliver('reconcile'),reload,discard,
     closePolicy:(): 'blocked'|'confirm-discard'|'retain'|'close' => busy?'blocked':record?.frozen?'retain':inspect().dirty?'confirm-discard':'close',
     subscribe:(listener:()=>void)=>{listeners.add(listener);return()=>{listeners.delete(listener)}},version:()=>version,
-    dispose:()=>{disposed=true;listeners.clear()}}
+    dispose:()=>{disposed=true;typingSeed=null;listeners.clear()}}
 }
 export type OwnerContactEditor = ReturnType<typeof createOwnerContactEditor>

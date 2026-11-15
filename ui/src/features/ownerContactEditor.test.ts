@@ -221,3 +221,40 @@ it('explicit unqueued discard works offline, while frozen intents can only be re
   const next=setup();next.editor.set('comment','frozen');await next.editor.save()
   expect(next.editor.discard()).toBe(false);expect(next.editor.closePolicy()).toBe('retain')
 })
+
+it('opt-in local typing never seeds from a restored record without fresh read/write authority',async()=>{
+  const s=setup();s.editor.set('comment','saved');const raw=localStorage.getItem(DRAFT_KEY)
+  s.source().read=null
+  const restored=createOwnerContactEditor({contactId:s.detail.contact_id,source:s.source,port:s.port,localTyping:true,now:()=>100})
+  expect(restored.inspect().fields?.comment).toBe('saved');expect(restored.set('comment','unadmitted')).toBe(false)
+  await restored.save();expect(s.port.enqueue).not.toHaveBeenCalled();expect(localStorage.getItem(DRAFT_KEY)).toBe(raw)
+})
+it('opt-in local typing latches bad clocks and cannot seed again from an apparently fresh read',()=>{
+  const s=setup();let now=100
+  const editor=createOwnerContactEditor({contactId:s.detail.contact_id,source:s.source,port:s.port,localTyping:true,now:()=>now})
+  expect(editor.set('comment','saved')).toBe(true);const raw=localStorage.getItem(DRAFT_KEY)
+  now=NaN;expect(editor.set('comment','lost')).toBe(false)
+  now=100;expect(editor.inspect().editable).toBe(false);expect(localStorage.getItem(DRAFT_KEY)).toBe(raw)
+})
+it('a fresh changed base before the first keystroke replaces only the unpersisted seed',()=>{
+  const s=setup(),editor=createOwnerContactEditor({contactId:s.detail.contact_id,source:s.source,port:s.port,localTyping:true,now:()=>100})
+  expect(editor.inspect().editable).toBe(true);expect(localStorage.length).toBe(0)
+  const newer=fixture();newer.contact_revision!++;newer.editability.base!.comment='new owner base'
+  s.source().read={...s.source().read!,detail:newer}
+  expect(editor.set('comment','typed from new base')).toBe(true)
+  const saved=loadOwnerEditorDraft();expect(saved.state).toBe('current')
+  if(saved.state==='current'){expect(saved.value.base_revision).toBe(newer.contact_revision);expect(saved.value.base.comment).toBe('new owner base')}
+})
+it.each(['revision','base','deleted','not_found','readonly'] as const)('known %s retires local typing without changing saved fields',kind=>{
+  const s=setup(),editor=createOwnerContactEditor({contactId:s.detail.contact_id,source:s.source,port:s.port,localTyping:true,now:()=>100})
+  editor.set('comment','retained');const raw=localStorage.getItem(DRAFT_KEY),next=fixture()
+  if(kind==='revision')next.contact_revision!++
+  if(kind==='base')next.editability.base!.grid='AA00'
+  if(kind==='deleted'||kind==='not_found'){next.status=kind;next.fields=null;next.editability={allowed:false,reason:kind,allowed_fields:[],base:null}}
+  if(kind==='readonly')next.editability.allowed=false
+  s.source().read={...s.source().read!,detail:next}
+  expect(editor.set('comment','refused')).toBe(false)
+  s.source().read=null
+  expect(editor.set('comment','still refused')).toBe(false)
+  expect(localStorage.getItem(DRAFT_KEY)).toBe(raw);expect(editor.inspect().fields?.comment).toBe('retained')
+})

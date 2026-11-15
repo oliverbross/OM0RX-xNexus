@@ -25,7 +25,7 @@ vi.mock('./prop/ContactPath',()=>({ContactPath:native}))
 vi.mock('./ui/Dialog',()=>({Dialog:({children}:{children:React.ReactNode})=><div role="dialog">{children}</div>}))
 vi.mock('../focusReturn',()=>({useFocusReturn:()=>()=>{}}))
 
-function setup(){
+function setup(localTyping=false){
   const detail=JSON.parse(JSON.stringify(producer.found)) as OwnerContactDetail
   let clock=100
   const binding={token:'not-persisted',workspaceId:'workspace-A',serverInstance:'owner-A',generation:1}
@@ -34,13 +34,57 @@ function setup(){
     {queued:{version:1,mutation,request_id,workspace_id},state:'Pending'}]),outbox:vi.fn(async():Promise<OutboxEntry[]>=>[]),
     deliver:vi.fn(async():Promise<Receipt>=>({request_id:'11111111-1111-4111-8111-111111111111',workspace_id:binding.workspaceId,
       server_instance:binding.serverInstance,status:'uncertain',message:null}))}
-  const editor=createOwnerContactEditor({contactId:detail.contact_id,source:()=>source,port,now:()=>clock,requestId:()=>'11111111-1111-4111-8111-111111111111'})
+  const editor=createOwnerContactEditor({contactId:detail.contact_id,source:()=>source,port,localTyping,now:()=>clock,requestId:()=>'11111111-1111-4111-8111-111111111111'})
   const props={external:{contactId:detail.contact_id,scopeKey:'read-A',read:{state:'current' as const,detail}},editor,onClose:vi.fn()}
   return {source,editor,port,props,time:(v:number)=>{clock=v}}
 }
 const input=(key:string)=>screen.getByLabelText(key) as HTMLInputElement
 beforeEach(()=>{localStorage.clear();native.mockClear();normalization.mockClear();confirm.mockReset();confirm.mockResolvedValue(false)})
 afterEach(()=>{cleanup();vi.restoreAllMocks()})
+
+it('the optional owner connection action preserves the dirty card and cannot dispatch while a queue write is pending',async()=>{
+  const s=setup(true),connection=vi.fn(),shown=render(<ContactCard {...s.props} connection={connection}/>)
+  const comment=input(t('logbook.field.comment.label'))
+  fireEvent.change(comment,{target:{value:'retained\ncorrection'}})
+  const raw=localStorage.getItem(DRAFT_KEY),id=s.editor.inspect().requestId
+  s.source.connection.writeGranted=false;s.source.read=null
+  shown.rerender(<ContactCard {...s.props} connection={connection}/>)
+  fireEvent.click(screen.getByRole('button',{name:t('contactCard.editor.connection')}))
+  expect(connection).toHaveBeenCalledTimes(1);expect(comment.value).toBe('retained\ncorrection')
+  expect(localStorage.getItem(DRAFT_KEY)).toBe(raw);expect(s.editor.inspect().requestId).toBe(id)
+  expect(s.props.onClose).not.toHaveBeenCalled();expect(confirm).not.toHaveBeenCalled()
+  expect(s.port.enqueue).not.toHaveBeenCalled();expect(s.port.deliver).not.toHaveBeenCalled()
+  s.source.connection.writeGranted=true;s.source.read={detail:s.props.external.read.detail,deadlineMono:1000,binding:{...s.source.connection}}
+  let resolve!:()=>void
+  s.port.enqueue.mockImplementationOnce(async()=>{await new Promise<void>(done=>{resolve=done});return []})
+  shown.rerender(<ContactCard {...s.props} connection={connection}/>)
+  let pending!:Promise<void>;act(()=>{pending=s.editor.save()})
+  const action=screen.getByRole('button',{name:t('contactCard.editor.connection')}) as HTMLButtonElement
+  expect(action.disabled).toBe(true);fireEvent.click(action);expect(connection).toHaveBeenCalledTimes(1)
+  await act(async()=>{resolve();await pending})
+  expect(native).not.toHaveBeenCalled()
+})
+
+it('the opt-in host keeps the actual focused input through refresh and expiry without admitting Save or rebasing',()=>{
+  const s=setup(true),{rerender}=render(<ContactCard {...s.props}/>)
+  const comment=input(t('logbook.field.comment.label'));comment.focus()
+  fireEvent.change(comment,{target:{value:'first'}})
+  const id=s.editor.inspect().requestId,oldBase=s.editor.inspect().base
+  s.source.read=null;s.time(2000)
+  rerender(<ContactCard {...s.props} external={{...s.props.external,read:{state:'loading',message:'Reading'}}}/>)
+  expect(input(t('logbook.field.comment.label'))).toBe(comment)
+  expect(document.activeElement).toBe(comment);expect(comment.readOnly).toBe(false)
+  fireEvent.change(comment,{target:{value:'first\nsecond'}})
+  expect(s.editor.inspect().canSave).toBe(false)
+  expect((screen.getByRole('button',{name:t('contactCard.editor.queue')}) as HTMLButtonElement).disabled).toBe(true)
+  const newer=JSON.parse(JSON.stringify(s.props.external.read.detail)) as OwnerContactDetail
+  newer.contact_revision!++
+  s.source.read={detail:newer,deadlineMono:5000,binding:{...s.source.connection}}
+  rerender(<ContactCard {...s.props} external={{...s.props.external,read:{state:'current',detail:newer}}}/>)
+  expect(s.editor.inspect().status).toBe('conflict');expect(s.editor.inspect().requestId).toBe(id)
+  expect(s.editor.inspect().base).toEqual(oldBase);expect(comment.value).toBe('first\nsecond')
+  expect(s.port.enqueue).not.toHaveBeenCalled();expect(native).not.toHaveBeenCalled()
+})
 
 it('keeps original card geometry/classes and only the six owner correction fields editable',()=>{
   const s=setup();render(<ContactCard {...s.props}/>)
@@ -122,4 +166,5 @@ it('the shared surface default preserves native one-line normalization, Enter-su
   expect(normalization).toHaveBeenCalledTimes(1);expect(props.set).toHaveBeenCalledWith('comment','one two')
   expect(submit).toHaveBeenCalledTimes(1);expect(input(t('logbook.field.notes.label')).readOnly).toBe(false)
   expect(screen.getByRole('button',{name:t('contactCard.field.add')})).toBeTruthy()
+  expect(screen.queryByRole('button',{name:t('contactCard.editor.connection')})).toBeNull()
 })

@@ -33,6 +33,40 @@ function setup() {
 function deferred<T>() { let resolve!: (value: T) => void; const promise = new Promise<T>(done => { resolve = done }); return { promise, resolve } }
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.useRealTimers() })
 describe('original Recall and Recent live reads', () => {
+  it('opens exact compact row IDs using the queried Recall call and current lease, never a positional fallback', async () => {
+    const s = setup(), id = '00000000-0000-4000-8000-000000000999'
+    const data = payload('K1AAA', 10001)
+    data.contacts = [{ contact_id: id, contact_revision: null, callsign: 'K1AAA/P', band: '20m', mode: 'MFSK',
+      exact_mode: 'FT8', submode: 'FT8', details_complete: false, started_at_unix_ms: 9000,
+      frequency_hz: null, rst_sent: '-10', rst_received: '-11', grid: '', comment: '' }]
+    data.history_summary = { ...data.history_summary!, total: 1, worked_before: true, last_started_at_unix_ms: 9000,
+      bands: ['20m'], modes: ['FT8'] }
+    s.transport.history.mockResolvedValueOnce(wire(data))
+    const capable = { ...view, hello: { ...view.hello!, capabilities: ['logbook.read', 'logbook.contact.read'] } }
+    const { result } = renderHook(() => useOwnerHistory(capable, 1, { callsign: 'K1AAA' }, s.transport))
+    await act(async () => {})
+    const open = result.current.canOpenContact
+    expect(open('K1AAA', id)).toBe(true)
+    expect(open('K1AAA/P', id)).toBe(false)
+    expect(open('K1AAA', null)).toBe(false)
+    expect(open('K1AAA', '00000000-0000-4000-8000-000000000998')).toBe(false)
+    act(() => { vi.spyOn(document, 'hidden', 'get').mockReturnValue(true); document.dispatchEvent(new Event('visibilitychange')) })
+    await s.advance(4999); expect(open('K1AAA', id)).toBe(true)
+    await s.advance(1); expect(open('K1AAA', id)).toBe(false)
+  })
+  it('rejects duplicate exact IDs even when the compact rows have complete business metadata', async () => {
+    const s = setup(), id = '00000000-0000-4000-8000-000000000999'
+    const data = payload('K1AAA', 10001)
+    const row = { contact_id: id, contact_revision: 1, callsign: 'K1AAA', band: '20m', mode: 'FT8',
+      details_complete: true, started_at_unix_ms: 9000, frequency_hz: null, rst_sent: '', rst_received: '', grid: '', comment: '' }
+    data.contacts = [row, { ...row }]
+    data.history_summary = { ...data.history_summary!, total: 2, worked_before: true }
+    s.transport.history.mockResolvedValueOnce(wire(data))
+    const capable = { ...view, hello: { ...view.hello!, capabilities: ['logbook.read', 'logbook.contact.read'] } }
+    const { result } = renderHook(() => useOwnerHistory(capable, 1, { callsign: 'K1AAA' }, s.transport))
+    await act(async () => {})
+    expect(result.current.canOpenContact('K1AAA', id)).toBe(false)
+  })
   it('coalesces a pending A → B → A selection into one fresh A request after retirement', async () => {
     const s = setup(), first = deferred<HistoryReadView<History>>()
     s.transport.history.mockReturnValueOnce(first.promise)

@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { historyReads, type View } from './api'
 import { createOwnerHistoryReader, type OwnerHistoryQuery, type OwnerReadBinding } from './ownerHistoryReader'
-import { ownerRecallRead, ownerRecentRead } from './ownerHistoryPresentation'
+import { canonicalContactId, ownerRecallRead, ownerRecentRead } from './ownerHistoryPresentation'
 
 /** One reader shares revision retirement between Recall and Recent. A successful
  * cycle refreshes after two seconds; failures pause until a new selection,
@@ -14,7 +14,8 @@ export function useOwnerHistory(view: View, session: number, query: OwnerHistory
   const binding: OwnerReadBinding = { sessionGeneration: session,
     connectionToken: view.connection_token ?? null, owner: view }
   const bindingKey = JSON.stringify([session, view.connection_token, view.paired, view.connected,
-    view.hello?.server_instance, view.hello?.workspace_id, view.hello?.capabilities.includes('logbook.read')])
+    view.hello?.server_instance, view.hello?.workspace_id, view.hello?.capabilities.includes('logbook.read'),
+    view.hello?.capabilities.includes('logbook.contact.read')])
   const queryKey = JSON.stringify(query)
   const [, refresh] = useState(0)
   const [request, requestRefresh] = useState(0)
@@ -94,6 +95,19 @@ export function useOwnerHistory(view: View, session: number, query: OwnerHistory
     }
   }, [reader, cycle])
   useEffect(() => { pump.current() }, [desiredKey, cycle])
-  return { recall: ownerRecallRead(history, true), recent: ownerRecentRead(recent),
+  const contactRead = view.connected && !!view.hello?.capabilities.includes('logbook.contact.read')
+  const canOpenContact = (call: string, id: string | null | undefined) => {
+    if (!canonicalContactId(id)) return false
+    const current = desired.current
+    if (!current.binding.owner.connected || !current.binding.owner.hello?.capabilities.includes('logbook.contact.read')) return false
+    const h = reader.inspectHistory(current.binding, current.query ?? { callsign: '' })
+    const r = reader.inspectRecent(current.binding)
+    // Recall supplies the queried call (which can differ from a portable row).
+    if (h.state === 'current' && h.payload.callsign === call
+      && h.payload.contacts.filter(row => row.contact_id === id).length === 1) return true
+    return r.state === 'current' && r.payload.contacts.filter(row => row.contact_id === id).length === 1
+      && r.payload.contacts.some(row => row.contact_id === id && row.callsign === call)
+  }
+  return { recall: ownerRecallRead(history, true, contactRead), recent: ownerRecentRead(recent, contactRead), canOpenContact,
     refresh: () => { reader.invalidate(); requestRefresh(value => value + 1) } }
 }

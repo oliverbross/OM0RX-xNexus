@@ -20,6 +20,17 @@ function payload(): History {
 }
 const current = <T,>(payload: T): OwnerReadState<T> => ({ state: 'current', payload, deadline: 500, contextKey: 'scope', queryKey: 'query' })
 describe('owner history projection into original panes', () => {
+  it('the explicit contact-read capability opens compact UUID rows without pretending their details are complete', () => {
+    const data = payload(), id = '00000000-0000-4000-8000-000000000999'
+    data.contacts[1].contact_id = id
+    const enabled = ownerRecallRead(current(data), true, true)
+    const denied = ownerRecallRead(current(data), true, false)
+    expect(enabled.state === 'current' && enabled.history.qsos.map(row => row.canOpen)).toEqual([false, true])
+    expect(denied.state === 'current' && denied.history.qsos.some(row => row.canOpen)).toBe(false)
+    expect(data.contacts[1].details_complete).toBe(false); expect(data.contacts[1].contact_revision).toBeNull()
+    const nativeDefault = ownerRecallRead(current(data), true)
+    expect(nativeDefault.state === 'current' && nativeDefault.history.qsos.map(row => row.canOpen)).toEqual([true, false])
+  })
   it('uses full summary counts and distinguishes band from exact-mode matches', () => {
     const read = current(payload()), band = ownerRecallRead(read, false), exact = ownerRecallRead(read, true)
     expect(band.state === 'current' && band.history.dupeThisBand).toBe(true)

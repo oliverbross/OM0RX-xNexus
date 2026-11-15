@@ -28,6 +28,61 @@ const receipt = (id: string): Receipt => ({ request_id: id, server_instance: 'A'
 const tune = { kind: 'station.tune', radio_id: 'radio1', frequency_hz: 14074000, mode: 'DIGU' } as const
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.useRealTimers() })
 describe('original host connection ownership', () => {
+  it('the new API predicate refuses old accepted identity before its passive replacement effect runs', async () => {
+    const view = { ...currentView(), connection_token: 'read-token' }
+    view.hello = { ...view.hello!, capabilities: ['logbook.contact.read'] }
+    const a = api(Promise.resolve(view)), delayed = pending<View>(), b = api(delayed.promise)
+    let captured: Parameters<ReturnType<typeof useOwnerConnection>['isCurrentReadConnection']>[0] | null = null
+    const beforeEffect: boolean[] = []
+    const { result, rerender } = renderHook(({ owner }) => {
+      const c = useOwnerConnection(owner)
+      useLayoutEffect(() => { if (owner === b && captured) beforeEffect.push(c.isCurrentReadConnection(captured, ['logbook.contact.read'])) })
+      return c
+    }, { initialProps: { owner: a } })
+    await act(async () => {})
+    captured = { session: result.current.session, connectionToken: 'read-token', serverInstance: 'A', workspaceId: 'A' }
+    expect(result.current.isCurrentReadConnection(captured, ['logbook.contact.read'])).toBe(true)
+    rerender({ owner: b }); expect(beforeEffect.length).toBeGreaterThan(0)
+    expect(beforeEffect.every(value => value === false)).toBe(true)
+  })
+  it('retires passive read authority synchronously on poll failure while retaining the separate Stop identity', async () => {
+    vi.useFakeTimers()
+    const view = { ...currentView(), connection_token: 'read-token' }
+    view.hello = { ...view.hello!, capabilities: ['logbook.contact.read', 'logbook.write'] }
+    const owner = api(Promise.resolve(view))
+    let reject!: (error: Error) => void
+    vi.mocked(owner.poll).mockReturnValue(new Promise((_resolve, fail) => { reject = fail }))
+    const { result } = renderHook(() => useOwnerConnection(owner))
+    await act(async () => {})
+    const scope = { session: result.current.session, connectionToken: 'read-token', serverInstance: 'A', workspaceId: 'A' }
+    const read = result.current.isCurrentReadConnection, stop = result.current.isCurrentConnection
+    expect(read(scope, ['logbook.contact.read'])).toBe(true)
+    await act(async () => { await vi.advanceTimersByTimeAsync(500) })
+    await act(async () => {
+      reject(Error('offline')); await Promise.resolve(); await Promise.resolve()
+      expect(read(scope, ['logbook.contact.read'])).toBe(false)
+      expect(stop(scope)).toBe(true)
+    })
+    expect(result.current.view.connected).toBe(false)
+  })
+  it('read admission uses accepted capabilities, not station freshness or a retained render array', async () => {
+    vi.useFakeTimers()
+    const view = { ...currentView(), snapshot: null, connection_token: 'read-token' }
+    view.hello = { ...view.hello!, capabilities: ['logbook.contact.read', 'logbook.write'] }
+    const owner = api(Promise.resolve(view)), next = pending<View>()
+    vi.mocked(owner.poll).mockReturnValueOnce(next.promise)
+    const { result } = renderHook(() => useOwnerConnection(owner)); await act(async () => {})
+    const scope = { session: result.current.session, connectionToken: 'read-token', serverInstance: 'A', workspaceId: 'A' }
+    const admitted = result.current.isCurrentReadConnection
+    expect(result.current.lease).toBeNull(); expect(admitted(scope, ['logbook.contact.read', 'logbook.write'])).toBe(true)
+    await act(async () => { await vi.advanceTimersByTimeAsync(500) })
+    await act(async () => {
+      next.resolve({ ...view, hello: { ...view.hello!, capabilities: ['logbook.contact.read'] } })
+      await Promise.resolve(); await Promise.resolve()
+      expect(admitted(scope, ['logbook.write'])).toBe(false)
+      expect(admitted(scope, ['logbook.contact.read'])).toBe(true)
+    })
+  })
   it('mount reads status only and never starts a station or pairs automatically', async () => {
     const owner = api(Promise.resolve(paired('A')))
     const { result } = renderHook(() => useOwnerConnection(owner))
