@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-only
 //! Literal sender identity and revocable owner facts. No scoring or band inference.
-//! Lookup admits 32 distinct call/context pairs per second: never attempted
+//! Lookup admits at most32 distinct call/context pairs per second: never attempted
 //! first (newest ties), then least recently attempted. Every retained key gets
 //! a turn even when earlier facts expire before the next batch completes.
+//! One pending group retries cache misses for at most6 SDK invocations or6s;
+//! ordinary snapshot expiry defers it without resetting those bounds.
 //! At most 200 rows/cache entries survive, while owner leases last at most two
 //! seconds. Older visible rows may therefore remain Unknown: retaining a row
 //! does not promise continuous classification, and cache hits never renew TTL.
@@ -157,7 +159,9 @@ impl Fact {
         })
     }
     pub fn is_fresh(&self) -> bool {
-        self.batch.is_fresh()
+        // A sub-millisecond remainder is already unavailable to view/attach.
+        // Do not return an unrenderable cache hit instead of scheduling a lookup.
+        self.batch.remaining_valid_ms() > 0
     }
     pub fn matches(&self, candidate: &Candidate) -> bool {
         self.batch.results().ok().is_some_and(|results| {
@@ -210,6 +214,84 @@ impl Scheduler {
         self.0.drain(..extra);
     }
 }
+/// A single immutable lookup group survives transient owner cache misses.
+/// Bounds count SDK query invocations (which may fail before HTTP dispatch),
+/// never idle deferrals; facts retain their independent original SDK leases.
+struct Pending {
+    keys: Vec<Candidate>,
+    first_attempt: Instant,
+    attempts: u8,
+}
+impl Pending {
+    fn exhausted(&self, now: Instant) -> bool {
+        self.attempts >= 6
+            || now.saturating_duration_since(self.first_attempt) >= Duration::from_secs(6)
+    }
+}
+#[derive(Default)]
+pub struct LookupSchedule {
+    scheduler: Scheduler,
+    pending: Option<Pending>,
+}
+impl LookupSchedule {
+    pub fn order(&mut self, retained: &[Candidate], eligible: &mut Vec<Candidate>, now: Instant) {
+        if let Some(group) = &mut self.pending {
+            // Never borrow a trimmed row's request ID for a newer duplicate.
+            group.keys.retain(|key| retained.contains(key));
+            if group.keys.is_empty() || group.exhausted(now) {
+                self.cancel(true);
+            }
+        }
+        self.scheduler.order(retained, eligible);
+        if let Some(group) = &self.pending {
+            eligible.retain(|row| group.keys.iter().any(|key| key.same_lookup(row)));
+        }
+    }
+    pub fn query_key(&self, row: &Candidate) -> Candidate {
+        self.pending
+            .as_ref()
+            .and_then(|group| group.keys.iter().find(|key| key.same_lookup(row)))
+            .unwrap_or(row)
+            .clone()
+    }
+    pub fn attempted(&mut self, keys: &[Candidate], started: Instant) {
+        let group = self.pending.get_or_insert_with(|| {
+            debug_assert!(!keys.is_empty() && keys.len() <= 32);
+            Pending {
+                keys: keys.to_vec(),
+                first_attempt: started,
+                attempts: 0,
+            }
+        });
+        group.attempts = group.attempts.saturating_add(1);
+    }
+    pub fn original_survives(&self, candidate: &Candidate, retained: &[Candidate]) -> bool {
+        self.pending.as_ref().is_some_and(|group| {
+            group
+                .keys
+                .iter()
+                .any(|key| key.same_lookup(candidate) && retained.contains(key))
+        })
+    }
+    pub fn complete(&mut self, useful: bool, now: Instant) {
+        if useful
+            || self
+                .pending
+                .as_ref()
+                .is_some_and(|group| group.exhausted(now))
+        {
+            self.cancel(true);
+        }
+    }
+    pub fn cancel(&mut self, advance: bool) {
+        if let Some(group) = self.pending.take() {
+            if advance {
+                self.scheduler.attempted(&group.keys);
+            }
+        }
+    }
+}
+
 impl Cache {
     pub fn find(&mut self, candidate: &Candidate) -> Option<Fact> {
         self.0.retain(|(_, fact)| fact.is_fresh());
@@ -277,6 +359,302 @@ pub fn decode_id(worker: &str, epoch: u64, period: u64, ordinal: u64) -> Option<
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn virtual_rows(count: usize) -> Vec<Candidate> {
+        let route: AudioDescriptor = serde_json::from_value(serde_json::json!({
+            "capture_id":"00000000-0000-4000-8000-000000000001","epoch":"00000000-0000-4000-8000-000000000002",
+            "radio_id":"radio1","receiver_id":"fixture/slice-a","mapping_generation":1,"device_id":"fixture-dax",
+            "slice":"A","dax_channel":1,"frequency_hz":14074000,"mode":"DIGU","source_channels":2,"selected_channel":0,
+            "sample_rate":48000,"sample_format":"s16le","timestamp_basis":"windows_endpoint_capture",
+            "remote_rf_latency_us":null,"utc_sync_accuracy_us":null
+        })).unwrap();
+        (0..count)
+            .map(|i| Candidate {
+                decode_id: format!("row_{i}"),
+                callsign: format!("K{i}AA"),
+                context: Context {
+                    worker_instance: "worker".into(),
+                    worker_epoch: 1,
+                    server_instance: "owner".into(),
+                    workspace_id: "workspace".into(),
+                    route: route.clone(),
+                    decoder_mode: Mode::FT8,
+                },
+            })
+            .collect()
+    }
+
+    #[test]
+    fn pending_groups_reach_every_row_with_independent_poll_phases_and_delays() {
+        // Real scheduling primitives, virtual transport/owner: 1738ms owner
+        // cycles; metadata initially1852ms old; independent main-poll phase,
+        // 1000ms wait AFTER each100/218ms response; independent lookup phase.
+        // Original two-second cache + captured authority deadlines never renew.
+        // This models scheduling, not authenticated SDK acceptance (separate tests).
+        struct Flight {
+            keys: Vec<Candidate>,
+            arrival: i64,
+            response: i64,
+            authority_deadline: i64,
+            cached_generation: Option<Option<i64>>,
+        }
+        let mut covered_gap_after_cache = false;
+        for count in [179, 200] {
+            for snapshot_phase in [0i64, 311, 827] {
+                for lookup_phase in [0i64, 149, 733] {
+                    for delay in [100i64, 218] {
+                        let retained = virtual_rows(count);
+                        let start = Instant::now();
+                        let mut schedule = LookupSchedule::default();
+                        let observation = Observation::default();
+                        observation.observe(1_000_000 - 1852);
+                        let mut cadence =
+                            Cadence::new(start + Duration::from_millis(lookup_phase as u64));
+                        let mut owner_generated = -1852i64;
+                        let mut observed_generated = owner_generated;
+                        let mut next_poll = 709i64;
+                        let mut snapshot_start = snapshot_phase;
+                        let mut snapshot_flight: Option<(i64, i64)> = None;
+                        let mut queued: Option<Vec<Candidate>> = None;
+                        let mut cache = std::collections::HashMap::<String, i64>::new();
+                        let mut known = std::collections::HashSet::new();
+                        let mut previous_attempt = None;
+                        let mut flight: Option<Flight> = None;
+                        let mut pending_gap_after_cache = false;
+                        for now in 0i64..60000 {
+                            if now == next_poll {
+                                owner_generated = now - 40;
+                                if let Some(keys) = queued.take() {
+                                    assert!(keys.len() <= 32);
+                                    for key in keys {
+                                        cache.insert(key.callsign, owner_generated);
+                                    }
+                                }
+                                next_poll += 1738;
+                            }
+                            if now == snapshot_start {
+                                snapshot_flight = Some((now + delay, owner_generated));
+                                snapshot_start = i64::MAX;
+                            }
+                            let mut observation_wake = false;
+                            if snapshot_flight.is_some_and(|(arrives, _)| arrives == now) {
+                                observed_generated = snapshot_flight.take().unwrap().1;
+                                if now - observed_generated < 2000 {
+                                    observation.observe((1_000_000 + observed_generated) as u64);
+                                    observation_wake = true;
+                                }
+                                snapshot_start = now + 1000;
+                            }
+                            if let Some(request) =
+                                flight.as_mut().filter(|request| request.arrival == now)
+                            {
+                                let hit = request
+                                    .keys
+                                    .iter()
+                                    .map(|key| cache.get(&key.callsign).copied())
+                                    .collect::<Option<Vec<_>>>()
+                                    .filter(|times| {
+                                        times.iter().all(|generated| now - generated < 2000)
+                                    })
+                                    .and_then(|times| times.into_iter().min());
+                                request.cached_generation = Some(hit);
+                                if hit.is_none() && queued.is_none() {
+                                    queued = Some(request.keys.clone());
+                                }
+                            }
+                            if flight
+                                .as_ref()
+                                .is_some_and(|request| request.response == now)
+                            {
+                                let request = flight.take().unwrap();
+                                let useful = now < request.authority_deadline
+                                    && request
+                                        .cached_generation
+                                        .flatten()
+                                        .is_some_and(|generated| now - generated < 2000);
+                                if useful {
+                                    for key in request.keys {
+                                        known.insert(key.callsign);
+                                    }
+                                }
+                                schedule
+                                    .complete(useful, start + Duration::from_millis(now as u64));
+                            }
+                            if known.len() == count {
+                                break;
+                            }
+                            if flight.is_some() || (!observation_wake && now % 100 != 0) {
+                                continue;
+                            }
+                            let instant = start + Duration::from_millis(now as u64);
+                            let mut eligible = retained.clone();
+                            schedule.order(&retained, &mut eligible, instant);
+                            let remaining = (2000 - (now - observed_generated)).max(0) as u64;
+                            if remaining == 0 {
+                                if schedule.pending.as_ref().is_some_and(|group| {
+                                    group.keys.iter().all(|key| {
+                                        cache
+                                            .get(&key.callsign)
+                                            .is_some_and(|generated| now - generated < 2000)
+                                    })
+                                }) {
+                                    pending_gap_after_cache = true;
+                                }
+                                // Ordinary authority expiry defers without dropping
+                                // the group or resetting its original residence bound.
+                                continue;
+                            }
+                            if !cadence.ready(instant) || !observation.admit(remaining) {
+                                continue;
+                            }
+                            let keys: Vec<_> = eligible
+                                .iter()
+                                .take(32)
+                                .map(|row| schedule.query_key(row))
+                                .collect();
+                            if keys.is_empty() {
+                                continue;
+                            }
+                            if let Some(previous) = previous_attempt {
+                                assert!(now - previous >= 1000);
+                            }
+                            previous_attempt = Some(now);
+                            cadence.attempted(instant);
+                            schedule.attempted(&keys, instant);
+                            flight = Some(Flight {
+                                keys,
+                                arrival: now + delay / 2,
+                                response: now + delay,
+                                authority_deadline: observed_generated + 2000,
+                                cached_generation: None,
+                            });
+                        }
+                        assert_eq!(known.len(),count,"snapshot_phase={snapshot_phase} lookup_phase={lookup_phase} delay={delay}");
+                        covered_gap_after_cache |= pending_gap_after_cache;
+                    }
+                }
+            }
+        }
+        assert!(
+            covered_gap_after_cache,
+            "phase matrix must exercise cache fill before authority gap and fresh observation"
+        );
+    }
+
+    #[test]
+    fn cached_pending_group_survives_authority_gap_without_renewing_residence() {
+        let retained = virtual_rows(179);
+        let start = Instant::now();
+        let mut schedule = LookupSchedule::default();
+        schedule.attempted(&retained[..32], start);
+        // Owner fills at1738ms. The captured observation expires at1852ms;
+        // next delayed main snapshot arrives2069ms, before next query can run.
+        for millis in [1738, 1852, 1952, 2069] {
+            let mut eligible = retained.clone();
+            schedule.order(
+                &retained,
+                &mut eligible,
+                start + Duration::from_millis(millis),
+            );
+            assert_eq!(eligible, retained[..32]);
+            assert_eq!(schedule.pending.as_ref().unwrap().attempts, 1);
+            assert_eq!(schedule.pending.as_ref().unwrap().first_attempt, start);
+        }
+        // A new query may now consume ORIGINAL still-fresh owner facts.
+        schedule.attempted(&retained[..32], start + Duration::from_millis(2069));
+        schedule.complete(true, start + Duration::from_millis(2287));
+        let mut eligible = retained.clone();
+        schedule.order(
+            &retained,
+            &mut eligible,
+            start + Duration::from_millis(2287),
+        );
+        assert_eq!(eligible[0], retained[32]);
+    }
+
+    #[test]
+    fn pending_failure_advances_fairness_after_six_invocations_or_six_seconds() {
+        let retained = virtual_rows(200);
+        let start = Instant::now();
+        let mut schedule = LookupSchedule::default();
+        let mut seen = std::collections::HashSet::new();
+        let mut groups = Vec::<Vec<String>>::new();
+        for second in 0..42u64 {
+            let now = start + Duration::from_secs(second);
+            let mut eligible = retained.clone();
+            schedule.order(&retained, &mut eligible, now);
+            let keys: Vec<_> = eligible.into_iter().take(32).collect();
+            let ids: Vec<_> = keys.iter().map(|key| key.decode_id.clone()).collect();
+            if second % 6 == 0 {
+                groups.push(ids.clone());
+            }
+            assert_eq!(ids, *groups.last().unwrap());
+            for key in &keys {
+                seen.insert(key.decode_id.clone());
+            }
+            schedule.attempted(&keys, now);
+            schedule.complete(false, now);
+        }
+        assert_eq!(seen.len(), 200);
+        // Idle deferral does not count attempts, but cannot hold the group forever.
+        let mut schedule = LookupSchedule::default();
+        schedule.attempted(&retained[..32], start);
+        let mut eligible = retained.clone();
+        schedule.order(
+            &retained,
+            &mut eligible,
+            start + Duration::from_millis(5999),
+        );
+        assert_eq!(eligible[0], retained[0]);
+        schedule.order(&retained, &mut eligible, start + Duration::from_secs(6));
+        // Recreate full eligible list, as the real worker does each iteration.
+        let mut eligible = retained.clone();
+        schedule.order(&retained, &mut eligible, start + Duration::from_secs(6));
+        assert_eq!(eligible[0], retained[32]);
+    }
+
+    #[test]
+    fn pending_identity_trim_route_and_revocation_never_rebind_old_queries() {
+        let retained = virtual_rows(3);
+        let now = Instant::now();
+        let mut schedule = LookupSchedule::default();
+        schedule.attempted(&retained[..2], now);
+        let mut duplicate = retained[0].clone();
+        duplicate.decode_id = "new_duplicate".into();
+        let survivors = vec![duplicate.clone(), retained[1].clone(), retained[2].clone()];
+        assert!(!schedule.original_survives(&duplicate, &survivors));
+        let mut eligible = survivors.clone();
+        schedule.order(&survivors, &mut eligible, now);
+        assert_eq!(eligible, vec![retained[1].clone()]);
+        for changed in 0..7 {
+            let mut replacement = retained[0].clone();
+            match changed {
+                0 => replacement.context.worker_epoch += 1,
+                1 => replacement.context.server_instance = "new_owner".into(),
+                2 => replacement.context.workspace_id = "new_workspace".into(),
+                3 => replacement.context.decoder_mode = Mode::FT4,
+                4 => replacement.context.route.epoch = "new_epoch".into(),
+                5 => replacement.context.route.frequency_hz += 1000,
+                _ => replacement.context.route.mapping_generation += 1,
+            }
+            let mut schedule = LookupSchedule::default();
+            schedule.attempted(&retained[..1], now);
+            assert!(!schedule.original_survives(&replacement, std::slice::from_ref(&replacement)));
+            let mut eligible = vec![replacement.clone()];
+            schedule.order(std::slice::from_ref(&replacement), &mut eligible, now);
+            assert_eq!(schedule.query_key(&replacement), replacement);
+            assert!(schedule.pending.is_none());
+        }
+        // Authority cancellation advances only the already attempted group.
+        schedule.cancel(true);
+        assert!(schedule.pending.is_none());
+        let mut eligible = retained.clone();
+        schedule.order(&retained, &mut eligible, now);
+        assert_eq!(eligible[0], retained[0]); // removed first key was never rebound
+        schedule.attempted(&retained[..1], now);
+        schedule.cancel(false); // write fence discards pending without a query
+        assert!(schedule.pending.is_none());
+    }
+
     #[test]
     fn low_budget_deferrals_escape_one_second_owner_poll_phase_lock() {
         let start = Instant::now();
