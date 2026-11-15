@@ -61,8 +61,9 @@ fn main() {
     let worker=Worker::start_with_needs(client.audio_handle().unwrap(),hello.server_instance,hello.workspace_id,Mode::FT4,Some(client.needs_handle().unwrap())).unwrap();
     let started=Instant::now();let mut next_poll=Instant::now();let mut phase=0;let mut decode_id=String::new();let mut old_generated=None;let mut timings=Vec::new();
     let mut last_sequence=0;let mut observer=client.audio_handle().unwrap();
-    while phase<3 {
-        assert!(started.elapsed()<Duration::from_secs(45),"decode/needs timeout phase{phase}: {}",worker.view().unwrap().reason);
+    let mut previous_context=None; let mut new_epoch=None; let mut recovery=0;
+    while phase<5 {
+        assert!(started.elapsed()<Duration::from_secs(75),"decode/needs/gap timeout phase{phase}: {}",worker.view().unwrap().reason);
         if Instant::now()>=next_poll {
             let snapshot=client.poll().unwrap();
             if let Some(needs)=snapshot.needs.as_ref(){worker.needs_snapshot_observed(needs.generated_at_unix_ms);}
@@ -83,13 +84,43 @@ fn main() {
                 timings.push(json!({"phase":"unknown_pcm_continues","elapsed_ms":started.elapsed().as_millis(),"row":row}));
                 fs::remove_file(owner.root.join("STOP_NEEDS")).unwrap();phase=2;
             }
-        }} else if let Some(row)=view.rows.iter().find(|r|r.decode_id==decode_id && r.needs.status==NeedStatus::Needed && r.needs.generated_at_unix_ms>old_generated){
-            timings.push(json!({"phase":"new_known","elapsed_ms":started.elapsed().as_millis(),"row":row}));phase=3;
+        }} else if phase==2 {if let Some(row)=view.rows.iter().find(|r|r.decode_id==decode_id && r.needs.status==NeedStatus::Needed && r.needs.generated_at_unix_ms>old_generated){
+            timings.push(json!({"phase":"new_known","elapsed_ms":started.elapsed().as_millis(),"row":row}));
+            previous_context=Some(row.context.clone());
+            old_generated=row.needs.generated_at_unix_ms;
+            fs::write(owner.root.join("GAP_REQUEST"),[]).unwrap(); phase=3;
+        }} else if phase==3 && owner.root.join(if recovery==0 {"GAP_ACK.json"} else {"TIMING_ACK.json"}).exists() {
+            let gap:Value=serde_json::from_slice(&fs::read(owner.root.join(if recovery==0 {"GAP_ACK.json"} else {"TIMING_ACK.json"})).unwrap()).unwrap();
+            let previous=previous_context.as_ref().unwrap();
+            assert_eq!(gap["old_descriptor"]["epoch"],previous.route.epoch);
+            assert_eq!(gap["old_descriptor"]["capture_id"],gap["new_descriptor"]["capture_id"]);
+            assert_ne!(gap["old_descriptor"]["epoch"],gap["new_descriptor"]["epoch"]);
+            assert_eq!(gap["waiting"]["state"],"stopped");
+            assert!(gap["waiting"]["descriptor"].is_null());
+            assert_eq!(gap["waiting"]["chunks"],json!([]));
+            if view.rows.is_empty() {
+                new_epoch=Some(gap["new_descriptor"]["epoch"].as_str().unwrap().to_string());
+                timings.push(json!({"phase":"recovery_revoked_rows_and_needs","recovery":recovery,"elapsed_ms":started.elapsed().as_millis(),"view":view,"gap":gap}));
+                phase=4;
+            }
+        } else if phase==4 {
+            assert!(view.rows.iter().all(|row| row.decode_id!=decode_id && row.context.route.epoch==*new_epoch.as_ref().unwrap()),"old epoch row restored after gap observation");
+            if let Some(row)=view.rows.iter().find(|r|r.message=="CQ K1ABC FN42" && r.needs.status==NeedStatus::Needed) {
+                assert_ne!(&row.context,previous_context.as_ref().unwrap());
+                assert_eq!(row.context.route.capture_id,previous_context.as_ref().unwrap().route.capture_id);
+                assert!(row.needs.generated_at_unix_ms>old_generated,"new epoch needs must come from a fresh query");
+                timings.push(json!({"phase":"new_epoch_complete_period_known","recovery":recovery,"elapsed_ms":started.elapsed().as_millis(),"row":row}));
+                if recovery==0 {
+                    recovery=1; previous_context=Some(row.context.clone()); decode_id=row.decode_id.clone();
+                    old_generated=row.needs.generated_at_unix_ms;
+                    fs::write(owner.root.join("TIMING_REQUEST"),[]).unwrap(); phase=3;
+                } else { phase=5; }
+            }
         }
         std::thread::sleep(Duration::from_millis(20));
     }
     worker.stop();assert!(!worker.view().unwrap().enabled);assert!(worker.view().unwrap().rows.is_empty());
     drop(worker);owner.finish();
     fs::write(evidence.join("headless.json"),serde_json::to_vec_pretty(&json!({"passed":true,"actual_decode":true,"synthetic_classification":true,"hardware":false,"gui":false,"malformed_root":bad.root,"silence_root":silence.root,"generated_root":owner.root,"timings":timings,"normal_stop":true})).unwrap()).unwrap();
-    println!("PASS malformed waveform, silence, actual FT4 decode -> Needed -> Unknown with PCM progress -> fresh Needed -> Stop -> normal fixture exit");
+    println!("PASS malformed waveform, silence, actual FT4 decode -> Needed -> Unknown with PCM progress -> fresh Needed -> declared gap/empty -> new-epoch decoded Needed -> timing-overflow discard/empty -> new-epoch decoded Needed -> Stop -> normal fixture exit");
 }
