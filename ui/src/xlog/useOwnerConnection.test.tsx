@@ -4,6 +4,7 @@ import { act, cleanup, renderHook } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { disconnected, type Bridge, type Receipt, type View } from './api'
 import { useOwnerConnection } from './useOwnerConnection'
+import { createOwnerRotor } from './ownerRotor'
 
 function pending<T>() { let resolve!: (value: T) => void; const promise = new Promise<T>(done => { resolve = done }); return { promise, resolve } }
 function api(status: Promise<View>): Bridge {
@@ -99,5 +100,67 @@ describe('original host connection ownership', () => {
     await act(async () => { command.resolve(receipt('tune')); await first })
     expect(result.current.receipt?.request_id).toBe('stop')
     expect(result.current.lease).toBeNull()
+  })
+  it('retires an immutable Stop in the same turn as reconnect intent, before React flushes', async () => {
+    const initial = { ...currentView(), connection_token: 'token-A' }
+    initial.hello!.capabilities = ['rotor.stop']
+    const owner = api(Promise.resolve(initial)), replacement = pending<View>()
+    vi.mocked(owner.connect).mockReturnValue(replacement.promise)
+    const { result } = renderHook(() => useOwnerConnection(owner))
+    await act(async () => {})
+    const captured = result.current
+    const input = { api: owner, view: captured.view, lease: captured.lease, session: captured.session }
+    const stop = createOwnerRotor().present(input, () => input, captured.isCurrentConnection, captured.command)
+    expect(stop.canStop()).toBe(true)
+    let reconnect!: Promise<void>, refusal!: Promise<unknown>
+    act(() => {
+      reconnect = captured.connection('connect')
+      // This deliberately uses the old render/input, not a post-flush ref.
+      refusal = stop.stop!().catch(error => error)
+    })
+    expect(await refusal).toBeInstanceOf(Error); expect(owner.command).not.toHaveBeenCalled()
+    await act(async () => { replacement.resolve({ ...initial, connection_token: 'token-B' }); await reconnect })
+    expect(stop.canStop()).toBe(false)
+  })
+  it('keeps exact connection admission during ordinary pending and retires accepted token changes', async () => {
+    vi.useFakeTimers()
+    const initial = { ...currentView(), connection_token: 'token-A' }
+    const owner = api(Promise.resolve(initial)), dispatch = pending<Receipt>(), poll = pending<View>()
+    vi.mocked(owner.command).mockReturnValue(dispatch.promise); vi.mocked(owner.poll).mockReturnValue(poll.promise)
+    const { result } = renderHook(() => useOwnerConnection(owner))
+    await act(async () => {})
+    const scope = { session: result.current.session, connectionToken: 'token-A', serverInstance: 'A', workspaceId: 'A' }
+    let sent!: Promise<void>
+    act(() => { sent = result.current.command(tune) })
+    expect(result.current.isCurrentConnection(scope)).toBe(true)
+    await act(async () => { await vi.advanceTimersByTimeAsync(500); poll.resolve({ ...initial, connection_token: 'token-B' }) })
+    expect(result.current.isCurrentConnection(scope)).toBe(false)
+    await act(async () => { dispatch.resolve(receipt('tune')); await sent })
+  })
+  it('allows a captured exact Stop while ordinary dispatch remains unresolved', async () => {
+    const initial = { ...currentView(), connection_token: 'token-A' }; initial.hello!.capabilities = ['rotor.stop']
+    const owner = api(Promise.resolve(initial)), dispatch = pending<Receipt>()
+    vi.mocked(owner.command).mockImplementation(value => value.kind === 'rotor.stop' ? Promise.resolve(receipt('stop')) : dispatch.promise)
+    const { result } = renderHook(() => useOwnerConnection(owner)); await act(async () => {})
+    const captured = result.current, input = { api: owner, view: captured.view, lease: captured.lease, session: captured.session }
+    const stop = createOwnerRotor().present(input, () => input, captured.isCurrentConnection, captured.command)
+    let ordinary!: Promise<void>
+    act(() => { ordinary = captured.command(tune) })
+    expect(result.current.lease).toBeNull()
+    await act(async () => { await stop.stop!() })
+    expect(owner.command).toHaveBeenNthCalledWith(2, { kind: 'rotor.stop', rotor_id: 'rotor1' })
+    expect(result.current.receipt?.request_id).toBe('stop')
+    await act(async () => { dispatch.resolve(receipt('tune')); await ordinary })
+    expect(result.current.receipt?.request_id).toBe('stop')
+  })
+  it('retains exact admission through transport poll failure, without preserving a display lease', async () => {
+    vi.useFakeTimers()
+    const initial = { ...currentView(), connection_token: 'token-A' }, owner = api(Promise.resolve(initial))
+    vi.mocked(owner.poll).mockRejectedValue(new Error('offline'))
+    const { result } = renderHook(() => useOwnerConnection(owner)); await act(async () => {})
+    const scope = { session: result.current.session, connectionToken: 'token-A', serverInstance: 'A', workspaceId: 'A' }
+    await act(async () => { await vi.advanceTimersByTimeAsync(500) })
+    expect(result.current.view.connected).toBe(false); expect(result.current.lease).toBeNull()
+    expect(result.current.isCurrentConnection(scope)).toBe(true)
   })
 })

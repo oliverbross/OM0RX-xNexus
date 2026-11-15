@@ -123,6 +123,8 @@ interface Props {
     recent: ExternalRecentRead
     history?: ExternalRecallRead
     spectrumResetKey: string
+    /** Owner host mounts the original strip once in its global header. */
+    rotorInGlobalHeader?: boolean
   }
   /** Configured companion UDP listen address (Settings) — shown instead of a
    * hardcoded :2237 so a moved WSJT-X port reads truthfully. */
@@ -2198,7 +2200,7 @@ function OperateCockpitBody({
           onSkipTx1={handleSkipTx1}
           nextSlotSec={nextSlotSec}
           specialOpBadge={specialOpBadge}
-          rotor={
+          rotor={external?.rotorInGlobalHeader ? null :
             <RotorStrip
               active={active}
               onOpenSettings={onOpenSettings}

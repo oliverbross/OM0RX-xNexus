@@ -20,6 +20,7 @@ import { magneticDeg } from '../grid'
 import { pushToast } from '../toast'
 import { t } from '../i18n'
 import { pollSingleFlight } from '../singleFlight'
+import type { ExternalRotorPresentation } from './rotorExternal'
 
 /** The strip's annunciator plates — what the chip is, in the shortest form that fits a cockpit
  *  header bar. Instrument marks rather than sentences (the CwCockpit `SPLIT ▲` / `REC` class),
@@ -32,6 +33,8 @@ const ROTOR_PLATE = 'ROTOR'
 const LONG_PATH = 'LP'
 
 export interface RotorStripProps {
+  /** Explicit owner observations/retained Stop; never invokes native readers. */
+  external?: ExternalRotorPresentation
   /** Poll/render only while the host cockpit is the active view (defaults on). */
   active?: boolean
   /** A selected station to offer a one-click "point at" slew for. */
@@ -64,7 +67,41 @@ const chipStyle: CSSProperties = {
   cursor: 'pointer',
 }
 
-export function RotorStrip({ active = true, targetCall, onPointAt, onOpenSettings }: RotorStripProps) {
+export function RotorStrip(props: RotorStripProps) {
+  return props.external ? <OwnerRotorStrip source={props.external} /> : <NativeRotorStrip {...props} />
+}
+
+function OwnerRotorStrip({ source }: { source: ExternalRotorPresentation }) {
+  const [, setNow] = useState(performance.now())
+  useEffect(() => {
+    const timer = setInterval(() => setNow(performance.now()), 100)
+    return () => clearInterval(timer)
+  }, [])
+  const now = performance.now()
+  const observation = source.observation
+  const az = Number.isFinite(now) && now >= 0 && source.observationCurrent() && observation && observation.deadline > now
+    && observation.azimuthDeg !== null && Number.isFinite(observation.azimuthDeg) && observation.azimuthDeg >= 0 && observation.azimuthDeg < 360
+    ? observation.azimuthDeg : null
+  const stop = source.stop, canStop = stop !== null && source.canStop()
+  if (az === null && !canStop) return null
+  const deg = az === null ? null : Math.round(az)
+  return <span role="group" aria-label={t('rotor.strip.aria')}
+    style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', color: 'inherit' }}>
+    <span style={{ fontSize: '0.65em', letterSpacing: '0.08em', opacity: 0.55, fontWeight: 600 }} aria-hidden>{ROTOR_PLATE}</span>
+    {deg !== null && <svg width={GLYPH} height={GLYPH} viewBox={`0 0 ${GLYPH} ${GLYPH}`} aria-hidden style={{ flex: '0 0 auto' }}>
+      <circle cx={C} cy={C} r={C - 1} fill="none" stroke="currentColor" strokeOpacity={0.3} />
+      <g transform={`rotate(${deg} ${C} ${C})`}><line x1={C} y1={C} x2={C} y2={2} stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" />
+        <circle cx={C} cy={2} r={1.4} fill="currentColor" /></g>
+    </svg>}
+    <span className="mono" style={{ fontSize: '0.95em', fontWeight: 600, whiteSpace: 'nowrap' }}>{deg === null ? '—' : `${deg}°T`}</span>
+    <button type="button" style={chipStyle} title={t('rotor.pane.stop.title')} aria-label={t('rotor.pane.stop.title')}
+      disabled={!canStop} onClick={() => {
+        if (stop && source.canStop()) void stop().catch(error => pushToast(t('rotor.stop.failed', { error: String(error) }), 'error'))
+      }}>■</button>
+  </span>
+}
+
+function NativeRotorStrip({ active = true, targetCall, onPointAt, onOpenSettings }: RotorStripProps) {
   const services = useOperateServices()
   const { api: { getDeclination, getSatTrackStatus, getSatTransponder, getSettings,
     readRotator, setSatTransponder, stopRotator, stopSatTrack }, can, canAction, adapter } = services
