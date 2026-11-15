@@ -22,7 +22,8 @@ const view: View = {
 const lease = { snapshot: view.snapshot!, deadline: 1000 }
 vi.mock('./useOwnerConnection', () => ({ useOwnerConnection: () => ({ view, lease, session: 1, now: 100,
   busy: false, pollError: '', actionError: '', receipt: null, command: control.command, connection: control.connection,
-  isCurrentConnection: () => true, isCurrentReadConnection: () => false }) }))
+  isCurrentConnection: () => true, isCurrentReadConnection: () => false,
+  isCurrentBearingIdentity: () => false, retirePointObservation: () => {}, poll: null, pointEvidence: null, observedPoint: vi.fn() }) }))
 vi.mock('./useOwnerReceiver', () => ({ useOwnerReceiver: () => ({ view: { ...rxOff, enabled: true }, pending: false,
   observation: 1, leases: new Map(), mode: 'FT8', now: 100, receiving: control.receive,
   selectMode: vi.fn(), pollError: '', actionError: '' }) }))
@@ -46,7 +47,8 @@ afterEach(() => { cleanup(); vi.restoreAllMocks() })
 
 describe('original host Spots navigation', () => {
   it('keeps the cockpit mounted and its draft, while global Stop remains reachable on Spots', () => {
-    const { container } = render(<OriginalHost />)
+    const bearingTransport = { read: vi.fn(async () => { throw Error('Unexpected bearing IPC') }) }
+    const { container } = render(<OriginalHost bearingTransport={bearingTransport} />)
     const cockpit = screen.getByTestId('retained-cockpit'), input = screen.getByLabelText('Preserved cockpit draft')
     fireEvent.change(input, { target: { value: 'W9XYZ K1ABC -10' } })
     const oldReset = cockpit.dataset.spectrumReset
@@ -62,6 +64,8 @@ describe('original host Spots navigation', () => {
     expect(screen.getByTestId('retained-cockpit')).toBe(cockpit)
     fireEvent.click(screen.getByRole('button', { name: 'K1ABC' }))
     expect(control.command).not.toHaveBeenCalled()
+    expect((screen.getByRole('button', { name: 'Read bearing · K1ABC' }) as HTMLButtonElement).disabled).toBe(true)
+    expect(bearingTransport.read).not.toHaveBeenCalled()
     fireEvent.click(screen.getByRole('button', { name: 'Stop rotation NOW' }))
     expect(control.command).toHaveBeenCalledExactlyOnceWith({ kind: 'rotor.stop', rotor_id: 'exact-owner-route' })
     fireEvent.click(screen.getByRole('button', { name: 'Stop receiving' }))

@@ -176,6 +176,7 @@ const MIGRATED = [
   'components/ContactCard.tsx',
   'components/OwnerContactCardBody.tsx',
   'features/ownerEditorMessages.ts',
+  'xlog/ownerBearingMessages.ts',
   'components/QsoHistory.tsx',
   'components/RecentlyDeleted.tsx',
   // The import preview and its no-loss report's words — born migrated.

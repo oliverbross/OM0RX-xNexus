@@ -21,6 +21,7 @@ import { pushToast } from '../toast'
 import { t } from '../i18n'
 import { pollSingleFlight } from '../singleFlight'
 import type { ExternalRotorPresentation } from './rotorExternal'
+import { bearingReason } from '../xlog/ownerBearingMessages'
 
 /** The strip's annunciator plates — what the chip is, in the shortest form that fits a cockpit
  *  header bar. Instrument marks rather than sentences (the CwCockpit `SPLIT ▲` / `REC` class),
@@ -83,10 +84,12 @@ function OwnerRotorStrip({ source }: { source: ExternalRotorPresentation }) {
     && observation.azimuthDeg !== null && Number.isFinite(observation.azimuthDeg) && observation.azimuthDeg >= 0 && observation.azimuthDeg < 360
     ? observation.azimuthDeg : null
   const stop = source.stop, canStop = stop !== null && source.canStop()
-  if (az === null && !canStop) return null
+  const bearing = source.bearing, facts = bearing?.current() ? bearing.facts : null
+  const evidence = bearing?.evidence
+  if (az === null && !canStop && !bearing) return null
   const deg = az === null ? null : Math.round(az)
   return <span role="group" aria-label={t('rotor.strip.aria')}
-    style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', color: 'inherit' }}>
+    style={{ display: 'inline-flex', alignItems: 'center', flexWrap: 'wrap', gap: '0.35rem', color: 'inherit' }}>
     <span style={{ fontSize: '0.65em', letterSpacing: '0.08em', opacity: 0.55, fontWeight: 600 }} aria-hidden>{ROTOR_PLATE}</span>
     {deg !== null && <svg width={GLYPH} height={GLYPH} viewBox={`0 0 ${GLYPH} ${GLYPH}`} aria-hidden style={{ flex: '0 0 auto' }}>
       <circle cx={C} cy={C} r={C - 1} fill="none" stroke="currentColor" strokeOpacity={0.3} />
@@ -94,6 +97,28 @@ function OwnerRotorStrip({ source }: { source: ExternalRotorPresentation }) {
         <circle cx={C} cy={2} r={1.4} fill="currentColor" /></g>
     </svg>}
     <span className="mono" style={{ fontSize: '0.95em', fontWeight: 600, whiteSpace: 'nowrap' }}>{deg === null ? '—' : `${deg}°T`}</span>
+    {bearing && <>
+      <button type="button" style={chipStyle} disabled={!bearing.canRead()} onClick={() => { void bearing.read() }}>
+        {t('rotor.owner.read', { call: bearing.callsign })}</button>
+      {facts?.status === 'available' && facts.geometry && facts.target ? <>
+        <span className="mono">{t('rotor.owner.paths', { sp: String(facts.geometry.short_path_deg), lp: String(facts.geometry.long_path_deg) })}</span>
+        <span>{facts.target.precision === 'historical_grid_cell_center'
+          ? t('rotor.owner.historical', { grid: facts.target.grid ?? '—' }) : t('rotor.owner.approximate')}</span>
+      </> : <span role="status">{bearing.state === 'loading' ? t('rotor.owner.loading') : bearingReason(facts?.reason ?? null)}</span>}
+      <button type="button" style={chipStyle} disabled={!bearing.canPoint()} onClick={() => { void bearing.point(false) }}
+        title={t('rotor.strip.pointAt.title', { call: bearing.callsign })}>→ {bearing.callsign}</button>
+      <button type="button" style={chipStyle} disabled={!bearing.canPoint()} onClick={() => { void bearing.point(true) }}
+        title={t('rotor.strip.pointAtLong.title', { call: bearing.callsign })}>{LONG_PATH}</button>
+      {evidence && <span role="status">
+        <span className="mono">{`${evidence.intent.command.rotor_id} → ${evidence.intent.command.azimuth_deg}°T · `}</span>
+        {evidence.settlement.kind === 'receipt' ? t('rotor.owner.receipt', { id: evidence.intent.requestId, status: evidence.settlement.receipt.status })
+          : evidence.settlement.kind === 'pending' ? t('rotor.owner.pending')
+          : evidence.settlement.kind === 'uncertain' ? t('rotor.owner.uncertain') : t('rotor.owner.notSent')}
+        {bearing.observationCurrent() && evidence.observation.kind === 'snapshot' && !evidence.retired && evidence.observation.deadline > now
+          ? evidence.observation.matchesTarget ? t('rotor.owner.laterMatch', { deg: String(evidence.observation.azimuthDeg) })
+            : t('rotor.owner.laterOther', { deg: String(evidence.observation.azimuthDeg) }) : ''}
+      </span>}
+    </>}
     <button type="button" style={chipStyle} title={t('rotor.pane.stop.title')} aria-label={t('rotor.pane.stop.title')}
       disabled={!canStop} onClick={() => {
         if (stop && source.canStop()) void stop().catch(error => pushToast(t('rotor.stop.failed', { error: String(error) }), 'error'))
