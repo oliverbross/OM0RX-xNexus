@@ -68,7 +68,8 @@ cleanup or memory/abnormal-exit notifications, 18 ms drain. Peak job memory was
 18550968320 bytes.
 
 This is actual-module source qualification with synthetic PCM and loopback owner
-fixtures. A combined full native/Tauri normal-and-test metadata check remains a
-separate gate. No application, GUI, device, waveform output, package, software
+fixtures. The subsequent [combined native/Tauri normal-and-test metadata check](COMBINED_NATIVE_CHECK_2026-11-15.md)
+passed on integrated source a0a804; it executed zero tests and remains distinct
+from this 44-case runtime evidence. No application, GUI, device, waveform output, package, software
 version change or RF action occurred. Host-clock provenance remains explicitly
 different from qualified global UTC or remote RF timing.
