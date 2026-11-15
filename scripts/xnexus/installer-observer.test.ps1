@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-only
 # Small finite-lived inert processes only; no candidate install or GUI launch.
+param([string]$OnlyCase='')
 $ErrorActionPreference='Stop'
 . (Join-Path $PSScriptRoot 'installer-observer.ps1')
 . (Join-Path $PSScriptRoot 'installer-transaction.ps1')
@@ -22,15 +23,52 @@ $rejected=$false
 try { Get-XnHash (Join-Path $alias 'Au_.exe') -ObservedImage | Out-Null } catch { $rejected=$true }
 if (!$rejected) { throw 'Observed executable accepted a reparse alias' }
 $cases=@()
-foreach ($case in @(@{name='ordinary';timeout=20;childExit=0},@{name='timeout';timeout=2;childExit=0},@{name='child-error';timeout=20;childExit=1})) {
+$script:identityMode='';$script:rootReads=0
+# Test-scoped CIM fault only; kernel membership and real finite processes remain
+# unchanged. The production observer exposes no injected process/identity API.
+function Get-CimInstance {
+    [CmdletBinding()]param([Parameter(Position=0)][string]$ClassName,[string]$Filter,[uint32]$OperationTimeoutSec)
+    $value=CimCmdlets\Get-CimInstance @PSBoundParameters
+    if ($script:identityMode -and $value -and $value.ExecutablePath -eq $exe) {
+        if ($value.CommandLine -match '\sparent\s') {
+            $script:rootReads++
+            if (($script:identityMode -eq 'known-root-race' -and $script:rootReads -gt 1) -or $script:identityMode -eq 'immediate-root') {
+                return [pscustomobject]@{ExecutablePath=$null;CommandLine=$null;CreationDate=$null}
+            }
+        } elseif ($script:identityMode -eq 'missing-child' -and $value.CommandLine -match '\schild\s') { return $null }
+    }
+    return $value
+}
+foreach ($case in @(@{name='ordinary';timeout=20;childExit=0},@{name='timeout';timeout=2;childExit=0},@{name='child-error';timeout=20;childExit=1},@{name='known-root-race';timeout=20;childExit=0},@{name='immediate-root';timeout=20;childExit=0},@{name='missing-child';timeout=20;childExit=0}) | Where-Object { !$OnlyCase -or $_.name -eq $OnlyCase }) {
     $directory=Join-Path $evidence $case.name;[IO.Directory]::CreateDirectory($directory) | Out-Null
     [IO.File]::WriteAllText((Join-Path $directory 'inert-observer-fixture.marker'),'Finite inert qualification process fixture')
-    $result=Invoke-XnProcessObservation -Executable $exe -ExpectedSha256 $hash -Arguments "parent `"$directory`" $($case.childExit)" -WorkingDirectory $directory -ReceiptPath (Join-Path $directory 'observation.json') -TimeoutSeconds $case.timeout
+    $script:identityMode=$case.name;$script:rootReads=0
+    $observationError=$null
+    $rootDelay=if($case.name -eq 'immediate-root'){0}else{1200}
+    try { $result=Invoke-XnProcessObservation -Executable $exe -ExpectedSha256 $hash -Arguments "parent `"$directory`" $($case.childExit) $rootDelay" -WorkingDirectory $directory -ReceiptPath (Join-Path $directory 'observation.json') -TimeoutSeconds $case.timeout }
+    catch { $observationError=$_ }
+    finally { $script:identityMode='' }
+    if ($observationError) {
+        # Preserve the failing receipt, and let only these finite fixtures exit
+        # on their own. This is test cleanup observation, never termination.
+        $deadline=[DateTime]::UtcNow.AddSeconds(15)
+        do { $remaining=@(CimCmdlets\Get-CimInstance Win32_Process -Filter "Name='inert-observer-fixture.exe'"|Where-Object ExecutablePath -eq $exe);if (!$remaining.Count) { break };Start-Sleep -Milliseconds 100 } while([DateTime]::UtcNow -lt $deadline)
+        @{status='failed';error=$observationError.Exception.Message;rootAndChildrenExitedNaturally=($remaining.Count -eq 0);activeProcesses=$remaining.Count}|ConvertTo-Json|Set-Content -LiteralPath (Join-Path $directory 'failure.json')
+        throw $observationError
+    }
     if (!$result.atomicMembership -or $result.limitFlags -ne 0 -or $result.memoryLimit -ne 0 -or $result.terminatedByObserver) { throw 'Observer changed process policy' }
-    if ($result.identities.Count -ne 2 -or @($result.identities | Where-Object { $_.executable -ine $exe -or $_.sha256 -ine $hash }).Count) { throw 'Did not observe exact two fixture identities' }
-    if ($case.name -ne 'timeout') {
+    $expectedIdentities=if($case.name -eq 'missing-child'){1}else{2}
+    if ($result.identities.Count -ne $expectedIdentities -or @($result.identities | Where-Object { $_.executable -ine $exe -or $_.sha256 -ine $hash }).Count) { throw 'Did not observe expected exact fixture identities' }
+    if ($script:rootReads -ne 0) { throw 'Owned root identity depended on CIM' }
+    $rootProof=@($result.identities|Where-Object pid -eq $result.rootPid)
+    if ($rootProof.Count -ne 1 -or $rootProof[0].identitySource -ne 'owned-CreateProcessW-handle' -or $rootProof[0].hashSource -ne 'verified-before-dispatch') { throw 'Root native handle/hash provenance missing' }
+    if ($case.name -eq 'missing-child') {
+        if ($result.status -ne 'retired-identity-gap' -or $result.totalProcesses -ne 2 -or $result.activeProcesses -ne 0) { throw 'Missed child identity was not retained as accounting gap' }
+        $refused=$false;try { Assert-XnObservedRetirement $result $hash } catch { $refused=$true }
+        if (!$refused) { throw 'Transaction accepted missing child identity' }
+    } elseif ($case.name -ne 'timeout') {
         if ($result.status -ne 'retired-identities-observed' -or !$result.rootExited -or $result.activeProcesses -ne 0 -or $result.rootExitCode -ne 0) { throw 'Normal retirement not verified' }
-        if ($case.name -eq 'ordinary') { Assert-XnObservedRetirement $result $hash }
+        if ($case.name -in 'ordinary','known-root-race','immediate-root') { Assert-XnObservedRetirement $result $hash }
         else {
             $nonzero=@($result.identities | Where-Object { $_.exited -and $_.exitCode -eq 1 -and $_.pid -ne $result.rootPid })
             if ($nonzero.Count -ne 1) { throw 'Did not retain exact child exit1 after root exit0' }
@@ -59,4 +97,4 @@ foreach ($case in @(@{name='ordinary';timeout=20;childExit=0},@{name='timeout';t
     $cases+=@{name=$case.name;status='passed';rootExited=$true;activeProcesses=0;observationStatus=$result.status}
 }
 @{status='passed';cases=$cases;observedImagePathControls=2;fixtureExecutable=$exe;fixtureSha256=$hash;candidateLaunched=$false;installed=$false;forceTerminated=$false;completedUtc=[DateTime]::UtcNow.ToString('o')} | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $evidence 'receipt.json') -Encoding utf8
-Write-Output "3 inert process lifecycle cases passed; all roots/children exited naturally: $evidence"
+Write-Output "$($cases.Count) inert process lifecycle cases passed; all roots/children exited naturally: $evidence"

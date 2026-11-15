@@ -51,6 +51,7 @@ namespace Xnexus.InstallerObservation {
         public uint Pid { get; private set; }
         public string Executable { get; private set; }
         public string Arguments { get; private set; }
+        public DateTime RootCreatedUtc { get; private set; }
         public bool AtomicMembershipVerified { get; private set; }
         static void Check(bool value) { if(!value) throw new Win32Exception(Marshal.GetLastWin32Error()); }
         T Query<T>(int kind) {
@@ -120,6 +121,8 @@ namespace Xnexus.InstallerObservation {
                 Check(CreateProcessW(executable,new StringBuilder("\""+executable+"\" "+arguments),IntPtr.Zero,IntPtr.Zero,false,
                     0x00080000|0x08000000,IntPtr.Zero,directory,ref startup,out child));
                 process=child.Process; Pid=child.Pid; CloseHandle(child.Thread);
+                long created,exited,kernel,user;Check(GetProcessTimes(process,out created,out exited,out kernel,out user));
+                RootCreatedUtc=DateTime.FromFileTimeUtc(created);
                 bool assigned; Check(IsProcessInJob(process,job,out assigned));
                 if(!assigned) throw new InvalidOperationException("Atomic membership unverified; retain process "+Pid);
                 AtomicMembershipVerified=true; Arguments=arguments;

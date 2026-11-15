@@ -6,8 +6,9 @@ using System.IO;
 using System.Threading;
 class ObserverFixture {
     static int Main(string[] args) {
-        if((args.Length!=2 && args.Length!=3) || (args[0]!="parent" && args[0]!="child") || !Path.IsPathRooted(args[1])) return 2;
-        int childExit=args.Length==3 && args[2]=="1" ? 1 : 0;
+        if((args.Length!=2 && args.Length!=3 && args.Length!=4) || (args[0]!="parent" && args[0]!="child") || !Path.IsPathRooted(args[1])) return 2;
+        int childExit=args.Length>=3 && args[2]=="1" ? 1 : 0;
+        int rootDelay=args.Length==4 && args[3]=="0" ? 0 : 1200;
         string root=args[1];
         if(!File.Exists(Path.Combine(root,"inert-observer-fixture.marker"))) return 3;
         if(args[0]=="child") {
@@ -18,7 +19,7 @@ class ObserverFixture {
         }
         var child=Process.Start(new ProcessStartInfo(Process.GetCurrentProcess().MainModule.FileName,"child \""+root+"\" "+childExit) {UseShellExecute=false,CreateNoWindow=true});
         if(child==null) return 4;
-        Thread.Sleep(1200);
+        Thread.Sleep(rootDelay);
         File.WriteAllText(Path.Combine(root,"parent-exited.txt"),"ordinary parent completion before child");
         return 0;
     }

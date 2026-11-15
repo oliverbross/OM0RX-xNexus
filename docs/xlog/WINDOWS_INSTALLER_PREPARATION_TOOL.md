@@ -66,10 +66,12 @@ Owned product/uninstall registry snapshots retain every bounded value and its
 native type, and refuse subkeys. Changing `REG_SZ` to `REG_EXPAND_SZ` with identical
 text therefore invalidates the retained registration fence.
 
-A non-terminating observer library has three passing finite-lived fixture cases:
+A non-terminating observer library has six passing finite-lived fixture cases:
 parent exit before child retirement, timeout preserving a live child until its
 ordinary completion, and root exit zero followed by child exit one. The last case
 proves the transaction rejects a failed child even when the root succeeded.
+Additional cases reproduce unavailable CIM metadata for a previously known root,
+exercise an immediate root exit, and refuse a deliberately missed child identity.
 The build Job supervisor is intentionally unsuitable because
 disposal terminates its children.
 The installed uninstaller is generated at installation time and is absent from
@@ -93,13 +95,19 @@ replaced registration/uninstaller, and retained profile/sentinel loss. These
 controls prove orchestration ordering and refusal, not actual NSIS behavior.
 Two additional cases invoke the actual executor's non-mutating default and
 wrong-review-hash refusal. Seven more exercise the actual typed registry
-projection and ACL descriptor validator, for 33 checks in that suite.
+projection and ACL descriptor validator, plus ten JSON shape controls, give 43
+checks. Supplying `-ReviewedPreparation` and `-FreshPreparation` adds nine checks
+against actual deserialized receipt projections and their JSON roundtrips.
 
 `installer-observer.test.ps1` compiles only a tiny inert fixture. The observer uses
 [atomic Job-list assignment](https://learn.microsoft.com/windows/win32/api/processthreadsapi/nf-processthreadsapi-updateprocthreadattribute)
 at process creation, verifies actual zero limit flags and memory limit, and has
 no termination API. It records live PID, creation time, executable/hash and full
-arguments. Query/synchronize handles retain each observed member's exact creation
+arguments. The root identity is seeded from the owned `CreateProcessW` call and
+its retained process handle, with the executable hash explicitly recorded as
+verified before dispatch. Unknown children require fresh CIM identity plus a
+matching native member handle and file hash. Known identities are not queried
+again through CIM while exiting. Query/synchronize handles retain each member's exact creation
 identity and exit code after PID retirement; every member must exit zero for
 transaction success. Closing its handles leaves processes alive; timeout is unresolved,
 never successful cleanup. Each fixture is finite and the test waits for ordinary
