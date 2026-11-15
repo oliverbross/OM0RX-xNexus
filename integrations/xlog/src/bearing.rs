@@ -6,6 +6,8 @@
 use crate::{commands::valid_request_id, Error};
 use serde::{Deserialize, Deserializer, Serialize};
 
+pub mod client;
+
 pub const MAX_BEARING_BYTES: usize = 16 * 1024;
 const SAFE: i64 = 9_007_199_254_740_990;
 

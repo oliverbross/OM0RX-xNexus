@@ -289,6 +289,7 @@ pub struct BridgeClient {
     observation: Option<Observation>,
     audio_session: Arc<AtomicBool>,
     needs_authority: Arc<std::sync::Mutex<needs::AuthorityState>>,
+    bearing_authority: Arc<std::sync::Mutex<bearing::client::AuthorityState>>,
 }
 
 impl Drop for BridgeClient {
@@ -340,6 +341,9 @@ impl BridgeClient {
             observation: None,
             audio_session: Arc::new(AtomicBool::new(false)),
             needs_authority: Arc::new(std::sync::Mutex::new(needs::AuthorityState::default())),
+            bearing_authority: Arc::new(std::sync::Mutex::new(
+                bearing::client::AuthorityState::default(),
+            )),
         })
     }
 
@@ -379,6 +383,9 @@ impl BridgeClient {
         self.hello = Some(hello);
         self.audio_session = Arc::new(AtomicBool::new(true));
         self.needs_authority = Arc::new(std::sync::Mutex::new(needs::AuthorityState::default()));
+        self.bearing_authority = Arc::new(std::sync::Mutex::new(
+            bearing::client::AuthorityState::default(),
+        ));
         Ok(self.hello.as_ref().expect("stored hello"))
     }
 
@@ -417,6 +424,10 @@ impl BridgeClient {
         })();
         match result {
             Ok(observation) if !observation.remaining.is_zero() => {
+                self.bearing_authority
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .observe(&observation.snapshot);
                 // Optional missing metadata clears only needs authority. Other
                 // observation and receive capabilities remain usable.
                 let metadata = observation.snapshot.needs.as_ref();
@@ -457,6 +468,10 @@ impl BridgeClient {
     }
     pub fn disconnect(&mut self) {
         self.audio_session.store(false, Ordering::Release);
+        self.bearing_authority
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clear();
         self.invalidate_needs();
         self.hello = None;
         self.observation = None;
