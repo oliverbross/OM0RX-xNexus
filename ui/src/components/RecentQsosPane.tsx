@@ -68,11 +68,38 @@ export interface RecentQsosProps {
   /** Open a contact in the Logbook's editor (App's handoff). Absent where the Logbook is switched off:
    *  the rows are then plain lines, never controls that go nowhere. */
   onOpen?: (call: string, id?: string | null) => void
+  /** Explicit external-owner read. Its host validates identity, revision and expiry;
+   * absence selects the native log source, while unavailable never falls back to it. */
+  external?: ExternalRecentRead
 }
 
-export function RecentQsos({ logTick, active = true, onOpen }: RecentQsosProps) {
-  const page = useLogAnswer(active ? QUESTION : null, logTick)
-  const rows = Array.isArray(page?.rows) ? page.rows.slice(0, RECENT_QSOS) : []
+/** Only facts this pane renders. An owner need not invent a LoggedQso's frequency
+ * or confirmation booleans to show its real recent contacts. */
+export interface RecentQsoRow {
+  id: string | null
+  call: string
+  band: string
+  mode: string
+  whenUnix: number
+  /** False for an incomplete contact or a source that cannot open its editor. */
+  canOpen: boolean
+}
+
+/** A current read contains the first min(total, 5) contacts in the owner's order.
+ * The host must replace it with unavailable when its session/lease retires. */
+export type ExternalRecentRead =
+  | { state: 'current'; total: number; rows: readonly RecentQsoRow[] }
+  | { state: 'loading' | 'unavailable'; message: string }
+
+export function RecentQsos({ logTick, active = true, onOpen, external }: RecentQsosProps) {
+  const page = useLogAnswer(active && external === undefined ? QUESTION : null, logTick)
+  const rows: readonly RecentQsoRow[] = external === undefined
+    ? (Array.isArray(page?.rows) ? page.rows.slice(0, RECENT_QSOS).map(q => ({
+        id: q.id ?? null, call: q.call, band: q.band, mode: q.mode, whenUnix: q.whenUnix, canOpen: Boolean(q.id),
+      })) : [])
+    : (active && external.state === 'current' ? external.rows.slice(0, RECENT_QSOS) : [])
+  const emptyText = external !== undefined && external.state !== 'current'
+    ? external.message : t('recentQsos.empty')
   return (
     <div className="recent-qsos" role="list" aria-label={t('recentQsos.aria', { count: RECENT_QSOS })}>
       {Array.from({ length: RECENT_QSOS }, (_, i) => {
@@ -80,7 +107,7 @@ export function RecentQsos({ logTick, active = true, onOpen }: RecentQsosProps) 
         if (!q) {
           return (
             <div className="recent-qso-row empty" role="listitem" key={`empty-${i}`}>
-              {i === 0 && rows.length === 0 ? t('recentQsos.empty') : null}
+              {i === 0 && rows.length === 0 ? emptyText : null}
             </div>
           )
         }
@@ -96,7 +123,7 @@ export function RecentQsos({ logTick, active = true, onOpen }: RecentQsosProps) 
         )
         return (
           <div className="recent-qso-row" role="listitem" key={id ?? `row-${i}`}>
-            {onOpen && id ? (
+            {onOpen && id && q.canOpen ? (
               <button
                 type="button"
                 className="recent-qso-open"
