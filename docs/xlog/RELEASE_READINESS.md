@@ -6,8 +6,9 @@ audited and independently retained at clean canonical source
 repair, installer hardening and completed SDK/native/UI integration.
 [The exact build evidence](WINDOWS_BUILD_1.24.1-xlog.4.md) records artifacts,
 actual tools, resource limits, natural process cleanup and the NSIS warning
-qualification. The candidate is unsigned, uninstalled and unlaunched; canonical
-source remains frozen during acceptance.
+qualification. The [real disposable install/uninstall](WINDOWS_INSTALLER_1.24.1-xlog.4.md)
+passed; permanent installation and native UI acceptance remain in progress.
+The candidate is unsigned; canonical source remains frozen during acceptance.
 Source tests, an artifact audit, native lifecycle checks and physical station
 qualification remain separate gates; see the maintained [execution ledger](STATUS.md).
 
@@ -52,8 +53,9 @@ Only clean canonical `main` may be packaged. Build receipts bind the exact sourc
 upstream pin, configuration, tools, dependencies and artifacts. xLog packaging and
 installed acceptance remain owned by the “xlog work” chat; an SDK/owner source
 test does not establish that those changes are installed. The owner reports
-1.6.27 portable/installer packages and an offline marked launch passed, with
-quiet soak and installation pending. Changing packaged
+1.6.27 portable/installer packages, installation and installed qualification
+passed. Current owner documentation is `7789c569` over application `16cac867`;
+ordinary owner handoff and live pairing remain pending. Changing packaged
 source requires a new visible version, including failed qualification candidates.
 
 The fork retains KD9TAW attribution, COPYING, NOTICE, and third-party notices.

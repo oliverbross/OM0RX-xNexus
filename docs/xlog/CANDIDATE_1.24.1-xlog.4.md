@@ -2,8 +2,9 @@
 
 This private development candidate has a completed Windows build, static artifact
 audit and independent retention at exact source
-`ae35fc6435f861e38029049299833afe57de4885`. It is unsigned, uninstalled and
-not a published release. See [the durable build evidence](WINDOWS_BUILD_1.24.1-xlog.4.md).
+`ae35fc6435f861e38029049299833afe57de4885`. The [disposable install/uninstall](WINDOWS_INSTALLER_1.24.1-xlog.4.md)
+passed; permanent installation and native UI acceptance remain in progress.
+It is unsigned and not a published release. See [the durable build evidence](WINDOWS_BUILD_1.24.1-xlog.4.md).
 Exact pre-version source is
 `7f08478c564382f4cc9eed775846faa9a088ba1e`.
 Its production implementation matches tested integrated source
@@ -15,10 +16,11 @@ The separate upstream merge/serial-alias review is not included.
 
 The paired owner is canonical xLog 1.6.27 source
 `16cac86739274073ab2f8000a3916b4e37bc57a5`, whose pre-version implementation is
-`8bd486abd2e62aa079e8b4248126e1e186561452`. The xLog owner reports portable and
-installer packages built and an offline marked launch passed; quiet soak and
-installation remain pending. Installed xLog 1.6.26 remains unchanged. These
-results do not establish installed endpoint or live pairing acceptance.
+`8bd486abd2e62aa079e8b4248126e1e186561452`. The xLog owner reports package,
+installation and installed qualification passed; documentation is now at
+`7789c569`. xLog is currently closed, with ordinary owner handoff and live
+pairing pending. Installed qualification does not establish paired endpoint
+or physical station acceptance.
 
 ## Changes and qualification
 
@@ -40,9 +42,10 @@ Updated Linux tooling fixtures and cache seeding passed, but contract/desktop
 checks were held for host memory. Updated Mac checking remains held; the latest
 32% resource probe was below its 35% admission threshold, with no new frontend
 or compiler child. Earlier `.3` evidence does not qualify this new source.
-Windows native lifecycle, installer and paired acceptance remain
-open. FLEX slice A is confirmed; its actual DAX RX channel must still be selected
-and physically qualified. Digital transmit is not implemented or enabled.
+Windows native lifecycle and paired acceptance remain open; disposable installer
+acceptance passed. The operator confirmed FLEX slice A → DAX Audio RX 1 and an
+unlocked, available desktop. Exact live mapping, endpoint reception and timing
+still require physical qualification. Digital transmit is not implemented or enabled.
 
 ## Exact build provenance
 

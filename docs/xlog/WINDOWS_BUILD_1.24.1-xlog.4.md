@@ -1,6 +1,6 @@
 # Windows candidate 1.24.1-xlog.4 — build and artifact evidence
 
-Completed 15 November 2026 UTC. This is an unsigned, uninstalled development
+Completed 15 November 2026 UTC. This is an unsigned development
 candidate, not a qualified station application or published release. Canonical
 `main` stayed clean at `ae35fc6435f861e38029049299833afe57de4885` throughout
 packaging and audit. The [candidate record](CANDIDATE_1.24.1-xlog.4.md) binds
@@ -115,10 +115,12 @@ the obsolete wrappers and add a regression invariant in a future source change;
 changed packaged source requires a new version. This fixture does not qualify
 a real installation or another NSIS toolchain.
 
-[Installer acceptance](WINDOWS_INSTALLER_ACCEPTANCE_PLAN.md), native private
-profile/lifecycle and paired UI acceptance remain open. Updated Linux/macOS
+[Subsequent disposable installer acceptance](WINDOWS_INSTALLER_1.24.1-xlog.4.md)
+passed. Permanent installation, native private profile/lifecycle and paired UI
+acceptance remain in progress. Updated Linux/macOS
 checks and packages, physical DAX reception, clock/route qualification, signing
 and distribution remain separate. Digital TX is neither implemented nor enabled.
-The xLog owner reports 1.6.27 portable/installer packages and an offline marked
-launch passed; quiet soak and installation remain pending. Installed 1.6.26 is
-unchanged. No hardware or live station acceptance is implied.
+The xLog owner reports 1.6.27 packages, installation and installed qualification
+passed. Current documentation is `7789c569` over application `16cac867`; ordinary
+handoff and live pairing remain pending. No hardware or live station acceptance
+is implied.

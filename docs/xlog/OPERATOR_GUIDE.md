@@ -11,7 +11,7 @@ xNexus.
 
 1. Open your intended workspace in xLog and leave xLog running. Configure the
    radio, rotor and cluster in xLog as usual.
-2. In xLog's service settings, find **OM0RX-xNexus companion** and choose
+2. In xLog's **Settings → WSJT-X**, find **OM0RX-xNexus companion** and choose
    **Enable and create pairing file**. This grants local companion access to
    the advertised observations, history, controls and QSO writeback.
 3. Open OM0RX-xNexus and choose **Open xLog pairing file**. Select the exact
@@ -39,9 +39,9 @@ history row without an exact edit revision is view-only.
 
 ## Control the station
 
-Rotator control still requires qualification of the connection-identity fix
-described in [STATUS.md](STATUS.md). Installed xLog 1.6.26 has the bridge but
-does not yet contain that follow-up; do not treat it as the qualified rotor build.
+Installed xLog 1.6.27 includes the connection-identity fix described in
+[STATUS.md](STATUS.md), and its installed application qualification passed.
+Paired physical rotator movement and Stop still require station acceptance.
 
 **Tune through xLog** requests xLog's simplex frequency/mode operation on the
 observed radio. Split configuration and device selection remain in xLog.
@@ -93,8 +93,9 @@ an uncertain write; resolve its owner receipt first.
 ## Receive FT8 or FT4 through xLog
 
 In a bridge-enabled Windows xLog, select and explicitly confirm the FLEX slice A
-and DAX input mapping in companion settings. The channel must match the radio's
-observed DAX channel and the active Windows endpoint; do not assume RX 1. Select
+and DAX input mapping in companion settings. The operator selected **slice A →
+DAX Audio RX 1**. Confirm that selection against the radio's current observed
+DAX channel and the active Windows endpoint; it is not a universal default. Select
 the native input format/channel and start RX sharing in Normal Logging.
 
 Pair xNexus, choose FT8 or FT4 under **Receive decoder**, then **Start receiving**.
@@ -103,9 +104,12 @@ uninterrupted period. A gap, changed route, expired connection or decoder backlo
 discards the partial period. **Stop receiving** stops the companion consumer;
 xLog retains control of capture/sharing. Stop before changing decoder mode.
 
-The receive panel retains up to 200 decoded rows. They are observations and do
-not automatically tune, classify need, transmit or create a QSO. Need badges on
-the station board still come from xLog's classified cluster spots. Timing uses
+The receive panel retains up to 200 decoded rows. The companion asks xLog to
+classify recognized decoded calls and shows its need status, score and reasons
+while the owner evidence remains valid. Missing, expired or uncertain evidence
+shows Unknown; the companion does not calculate its own award policy. Rows do
+not automatically tune, transmit or create a QSO. Need badges on the station
+board come from xLog's classified cluster spots. Timing uses
 the host audio endpoint clock; global UTC accuracy and radio-to-endpoint delay
 have not been measured. See [RX_DESKTOP.md](RX_DESKTOP.md) for qualification.
 

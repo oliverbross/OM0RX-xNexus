@@ -151,6 +151,7 @@ The [Windows `.4` build and artifact audit](WINDOWS_BUILD_1.24.1-xlog.4.md)
 subsequently passed at exact source `ae35fc6435f861e38029049299833afe57de4885`;
 paired native acceptance and physical DAX reception remain separate gates.
 Canonical xLog 1.6.27 at `16cac86739274073ab2f8000a3916b4e37bc57a5` contains
-the reviewed owner source. Its owner reports portable/installer packages and
-an offline marked launch passed, with quiet soak and installation pending.
-Installed xLog 1.6.26 remains unchanged and does not include this new endpoint.
+the reviewed owner source. Its owner reports packages, installation and installed
+qualification passed; current documentation is `7789c569`. Ordinary owner
+handoff and live pairing remain pending. The installed endpoint still requires
+paired UI and physical station acceptance.
