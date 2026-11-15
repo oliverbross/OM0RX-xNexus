@@ -74,7 +74,9 @@ export function createOwnerHistoryReader(options: { transport?: typeof historyRe
   let contextKey: string | null = null, generation = 0, selected = '', selectionGeneration = 0, pending = false
   let clockBad = false, lastClock = 0, revision: number | null = null
   let stamp: { generated: number; deadline: number } | null = null
-  const unavailable = <T>(reason: string, queryKey: string): OwnerReadState<T> => ({ state: 'unavailable', reason, contextKey, queryKey })
+  function unavailable<T>(reason: string, queryKey: string): OwnerReadState<T> {
+    return { state: 'unavailable', reason, contextKey, queryKey }
+  }
   let history: OwnerReadState<History> = unavailable('No current xLog history.', '')
   let recent: OwnerReadState<RecentContacts> = unavailable('No current xLog recent contacts.', 'recent')
   const clear = (reason: string) => {

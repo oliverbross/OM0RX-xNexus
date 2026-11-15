@@ -10549,4 +10549,8 @@ export const JA: PartialCatalog = {
   "phone.tune.usbAudioNote": "TuneはトーンをUSBオーディオで送ります。無線機が送信状態になっても出力が出ない場合は、無線機のSSB MOD SOURCEメニューをREAR（USB）にしてください。",
   "phone.tune.usbAudioNote.aria": "この無線機でのTuneについて",
   "meters.tx.enlarge.close": "閉じる",
+  "xlog.need.needed": "交信が必要",
+  "xlog.need.worked": "交信済み",
+  "xlog.need.unknown": "不明",
+  "xlog.history.unavailable": "xLog から最新の応答が届くまで履歴は利用できません。",
 }

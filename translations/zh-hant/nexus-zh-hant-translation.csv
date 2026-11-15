@@ -11168,3 +11168,7 @@ Click for internet feed controls.","{{detail}}
 "3","meters.tx.pane.open","Show the large TX meters pane","顯示大發射表計窗格","","Filled by the maintainer, pending translator review."
 "3","meters.tx.pane.hide","Hide the large TX meters pane","隱藏大發射表計窗格","","Filled by the maintainer, pending translator review."
 "3","meters.tx.pane.fromDialog","Show as a pane","以窗格顯示","","Filled by the maintainer, pending translator review."
+"3","xlog.need.needed","Needed","需要聯絡","","Filled by the maintainer, pending translator review."
+"3","xlog.need.worked","Worked","已聯絡","","Filled by the maintainer, pending translator review."
+"3","xlog.need.unknown","Unknown","未知","","Filled by the maintainer, pending translator review."
+"3","xlog.history.unavailable","History is unavailable until xLog supplies a current answer.","在 xLog 提供目前結果之前，歷史記錄無法使用。","xLog","Filled by the maintainer, pending translator review."

@@ -10522,4 +10522,8 @@ export const ZH_HANT: PartialCatalog = {
   "meters.tx.pane.open": "顯示大發射表計窗格",
   "meters.tx.pane.hide": "隱藏大發射表計窗格",
   "meters.tx.pane.fromDialog": "以窗格顯示",
+  "xlog.need.needed": "需要聯絡",
+  "xlog.need.worked": "已聯絡",
+  "xlog.need.unknown": "未知",
+  "xlog.history.unavailable": "在 xLog 提供目前結果之前，歷史記錄無法使用。",
 }

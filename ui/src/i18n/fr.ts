@@ -10566,4 +10566,8 @@ export const FR: PartialCatalog = {
   "phone.tune.usbAudioNote": "Tune envoie sa tonalité par l’audio USB. Si la radio passe en émission sans puissance, réglez son menu SSB MOD SOURCE sur REAR (USB).",
   "phone.tune.usbAudioNote.aria": "À propos de Tune sur cette radio",
   "meters.tx.enlarge.close": "Fermer",
+  "xlog.need.needed": "À contacter",
+  "xlog.need.worked": "Contacté",
+  "xlog.need.unknown": "Inconnu",
+  "xlog.history.unavailable": "L’historique reste indisponible tant que xLog ne fournit pas de réponse à jour.",
 }

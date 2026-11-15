@@ -10520,4 +10520,8 @@ export const ZH: PartialCatalog = {
   "meters.tx.pane.open": "显示大发射表计窗格",
   "meters.tx.pane.hide": "隐藏大发射表计窗格",
   "meters.tx.pane.fromDialog": "以窗格显示",
+  "xlog.need.needed": "需要联络",
+  "xlog.need.worked": "已联络",
+  "xlog.need.unknown": "未知",
+  "xlog.history.unavailable": "在 xLog 提供当前结果之前，历史记录不可用。",
 }

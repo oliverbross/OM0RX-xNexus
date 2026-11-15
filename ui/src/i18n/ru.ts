@@ -10529,4 +10529,8 @@ export const RU: PartialCatalog = {
   "meters.tx.pane.open": "Показать большую панель измерителей TX",
   "meters.tx.pane.hide": "Скрыть большую панель измерителей TX",
   "meters.tx.pane.fromDialog": "Показать как панель",
+  "xlog.need.needed": "Нужен",
+  "xlog.need.worked": "Сработан",
+  "xlog.need.unknown": "Неизвестно",
+  "xlog.history.unavailable": "История недоступна, пока xLog не предоставит актуальный ответ.",
 }

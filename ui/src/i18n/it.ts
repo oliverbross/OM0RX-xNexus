@@ -10528,4 +10528,8 @@ export const IT: PartialCatalog = {
   "callStats.was.unknown": "WAS: nessuno stato registrato per {{call}}.",
   "callStats.was.none": "WAS: {{call}} non è una stazione degli Stati Uniti.",
   "callStats.waz.unknown": "WAZ: nessuna zona CQ per {{call}}.",
+  "xlog.need.needed": "Da collegare",
+  "xlog.need.worked": "Collegato",
+  "xlog.need.unknown": "Sconosciuto",
+  "xlog.history.unavailable": "Lo storico non è disponibile finché xLog non fornisce una risposta aggiornata.",
 }

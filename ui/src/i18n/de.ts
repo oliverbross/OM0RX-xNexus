@@ -10556,4 +10556,8 @@ export const DE: PartialCatalog = {
   "phone.tune.usbAudioNote": "Tune sendet seinen Ton über USB-Audio. Wenn das Funkgerät ohne Leistung sendet, stellen Sie sein Menü SSB MOD SOURCE auf REAR (USB).",
   "phone.tune.usbAudioNote.aria": "Zu Tune an diesem Funkgerät",
   "meters.tx.enlarge.close": "Schließen",
+  "xlog.need.needed": "Benötigt",
+  "xlog.need.worked": "Gearbeitet",
+  "xlog.need.unknown": "Unbekannt",
+  "xlog.history.unavailable": "Der Verlauf ist erst verfügbar, wenn xLog eine aktuelle Antwort liefert.",
 }
