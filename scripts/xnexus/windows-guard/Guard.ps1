@@ -16,6 +16,19 @@ function Get-XnexusGuardReason([ulong]$Physical, [ulong]$Commit, [bool]$MemoryLi
     return $null
 }
 
+function Get-XnexusNotificationReason($Job) {
+    if ($Job.MemoryLimitNotification) { return 'owned-job-memory-limit' }
+    if ($Job.AbnormalExitNotification) { return 'owned-job-abnormal-exit' }
+    return $null
+}
+
+function Update-XnexusNotificationReceipt($Receipt, $Job) {
+    $Receipt.memoryLimitNotificationObserved = $Job.MemoryLimitNotification
+    $Receipt.processMemoryLimitNotificationObserved = $Job.ProcessMemoryLimitNotification
+    $Receipt.jobMemoryLimitNotificationObserved = $Job.JobMemoryLimitNotification
+    $Receipt.abnormalExitNotificationObserved = $Job.AbnormalExitNotification
+}
+
 function ConvertTo-XnexusPsLiteral([string]$Value) { return "'" + $Value.Replace("'", "''") + "'" }
 
 function Copy-XnexusBuildReceipts([string]$Repo, [string]$Version, [string]$Destination) {
@@ -56,6 +69,8 @@ function Invoke-XnexusGuardedChild {
         minimumPhysicalBytes = [ulong]::MaxValue; minimumCommitBytes = [ulong]::MaxValue
         peakJobBytes = [ulong]0; processExitCode = $null; effectiveExitCode = 125
         memoryLimitNotificationObserved = $false
+        processMemoryLimitNotificationObserved = $false; jobMemoryLimitNotificationObserved = $false
+        abnormalExitNotificationObserved = $false
         cleanupConfirmed = $false; finalActiveProcesses = $null; rootTerminationConfirmed = $false
     }
     $job = $null
@@ -79,7 +94,7 @@ function Invoke-XnexusGuardedChild {
         while ($true) {
             $memory = & $ReadHeadroom
             $job.DrainNotifications()
-            $receipt.memoryLimitNotificationObserved = $job.MemoryLimitNotification
+            Update-XnexusNotificationReceipt $receipt $job
             $receipt.minimumPhysicalBytes = [Math]::Min($receipt.minimumPhysicalBytes, $memory.AvailablePhysical)
             $receipt.minimumCommitBytes = [Math]::Min($receipt.minimumCommitBytes, $memory.AvailableCommit)
             $receipt.peakJobBytes = [Math]::Max($receipt.peakJobBytes, $job.PeakJobBytes)
@@ -87,6 +102,7 @@ function Invoke-XnexusGuardedChild {
             @{utc=[DateTime]::UtcNow.ToString('o');physicalBytes=$memory.AvailablePhysical;commitBytes=$memory.AvailableCommit;peakJobBytes=$job.PeakJobBytes;activeProcesses=$active} |
                 ConvertTo-Json -Compress | Add-Content -LiteralPath $telemetryPath -Encoding utf8
             $reason = Get-XnexusGuardReason $memory.AvailablePhysical $memory.AvailableCommit $job.MemoryLimitNotification
+            if (!$reason) { $reason = Get-XnexusNotificationReason $job }
             if ($clock.Elapsed.TotalSeconds -ge $MaximumSeconds) { $reason = 'owned-job-timeout' }
             if ($reason) { $receipt.status='interrupted'; $receipt.reason=$reason; $job.Stop(); break }
             if ($job.RootExited) {
@@ -97,8 +113,9 @@ function Invoke-XnexusGuardedChild {
                     if ($job.ActiveProcesses -gt 0) { $receipt.status='failed'; $receipt.reason='root-left-active-descendants'; $job.Stop(); break }
                 }
                 $job.DrainNotifications()
-                $receipt.memoryLimitNotificationObserved = $job.MemoryLimitNotification
-                if ($job.MemoryLimitNotification) { $receipt.status='failed'; $receipt.reason='owned-job-memory-limit'; break }
+                Update-XnexusNotificationReceipt $receipt $job
+                $notificationReason = Get-XnexusNotificationReason $job
+                if ($notificationReason) { $receipt.status='failed'; $receipt.reason=$notificationReason; break }
                 $receipt.effectiveExitCode = $receipt.processExitCode
                 $receipt.status = if ($receipt.processExitCode -eq 0) { 'passed' } else { 'failed' }
                 break

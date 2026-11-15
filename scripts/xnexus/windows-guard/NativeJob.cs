@@ -4,6 +4,24 @@ using System.Runtime.InteropServices;
 using System.Text;
 
 namespace Xnexus.Guard {
+    // winnt.h completion-port message identifiers (not JobObject information classes).
+    // Kept separate from native handles so the exact production classifier can be tested.
+    public sealed class JobNotifications {
+        public const uint JOB_OBJECT_MSG_ABNORMAL_EXIT_PROCESS = 8;
+        public const uint JOB_OBJECT_MSG_PROCESS_MEMORY_LIMIT = 9;
+        public const uint JOB_OBJECT_MSG_JOB_MEMORY_LIMIT = 10;
+        public bool AbnormalExit { get; private set; }
+        public bool ProcessMemoryLimit { get; private set; }
+        public bool JobMemoryLimit { get; private set; }
+        public bool MemoryLimit { get { return ProcessMemoryLimit || JobMemoryLimit; } }
+        public void Observe(uint message) {
+            switch (message) {
+                case JOB_OBJECT_MSG_ABNORMAL_EXIT_PROCESS: AbnormalExit=true; break;
+                case JOB_OBJECT_MSG_PROCESS_MEMORY_LIMIT: ProcessMemoryLimit=true; break;
+                case JOB_OBJECT_MSG_JOB_MEMORY_LIMIT: JobMemoryLimit=true; break;
+            }
+        }
+    }
     public sealed class NativeJob : IDisposable {
         [StructLayout(LayoutKind.Sequential)] struct BasicLimits {
             public long ProcessTime, JobTime;
@@ -56,9 +74,13 @@ namespace Xnexus.Guard {
         [DllImport("kernel32.dll", SetLastError=true)] static extern bool GetQueuedCompletionStatus(IntPtr port, out uint message, out UIntPtr key, out IntPtr process, uint milliseconds);
 
         IntPtr job, port, process, thread;
+        readonly JobNotifications notifications = new JobNotifications();
         public uint Pid { get; private set; }
         public bool AssignedBeforeResume { get; private set; }
-        public bool MemoryLimitNotification { get; private set; }
+        public bool MemoryLimitNotification { get { return notifications.MemoryLimit; } }
+        public bool ProcessMemoryLimitNotification { get { return notifications.ProcessMemoryLimit; } }
+        public bool JobMemoryLimitNotification { get { return notifications.JobMemoryLimit; } }
+        public bool AbnormalExitNotification { get { return notifications.AbnormalExit; } }
         public ulong Limit { get; private set; }
         static void Check(bool ok) { if (!ok) throw new Win32Exception(Marshal.GetLastWin32Error()); }
         static void Set<T>(IntPtr job, int kind, T value) {
@@ -111,7 +133,7 @@ namespace Xnexus.Guard {
         public void DrainNotifications() {
             uint message; UIntPtr key; IntPtr pid;
             while(GetQueuedCompletionStatus(port,out message,out key,out pid,0)) {
-                if(message==8 || message==9) MemoryLimitNotification=true;
+                notifications.Observe(message);
             }
             int error=Marshal.GetLastWin32Error();
             if(error!=258) throw new Win32Exception(error);
