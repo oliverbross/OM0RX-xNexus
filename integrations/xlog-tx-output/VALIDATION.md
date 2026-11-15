@@ -207,3 +207,20 @@ reference and coefficient bytes remained unchanged.
 - Evidence: `target/output-example-graph-7733cfeaa9124ef4a5ebdaf77fc8fbe4`.
 
 See [README.md](README.md#maintained-reproduction-entry-points) for commands.
+
+## Generator metadata byte-preservation follow-up
+
+Initial source commit `d5336b15e861b41f53569a133c6d8810182d2554` applied the
+repository's text normalization to the generator metadata only: its 13 CRLF
+sequences became LF in the Git blob, SHA-256
+`341A5EBE345010AE42574BBA6CFAD2B426EF4C4D0C5802C3D0FB35B9A721844E`.
+The tested/retained original and worktree file remained unchanged at
+`8177B56AA31FA2A1AA96A594D783EF298836FEED6C5D522F3F55011B178D0FD0`.
+
+A crate-local attribute applies `-text` only to `coefficients/manifest.json` and
+restores the exact retained bytes, including all 13 CRLF sequences, in Git.
+This is artifact preservation, not a regenerated manifest or waveform change.
+The tested Rust implementation/tests, exporter, independent C++ reference,
+B3B266 coefficient binary and 6DCE generated Rust table remain byte-identical.
+No tests were rerun for this byte-preservation correction; earlier receipts and
+the initial commit remain intact.
