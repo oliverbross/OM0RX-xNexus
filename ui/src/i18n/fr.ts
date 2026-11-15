@@ -33,6 +33,19 @@
 import type { PartialCatalog } from './index'
 
 export const FR: PartialCatalog = {
+  "logbook.ownerCreate.title": "Ajouter un QSO",
+  "logbook.ownerCreate.instructions": "Saisissez manuellement un contact terminé. Seuls les champs activés sont transmis à xLog. Afficher un décodage ne journalise pas un contact.",
+  "logbook.ownerCreate.unsupported": "Non pris en charge par cette interface de création xLog",
+  "logbook.ownerCreate.connectionRequired": "Connectez-vous à l’espace de travail xLog de ce brouillon avec un accès en écriture actuel. Le brouillon est conservé.",
+  "logbook.ownerCreate.frozen": "Le brouillon immuable est conservé. Vérifiez la file locale avant de réessayer.",
+  "logbook.ownerCreate.queued": "En file locale ; pas encore appliqué dans xLog.",
+  "logbook.ownerCreate.uncertain": "Résultat non vérifié. Vérifiez le reçu de cette même opération.",
+  "logbook.ownerCreate.rejected": "xLog a refusé ce contact. Le brouillon exact est conservé.",
+  "logbook.ownerCreate.applied": "xLog a confirmé la création de ce contact exact.",
+  "logbook.ownerCreate.retryDraft": "Réessayer l’enregistrement du brouillon",
+  "logbook.ownerCreate.discard": "Abandonner le brouillon non mis en file",
+  "logbook.ownerCreate.queue": "Mettre le contact en file",
+  "logbook.ownerCreate.done": "Terminé — conserver le contact xLog",
   'contactCard.editor.pending': "Opération locale en cours. Gardez cette fiche ouverte.",
   'contactCard.editor.editing': "Modifiez les champs autorisés, puis mettez la correction en attente et envoyez-la.",
   'contactCard.editor.invalid': "Vérifiez la date, la fréquence et les limites des champs.",

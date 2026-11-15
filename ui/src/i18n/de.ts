@@ -18,6 +18,19 @@
 import type { PartialCatalog } from './index'
 
 export const DE: PartialCatalog = {
+  "logbook.ownerCreate.title": "QSO hinzufügen",
+  "logbook.ownerCreate.instructions": "Einen abgeschlossenen Kontakt manuell eingeben. Nur aktivierte Felder werden an xLog gesendet. Das Anzeigen einer Dekodierung protokolliert keinen Kontakt.",
+  "logbook.ownerCreate.unsupported": "Von dieser xLog-Erstellungsschnittstelle nicht unterstützt",
+  "logbook.ownerCreate.connectionRequired": "Mit dem xLog-Arbeitsbereich dieses Entwurfs und aktuellem Schreibzugriff verbinden. Der Entwurf bleibt erhalten.",
+  "logbook.ownerCreate.frozen": "Der unveränderliche Entwurf bleibt erhalten. Vor einem erneuten Versuch die lokale Warteschlange prüfen.",
+  "logbook.ownerCreate.queued": "Lokal eingereiht; noch nicht in xLog angewendet.",
+  "logbook.ownerCreate.uncertain": "Ergebnis unbestätigt. Den Beleg desselben Vorgangs prüfen.",
+  "logbook.ownerCreate.rejected": "xLog hat diesen Kontakt abgelehnt. Der genaue Entwurf bleibt erhalten.",
+  "logbook.ownerCreate.applied": "xLog hat die Erstellung dieses genauen Kontakts bestätigt.",
+  "logbook.ownerCreate.retryDraft": "Entwurf erneut speichern",
+  "logbook.ownerCreate.discard": "Nicht eingereihten Entwurf verwerfen",
+  "logbook.ownerCreate.queue": "Kontakt einreihen",
+  "logbook.ownerCreate.done": "Fertig — xLog-Kontakt behalten",
   'contactCard.editor.pending': "Lokaler Vorgang läuft. Diese Karte geöffnet lassen.",
   'contactCard.editor.editing': "Unterstützte Felder bearbeiten, dann die Korrektur vormerken und senden.",
   'contactCard.editor.invalid': "Datum, Frequenz und Feldgrenzen prüfen.",

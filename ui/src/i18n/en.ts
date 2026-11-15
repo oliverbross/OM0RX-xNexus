@@ -94,6 +94,19 @@
 import type { Message } from './types'
 
 export const EN = {
+  "logbook.ownerCreate.title": "Add QSO",
+  "logbook.ownerCreate.instructions": "Enter a completed contact manually. Only the enabled fields are submitted to xLog. Viewing a decode does not log a contact.",
+  "logbook.ownerCreate.unsupported": "Not supported by this xLog create interface",
+  "logbook.ownerCreate.connectionRequired": "Connect to this draft’s xLog workspace with current write access. The draft is retained.",
+  "logbook.ownerCreate.frozen": "The immutable draft is retained. Inspect the local queue before retrying.",
+  "logbook.ownerCreate.queued": "Queued locally; not yet applied to xLog.",
+  "logbook.ownerCreate.uncertain": "Outcome unverified. Check the receipt for this same operation.",
+  "logbook.ownerCreate.rejected": "xLog rejected this contact. The exact draft is retained.",
+  "logbook.ownerCreate.applied": "xLog confirmed this exact contact was created.",
+  "logbook.ownerCreate.retryDraft": "Retry saving draft",
+  "logbook.ownerCreate.discard": "Discard unqueued draft",
+  "logbook.ownerCreate.queue": "Queue contact",
+  "logbook.ownerCreate.done": "Done — retain xLog contact",
   'contactCard.editor.pending': "Local operation pending. Keep this card open.",
   'contactCard.editor.editing': "Edit the supported fields, then queue and submit the correction.",
   'contactCard.editor.invalid': "Check the date, frequency and field limits.",

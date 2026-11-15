@@ -9,6 +9,8 @@ import { RotorStrip } from '../components/RotorStrip'
 import { StationList } from '../components/StationList'
 import { SpotsPanel } from '../components/SpotsPanel'
 import { Dialog } from '../components/ui/Dialog'
+import { OwnerManualCreate } from '../components/OwnerManualCreate'
+import { useOwnerManualCreate } from './useOwnerManualCreate'
 import { ContactCard } from '../components/ContactCard'
 import { ConfirmHost } from '../confirm'
 import { ownerEditorResumeLabel } from '../features/ownerEditorMessages'
@@ -43,6 +45,7 @@ const FT_MODES = new Set<Tier>(['FT8', 'FT4'])
 export function OriginalHost({ api = bridge, receiver = rxApi, spectrumTransport = spectrumApi.read, historyTransport = historyReads, contactTransport = contactReads }: { api?: Bridge; receiver?: RxApi; spectrumTransport?: typeof spectrumApi.read; historyTransport?: typeof historyReads; contactTransport?: typeof contactReads }) {
   installOwnerLogBoundary()
   const connection = useOwnerConnection(api)
+  const manualCreate = useOwnerManualCreate(connection, api)
   const { view, session, now } = connection
   const owner = view.paired && view.hello ? {
     server_instance: view.hello.server_instance, workspace_id: view.hello.workspace_id,
@@ -126,6 +129,7 @@ export function OriginalHost({ api = bridge, receiver = rxApi, spectrumTransport
     dropAfterCycles={3} grip="stations" />
   const status = <div className="now-bar now-bar-inbar" aria-label="xLog connection and receiver">
     <button className="op-btn" onClick={() => setConnectionOpen(true)}>{fresh ? 'xLog connected' : 'Connect xLog'}</button>
+    <button className="op-btn" onClick={manualCreate.open}>{t('logbook.ownerCreate.title')}</button>
     {contact.savedAvailable && <button className="op-btn" disabled={!contact.resumeEnabled} onClick={() => void contact.resume()}>{ownerEditorResumeLabel()}</button>}
     <button className="op-btn" disabled={rx.pending || rx.view.enabled || !fresh || !capabilities.includes('audio.rx')}
       onClick={() => receive(true)}>Start receiving</button>
@@ -170,6 +174,8 @@ export function OriginalHost({ api = bridge, receiver = rxApi, spectrumTransport
       {contact.card && <ContactCard {...contact.card} onClose={() => void contact.close()}
         connection={() => setConnectionOpen(true)}
         refresh={{ run: contact.refresh, disabled: !contact.refreshEnabled }} />}
+      {manualCreate.controller && <OwnerManualCreate controller={manualCreate.controller}
+        onClose={manualCreate.close} connection={() => setConnectionOpen(true)} />}
       <ConfirmHost />
       <Dialog open={connectionOpen} onOpenChange={setConnectionOpen} title="xLog connection"
         description="Enable companion sharing in xLog, then open its pairing file here. Radio and logbook ownership stays in xLog.">

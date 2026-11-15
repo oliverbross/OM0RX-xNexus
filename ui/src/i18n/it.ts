@@ -34,6 +34,19 @@
 import type { PartialCatalog } from './index'
 
 export const IT: PartialCatalog = {
+  "logbook.ownerCreate.title": "Aggiungi QSO",
+  "logbook.ownerCreate.instructions": "Inserisci manualmente un contatto completato. Solo i campi abilitati vengono inviati a xLog. Visualizzare una decodifica non registra un contatto.",
+  "logbook.ownerCreate.unsupported": "Non supportato da questa interfaccia di creazione xLog",
+  "logbook.ownerCreate.connectionRequired": "Connettiti allo spazio di lavoro xLog di questa bozza con accesso in scrittura attuale. La bozza viene conservata.",
+  "logbook.ownerCreate.frozen": "La bozza immutabile viene conservata. Controlla la coda locale prima di riprovare.",
+  "logbook.ownerCreate.queued": "In coda locale; non ancora applicato in xLog.",
+  "logbook.ownerCreate.uncertain": "Esito non verificato. Controlla la ricevuta della stessa operazione.",
+  "logbook.ownerCreate.rejected": "xLog ha rifiutato questo contatto. La bozza esatta viene conservata.",
+  "logbook.ownerCreate.applied": "xLog ha confermato la creazione di questo esatto contatto.",
+  "logbook.ownerCreate.retryDraft": "Riprova a salvare la bozza",
+  "logbook.ownerCreate.discard": "Scarta bozza non in coda",
+  "logbook.ownerCreate.queue": "Accoda contatto",
+  "logbook.ownerCreate.done": "Fine — conserva contatto xLog",
   'contactCard.editor.pending': "Operazione locale in corso. Tenere aperta questa scheda.",
   'contactCard.editor.editing': "Modificare i campi supportati, poi accodare e inviare la correzione.",
   'contactCard.editor.invalid': "Controllare data, frequenza e limiti dei campi.",

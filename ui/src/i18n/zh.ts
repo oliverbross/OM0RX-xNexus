@@ -26,6 +26,19 @@
 import type { PartialCatalog } from './index'
 
 export const ZH: PartialCatalog = {
+  "logbook.ownerCreate.title": "添加 QSO",
+  "logbook.ownerCreate.instructions": "手动输入已完成的通联。仅将启用的字段提交到 xLog。查看解码不会记录通联。",
+  "logbook.ownerCreate.unsupported": "此 xLog 创建接口不支持",
+  "logbook.ownerCreate.connectionRequired": "请连接到此草稿的 xLog 工作区并取得当前写入权限。草稿将保留。",
+  "logbook.ownerCreate.frozen": "不可变草稿已保留。重试前请检查本地队列。",
+  "logbook.ownerCreate.queued": "已加入本地队列，尚未应用到 xLog。",
+  "logbook.ownerCreate.uncertain": "结果未确认。请检查同一操作的回执。",
+  "logbook.ownerCreate.rejected": "xLog 拒绝了此通联。完整草稿已保留。",
+  "logbook.ownerCreate.applied": "xLog 已确认创建了此准确通联。",
+  "logbook.ownerCreate.retryDraft": "重试保存草稿",
+  "logbook.ownerCreate.discard": "丢弃未入队的草稿",
+  "logbook.ownerCreate.queue": "将通联加入队列",
+  "logbook.ownerCreate.done": "完成 — 保留 xLog 通联",
   'contactCard.editor.pending': "本地操作正在进行。请保持此卡片打开。",
   'contactCard.editor.editing': "编辑支持的字段，然后将修正加入队列并提交。",
   'contactCard.editor.invalid': "请检查日期、频率及字段限制。",

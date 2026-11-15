@@ -36137,3 +36137,20 @@ td.aw-cc {
   font-weight: 400;
   color: var(--text-dim);
 }
+
+/* Original manual Logbook form, in a portaled owner dialog. One scroll owner is
+   Dialog; its actions wrap and remain reachable at the supported zoom floor. */
+.ui-dialog.owner-manual-create-dialog {
+  width: min(920px, calc(100vw - 2 * var(--space-4)));
+}
+.owner-manual-create-dialog .logbook-form-grid {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 190px), 1fr));
+}
+.owner-manual-create-dialog .logbook-when { min-width: 0; }
+.owner-manual-create-dialog .logbook-form-actions {
+  flex-wrap: wrap;
+  position: sticky;
+  bottom: 0;
+  background: var(--bg-elev);
+  padding: var(--space-3) 0;
+}

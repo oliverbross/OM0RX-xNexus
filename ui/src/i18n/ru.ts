@@ -35,6 +35,19 @@
 import type { PartialCatalog } from './index'
 
 export const RU: PartialCatalog = {
+  "logbook.ownerCreate.title": "Добавить QSO",
+  "logbook.ownerCreate.instructions": "Введите завершённую связь вручную. В xLog передаются только доступные поля. Просмотр декодирования не записывает связь.",
+  "logbook.ownerCreate.unsupported": "Не поддерживается этим интерфейсом создания xLog",
+  "logbook.ownerCreate.connectionRequired": "Подключитесь к рабочей области xLog этого черновика с действующим правом записи. Черновик сохранён.",
+  "logbook.ownerCreate.frozen": "Неизменяемый черновик сохранён. Перед повтором проверьте локальную очередь.",
+  "logbook.ownerCreate.queued": "В локальной очереди; ещё не применено в xLog.",
+  "logbook.ownerCreate.uncertain": "Результат не подтверждён. Проверьте квитанцию этой же операции.",
+  "logbook.ownerCreate.rejected": "xLog отклонил эту связь. Точный черновик сохранён.",
+  "logbook.ownerCreate.applied": "xLog подтвердил создание именно этой связи.",
+  "logbook.ownerCreate.retryDraft": "Повторить сохранение черновика",
+  "logbook.ownerCreate.discard": "Отбросить черновик вне очереди",
+  "logbook.ownerCreate.queue": "Поставить связь в очередь",
+  "logbook.ownerCreate.done": "Готово — сохранить связь в xLog",
   'contactCard.editor.pending': "Локальная операция выполняется. Не закрывайте карточку.",
   'contactCard.editor.editing': "Измените поддерживаемые поля, затем поставьте исправление в очередь и отправьте.",
   'contactCard.editor.invalid': "Проверьте дату, частоту и ограничения полей.",

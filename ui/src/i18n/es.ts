@@ -33,6 +33,19 @@
 import type { PartialCatalog } from './index'
 
 export const ES: PartialCatalog = {
+  "logbook.ownerCreate.title": "Añadir QSO",
+  "logbook.ownerCreate.instructions": "Introduzca manualmente un contacto completado. Solo se envían a xLog los campos habilitados. Ver una decodificación no registra un contacto.",
+  "logbook.ownerCreate.unsupported": "No compatible con esta interfaz de creación de xLog",
+  "logbook.ownerCreate.connectionRequired": "Conéctese al espacio de trabajo xLog de este borrador con permiso de escritura vigente. El borrador se conserva.",
+  "logbook.ownerCreate.frozen": "El borrador inmutable se conserva. Inspeccione la cola local antes de reintentar.",
+  "logbook.ownerCreate.queued": "En cola local; todavía no aplicado en xLog.",
+  "logbook.ownerCreate.uncertain": "Resultado sin verificar. Consulte el recibo de esta misma operación.",
+  "logbook.ownerCreate.rejected": "xLog rechazó este contacto. Se conserva el borrador exacto.",
+  "logbook.ownerCreate.applied": "xLog confirmó la creación de este contacto exacto.",
+  "logbook.ownerCreate.retryDraft": "Reintentar guardar borrador",
+  "logbook.ownerCreate.discard": "Descartar borrador sin encolar",
+  "logbook.ownerCreate.queue": "Encolar contacto",
+  "logbook.ownerCreate.done": "Listo — conservar contacto xLog",
   'contactCard.editor.pending': "Operación local pendiente. Mantenga esta tarjeta abierta.",
   'contactCard.editor.editing': "Edite los campos admitidos y después ponga en cola y envíe la corrección.",
   'contactCard.editor.invalid': "Compruebe la fecha, la frecuencia y los límites de los campos.",

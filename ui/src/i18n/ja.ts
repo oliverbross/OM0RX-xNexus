@@ -23,6 +23,19 @@
 import type { PartialCatalog } from './index'
 
 export const JA: PartialCatalog = {
+  "logbook.ownerCreate.title": "QSOを追加",
+  "logbook.ownerCreate.instructions": "完了した交信を手動で入力します。有効な項目のみxLogに送信します。デコードの表示では交信は記録されません。",
+  "logbook.ownerCreate.unsupported": "このxLog作成インターフェースでは未対応",
+  "logbook.ownerCreate.connectionRequired": "この下書きのxLogワークスペースに、有効な書き込み権限で接続してください。下書きは保持されます。",
+  "logbook.ownerCreate.frozen": "変更不可の下書きを保持しています。再試行前にローカルキューを確認してください。",
+  "logbook.ownerCreate.queued": "ローカルキューに登録済み。xLogにはまだ適用されていません。",
+  "logbook.ownerCreate.uncertain": "結果は未確認です。同じ操作の受領記録を確認してください。",
+  "logbook.ownerCreate.rejected": "xLogがこの交信を拒否しました。正確な下書きを保持しています。",
+  "logbook.ownerCreate.applied": "xLogがこの正確な交信の作成を確認しました。",
+  "logbook.ownerCreate.retryDraft": "下書きの保存を再試行",
+  "logbook.ownerCreate.discard": "未キュー登録の下書きを破棄",
+  "logbook.ownerCreate.queue": "交信をキューに登録",
+  "logbook.ownerCreate.done": "完了 — xLogの交信を保持",
   'contactCard.editor.pending': "ローカル処理中です。このカードを開いたままにしてください。",
   'contactCard.editor.editing': "対応する項目を編集し、修正をキューに入れて送信してください。",
   'contactCard.editor.invalid': "日付、周波数、各項目の制限を確認してください。",
