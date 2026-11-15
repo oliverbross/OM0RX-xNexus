@@ -1,6 +1,7 @@
 param(
     [string]$ExpectedCommit,
     [string]$MsysRoot = 'C:\msys64',
+    [string]$NoticeCargoHome,
     [switch]$CheckOnly,
     [ValidateRange(1,2)][int]$Jobs = 1
 )
@@ -33,6 +34,17 @@ if (!$ExpectedCommit -or $ExpectedCommit -ne $source) { throw 'ExpectedCommit mu
 if (git -C $repo status --porcelain) { throw 'Packaging requires a clean tracked/untracked source tree.' }
 if ($env:NEXUS_ALLOW_MISSING_AICW) { throw 'Do not bypass the release model gate.' }
 if ($env:TAURI_CONFIG) { throw 'Remove unreviewed inherited TAURI_CONFIG before packaging.' }
+# Coverage is resolved from the locked desktop graph. Missing cached packages
+# fail explicitly; this check must never fetch or silently rewrite notices.
+$noticeArguments = @('--check', '--offline')
+if ($NoticeCargoHome) {
+    $NoticeCargoHome = (Resolve-Path -LiteralPath $NoticeCargoHome).Path
+    if (!(Test-Path -LiteralPath $NoticeCargoHome -PathType Container)) { throw 'NoticeCargoHome must be an existing directory.' }
+    $noticeArguments += @('--cargo-home', $NoticeCargoHome)
+}
+# This override belongs only to the generator's Cargo metadata/tree subprocesses.
+# Do not set env:CARGO_HOME: the compiler retains its existing cache/source paths.
+Run { python (Join-Path $repo 'scripts\gen-rust-licenses.py') @noticeArguments }
 $receiptDir = Join-Path $repo 'target\xnexus-provenance'
 New-Item -ItemType Directory -Force -Path $receiptDir | Out-Null
 $receiptPath = Join-Path $receiptDir "$($config.version).json"
@@ -78,6 +90,7 @@ $receipt = [ordered]@{
     profile = 'release'; target = 'x86_64-pc-windows-gnu'; features = 'radio,custom-protocol'
     signed = $false; installed = $false; modelHashes = $models; status = 'started'
     cargoBuildJobs = $Jobs; cmakeBuildParallelLevel = $Jobs
+    noticeCheck = @{ offline=$true; cargoHomeOverride=$NoticeCargoHome; generatorSha256=(Get-FileHash "$repo\scripts\gen-rust-licenses.py").Hash; noticeSha256=(Get-FileHash "$repo\licenses\rust\THIRD-PARTY.txt").Hash }
     distribution = $distribution; distributionReceiptSha256 = (Get-FileHash -LiteralPath $distributionPath -Algorithm SHA256).Hash
     rustc = (& rustc "+$toolchain" -Vv) -join "`n"
     gfortran = (& gfortran --version | Select-Object -First 1)

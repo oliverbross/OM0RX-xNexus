@@ -21,7 +21,7 @@ licenses/rust/upstream.json: its upstream repository's license file at the commi
 published from, or, where the repository has none either, the license as its steward publishes
 it. Anything else stops the run, naming the crate.
 
-usage: scripts/gen-rust-licenses.py [--check]
+usage: scripts/gen-rust-licenses.py [--check] [--offline] [--cargo-home ABSOLUTE_DIRECTORY]
 exit:  0 written, or current with --check · 1 stale with --check · 2 the generator could not run
 """
 import difflib
@@ -76,6 +76,8 @@ FINGERPRINTS = {
     "GPL-3.0": [r"gnu general public license version 3, 29 june 2007"],
 }
 RULE = "=" * 72
+OFFLINE = False
+CARGO_HOME_OVERRIDE = None
 
 
 class Stop(Exception):
@@ -83,10 +85,13 @@ class Stop(Exception):
 
 
 def cargo(*args):
-    run = subprocess.run(["cargo", *args, "--manifest-path", MANIFEST, "--locked"],
-                         capture_output=True, text=True)
+    # Change only these metadata/tree subprocesses, never the caller's build cache.
+    env = None if CARGO_HOME_OVERRIDE is None else dict(os.environ, CARGO_HOME=CARGO_HOME_OVERRIDE)
+    run = subprocess.run(["cargo", *args, "--manifest-path", MANIFEST, "--locked",
+                          *(["--offline"] if OFFLINE else [])],
+                         capture_output=True, text=True, env=env)
     if run.returncode:
-        raise Stop(f"cargo {args[0]} failed:\n{run.stderr.strip()}")
+        raise Stop(f"cargo {' '.join(args)} failed:\n{run.stderr.strip()}")
     return run.stdout
 
 
@@ -169,6 +174,26 @@ def shipped_crates():
     return found
 
 
+def desktop_packages():
+    """Resolve only the declared target graphs, without unrelated platform fetches.
+
+    The normal-edge tree below remains the coverage authority. Metadata supplies
+    package/license locations for that same target set; missing target material
+    is an error, not permission to omit a crate from the resulting notices.
+    """
+    packages = {}
+    for target in TARGETS:
+        metadata = json.loads(cargo("metadata", "--format-version", "1", "--features", FEATURES,
+                                    "--filter-platform", target))
+        for package in metadata["packages"]:
+            key = (package["name"], package["version"])
+            prior = packages.get(key)
+            if prior is not None and prior != package:
+                raise Stop(f"conflicting package metadata for {key[0]} {key[1]} across target graphs")
+            packages[key] = package
+    return packages
+
+
 def entry(package, allowed, rank, upstream, used):
     name, version, expression = package["name"], package["version"], package["license"]
     key = f"{name} {version}"
@@ -243,8 +268,7 @@ def generate():
     rank = {lic: i for i, lic in enumerate(PREFERENCE + [a for a in allowed if a not in PREFERENCE])}
     with open(UPSTREAM) as f:
         upstream = json.load(f)
-    metadata = json.loads(cargo("metadata", "--format-version", "1", "--features", FEATURES))
-    packages = {(p["name"], p["version"]): p for p in metadata["packages"]}
+    packages = desktop_packages()
     shipped = shipped_crates()
     unknown = sorted(f"{n} {v}" for n, v in shipped - set(packages))
     if unknown:
@@ -267,9 +291,10 @@ def generate():
     head = [
         "Nexus — third-party notices for the app's Rust crates",
         "",
-        f"The desktop app is built from the {len(crates)} Rust crates below: every crate cargo compiles for it on",
-        "Windows, macOS, Linux and the Raspberry Pi, including the proc-macro crates that run only while",
-        "it compiles. Each is followed by the license files its published package carries, less the",
+        f"The desktop app's normal dependency graphs contain the {len(crates)} Rust crates below across",
+        "Windows, macOS, Linux and the Raspberry Pi, including proc-macro crates in those graphs.",
+        "Build-only and dev dependencies are outside this notice inventory. Each listed crate is",
+        "followed by the license files its published package carries, less the",
         "texts of licenses Nexus does not take. Where a crate offers a choice, the entry names the",
         "license elected: the first of MIT, BSD-3-Clause, BSD-2-Clause, ISC, Zlib and Apache-2.0 whose",
         "text the package carries. Every license taken is compatible with GPL-3.0-only. A package that",
@@ -281,16 +306,31 @@ def generate():
 
 
 def main(argv):
-    if argv[1:] not in ([], ["--check"]):
+    global OFFLINE, CARGO_HOME_OVERRIDE
+    flags = argv[1:]
+    CARGO_HOME_OVERRIDE = None
+    if "--cargo-home" in flags:
+        at = flags.index("--cargo-home")
+        if flags.count("--cargo-home") != 1 or at + 1 >= len(flags):
+            print("--cargo-home requires one existing absolute directory and --offline")
+            return 2
+        home = flags[at + 1]
+        if "--offline" not in flags or not os.path.isabs(home) or not os.path.isdir(home):
+            print("--cargo-home requires one existing absolute directory and --offline")
+            return 2
+        CARGO_HOME_OVERRIDE = os.path.abspath(home)
+        flags = flags[:at] + flags[at + 2:]
+    if len(flags) != len(set(flags)) or any(f not in ("--check", "--offline") for f in flags):
         print(__doc__.split("\n\n")[-1])
         return 2
+    OFFLINE = "--offline" in flags
     try:
         text = generate()
     except (Stop, OSError, UnicodeDecodeError, ValueError, KeyError) as error:
         print(f"gen-rust-licenses: {error}")
         return 2
     relative = os.path.relpath(OUTPUT, ROOT)
-    if argv[1:] == ["--check"]:
+    if "--check" in flags:
         with open(OUTPUT, encoding="utf-8", newline="") as f:
             committed = f.read()
         if committed == text:

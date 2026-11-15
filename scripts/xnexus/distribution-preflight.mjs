@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Materialize a reviewed merge so the exact recorded config is passed to Tauri.
 import assert from 'node:assert/strict';
+import { mappedNotices } from './notice-resources.mjs';
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { dirname, join, resolve } from 'node:path';
@@ -44,6 +45,7 @@ export function prepareDistribution(repo, outputDirectory) {
     'scripts/xnexus/nsis/installer.nsi', 'scripts/xnexus/nsis/ownership.nsh',
     'scripts/xnexus/nsis/LICENSE-MIT.tauri', 'scripts/xnexus/nsis/upstream-installer.nsi',
     'scripts/xnexus/build-nsis-template.mjs',
+    'scripts/xnexus/notice-resources.mjs',
   ];
   const hashes = Object.fromEntries(inputs.map(path => [path, sha(readFileSync(join(repo, path)))]));
   const base = JSON.parse(readFileSync(join(repo, inputs[0]), 'utf8'));
@@ -59,6 +61,7 @@ export function prepareDistribution(repo, outputDirectory) {
     baseResources: base.bundle.resources, effectiveResources: effective.bundle.resources,
     baseResourceCount: Object.keys(base.bundle.resources).length,
     effectiveResourceCount: Object.keys(effective.bundle.resources).length,
+    noticeResources: mappedNotices(repo, effective),
     policy: 'owned-root-nsis-retain-all-profiles',
   };
   writeFileSync(receiptPath, JSON.stringify(receipt, null, 2) + '\n');

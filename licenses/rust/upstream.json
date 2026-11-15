@@ -240,19 +240,6 @@
         ]
       ]
     },
-    "objc2-osa-kit 0.3.2": {
-      "license": "MIT",
-      "texts": [
-        [
-          "madsmtm-objc2-LICENSE.md",
-          "https://raw.githubusercontent.com/madsmtm/objc2/7b1abfd750a2cacaea71d6a56ecfb83cb7de560b/LICENSE.md"
-        ],
-        [
-          "spdx-MIT.txt",
-          "https://raw.githubusercontent.com/spdx/license-list-data/v3.29.0/text/MIT.txt"
-        ]
-      ]
-    },
     "objc2-web-kit 0.3.2": {
       "license": "MIT",
       "texts": [

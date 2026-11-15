@@ -1966,11 +1966,14 @@ GPL-3.0-only. It implements a draft, independent-process xLog protocol; it does
 not incorporate xLog implementation code. Fork documentation and workflow
 changes are identified in Git history.
 
-The reference client uses registry dependencies reqwest, serde and serde_json,
-with exact resolution in integrations/xlog/Cargo.lock. No third-party source
-was copied into that module. Their distribution notices, and all transitive
-notices, must accompany any future shipped binary; this bootstrap ships source
-only and does not claim completion of the desktop dependency/model audit.
+The client uses registry dependencies including base64, reqwest, serde and
+serde_json. Its standalone resolution is in integrations/xlog/Cargo.lock;
+packaged desktop resolution is in src-tauri/Cargo.lock. No third-party source
+was copied into that module. Exact desktop dependency notices are generated
+with scripts/gen-rust-licenses.py and bundled in resources/rust/THIRD-PARTY.txt.
+Private development candidates do not establish completed corresponding-source
+delivery or redistribution review; unresolved material provenance is recorded
+in docs/xlog/SOURCE_DELIVERY_GAPS.md.
 
 
 ## Fork Windows installer template
