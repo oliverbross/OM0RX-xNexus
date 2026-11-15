@@ -58,7 +58,7 @@ try {
     $payloadRoot=Split-Path -Parent $audit.payloadExecutable.path
     $payload=@(foreach ($mapping in Get-XnPayloadMap $rendered) {
         $path=Join-Path $payloadRoot $mapping.destination;$hash=Get-XnHash $path
-        if ($mapping.source) { Assert-XnHash $mapping.source $hash }
+        if ($mapping.source) { Assert-XnHash (Resolve-XnPayloadSource $mapping.source $repo) $hash }
         elseif ($hash -ine $audit.payloadExecutableSha256) { throw 'Main payload hash mismatch.' }
         @{destination=$mapping.destination;sha256=$hash;extractedPath=$path}
     })

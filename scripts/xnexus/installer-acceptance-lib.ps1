@@ -11,6 +11,20 @@ function Assert-XnNoAssociations($Config) {
         ($null -ne $deepLink -and $deepLink.Value)) { throw 'Association/deep-link policy needs review.' }
 }
 
+function Resolve-XnPayloadSource([string]$Source, [string]$Repository) {
+    $null=Assert-XnLocalPath $Repository
+    # Tauri emits repository resources relative to src-tauri. Resolve only this
+    # exact reviewed prefix, after checking the directory that '..' traverses.
+    # Destination/installation paths still use the strict canonical-path guard.
+    $prefix=$Repository+'\src-tauri\..\'
+    if ($Source.StartsWith($prefix,[StringComparison]::Ordinal)) {
+        $null=Assert-XnLocalPath ($Repository+'\src-tauri')
+        $Source=$Repository+'\'+$Source.Substring($prefix.Length)
+    }
+    if (!$Source.StartsWith($Repository+'\',[StringComparison]::Ordinal)) { throw 'Payload source must remain inside the canonical repository.' }
+    return Assert-XnLocalPath $Source
+}
+
 function Assert-XnLocalPath([string]$Path, [switch]$AllowMissing, [switch]$NoSpaces, [switch]$ObservedImage) {
     if ($Path -notmatch '^[A-Za-z]:\\[^\\]' -or $Path.Contains('/') -or
         $Path.Substring(2) -match '[:*?"<>|]' -or (!$ObservedImage -and $Path.Contains('~')) -or $Path.EndsWith('\') -or

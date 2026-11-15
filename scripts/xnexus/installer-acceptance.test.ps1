@@ -28,6 +28,14 @@ foreach ($path in @('C:\a\..\b','C:\a\x.','C:\a\x ','C:\a\\b','C:\a\x:stream','\
 $retained=Join-Path $fixture 'retained';[IO.Directory]::CreateDirectory($retained) | Out-Null
 [IO.File]::WriteAllText((Join-Path $retained 'sentinel.txt'),'INERT qualification sentinel; retain')
 $sentinelHash=Get-XnHash (Join-Path $retained 'sentinel.txt')
+$sourceRepo=Join-Path $fixture 'source-repo';[IO.Directory]::CreateDirectory((Join-Path $sourceRepo 'src-tauri')) | Out-Null
+[IO.File]::WriteAllText((Join-Path $sourceRepo 'COPYING'),'INERT source license')
+Pass 'generated source parent prefix resolves inside repository' { $p=Resolve-XnPayloadSource ($sourceRepo+'\src-tauri\..\COPYING') $sourceRepo; if ($p -cne ($sourceRepo+'\COPYING')) { throw 'Wrong source resolution' } }
+Reject 'additional source traversal remains forbidden' { Resolve-XnPayloadSource ($sourceRepo+'\src-tauri\..\..\retained\sentinel.txt') $sourceRepo } 'Noncanonical'
+Reject 'foreign payload source remains forbidden' { Resolve-XnPayloadSource ($retained+'\sentinel.txt') $sourceRepo } 'inside the canonical'
+$linkedRepo=Join-Path $fixture 'linked-source';[IO.Directory]::CreateDirectory($linkedRepo) | Out-Null
+New-Item -ItemType Junction -Path (Join-Path $linkedRepo 'src-tauri') -Target $retained | Out-Null
+Reject 'traversed source junction refused before normalization' { Resolve-XnPayloadSource ($linkedRepo+'\src-tauri\..\COPYING') $linkedRepo } 'Reparse'
 Reject 'existing directory refused, even empty/owned' { Assert-XnFreshTarget $retained } 'absent install target'
 Pass 'tree manifest hashes retained bytes' { $m=Get-XnTreeManifest $retained; if (@($m.files).Count -ne 1 -or $m.files[0].sha256 -ne $sentinelHash) { throw 'Wrong manifest' } }
 Reject 'bounded inventory never truncates' { Get-XnTreeManifest $retained -MaximumFiles 0 } 'bound exceeded'
