@@ -33,6 +33,16 @@
 import type { PartialCatalog } from './index'
 
 export const FR: PartialCatalog = {
+  "spots.owner.hint": "Observations fournies par xLog. Sélectionner une ligne ne règle pas la radio et ne déclenche aucune émission.",
+  "spots.owner.unavailable": "Les observations actuelles de xLog sont indisponibles.",
+  "spots.owner.empty": "Cet instantané xLog ne contient aucune observation.",
+  "spots.owner.source": "Source",
+  "spots.owner.assessment": "Évaluation xLog",
+  "spots.owner.filtersUnavailable": "Les filtres par station ayant signalé, licence, État et date de QSO sont indisponibles pour cette source.",
+  "spots.owner.select": "Sélectionner {{call}} · {{hz}} Hz · {{source}}. Aucune commande radio.",
+  "spots.owner.unknown": "Inconnu · {{reason}}",
+  "spots.owner.needed": "Recherché · Score xLog {{score}} · {{reasons}}",
+  "spots.owner.worked": "Contacté · Score xLog {{score}} · {{reasons}}",
   "remote.controlLocalHint": "Autoriser un navigateur lui donne le contrôle de la station : les fonctions prises en charge du récepteur, de la radio et de l’amplificateur, ainsi que Stop TX, qui arrête toute émission de la station. Avec le direct activé, il peut aussi voir cette fenêtre en direct et utiliser Nexus comme vous le feriez ici, émission comprise. Pour limiter un navigateur, révoquez-le ici. Cela met aussi fin à son direct.",
   // remote parity batch 1
   "remote.b1.rotatorPointing": "Orientation du rotor vers {{call}}.",

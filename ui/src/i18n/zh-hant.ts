@@ -28,6 +28,16 @@
 import type { PartialCatalog } from './index'
 
 export const ZH_HANT: PartialCatalog = {
+  "spots.owner.hint": "由 xLog 提供的觀測資訊。選取列不會調諧或發射。",
+  "spots.owner.unavailable": "目前的 xLog 觀測資訊無法使用。",
+  "spots.owner.empty": "此 xLog 快照未提供觀測資訊。",
+  "spots.owner.source": "來源",
+  "spots.owner.assessment": "xLog 評估",
+  "spots.owner.filtersUnavailable": "此來源不提供回報台、執照、州或通聯日期篩選。",
+  "spots.owner.select": "選取 {{call}} · {{hz}} Hz · {{source}}。不傳送電台命令。",
+  "spots.owner.unknown": "未知 · {{reason}}",
+  "spots.owner.needed": "需要通聯 · xLog 評分 {{score}} · {{reasons}}",
+  "spots.owner.worked": "已通聯 · xLog 評分 {{score}} · {{reasons}}",
   "settings.station.legend": "操作員與電台",
   "settings.station.callsign.label": "呼號",
   "settings.station.callsign.hint": "本台呼號（必填）。",

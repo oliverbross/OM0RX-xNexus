@@ -35,6 +35,16 @@
 import type { PartialCatalog } from './index'
 
 export const RU: PartialCatalog = {
+  "spots.owner.hint": "Наблюдения предоставлены xLog. Выбор строки не меняет настройку трансивера и не включает передачу.",
+  "spots.owner.unavailable": "Текущие наблюдения xLog недоступны.",
+  "spots.owner.empty": "Этот снимок xLog не содержит наблюдений.",
+  "spots.owner.source": "Источник",
+  "spots.owner.assessment": "Оценка xLog",
+  "spots.owner.filtersUnavailable": "Для этого источника недоступны фильтры по сообщившей станции, лицензии, штату и дате QSO.",
+  "spots.owner.select": "Выбрать {{call}} · {{hz}} Hz · {{source}}. Без команды трансиверу.",
+  "spots.owner.unknown": "Неизвестно · {{reason}}",
+  "spots.owner.needed": "Нужен · Оценка xLog {{score}} · {{reasons}}",
+  "spots.owner.worked": "Сработан · Оценка xLog {{score}} · {{reasons}}",
   "settings.station.legend": "Оператор и трансивер",
   "settings.station.callsign.label": "Позывной",
   "settings.station.callsign.hint": "Позывной вашей станции (обязательно).",
