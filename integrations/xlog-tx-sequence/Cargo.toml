@@ -1,0 +1,14 @@
+[package]
+name = "xnexus-tx-sequence"
+version = "0.1.0"
+edition = "2021"
+license = "GPL-3.0-only"
+publish = false
+description = "Unwired offline Station event adapter; no transmit authority"
+
+[workspace]
+
+[dependencies]
+tempo-core = { path = "../../crates/tempo-core" }
+xnexus-tx-prepare = { path = "../xlog-tx-prepare" }
+sha2 = "=0.10.9"
