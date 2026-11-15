@@ -123,13 +123,21 @@ The production bundle graph proves the original host is included. The subsequent
 and limits are in the [execution ledger](STATUS.md). These passes qualify frontend
 source and isolated browser behavior; native packaging and paired station
 acceptance remain required.
+Checkpoint `a13077213` additionally includes the qualified original Spots view,
+read-only original contact-card surface, actual owner DTO replay and strict
+contact-detail codec. The card is not yet host-mounted or backed by a native
+by-ID read. xLog's producer and passive-read lifecycle fixes are committed;
+endpoint, client, supported editing and durable outcome presentation remain
+active implementation. Updated notice generation is qualified separately from
+the incomplete corresponding-source/model delivery inventory. These source
+changes leave the installed applications and next candidate version unchanged.
 The work below remains necessary and can be prepared in isolated branches
 without operating the station; `.5` will not be installed as the final UI.
 
 | Priority / milestone | Concrete software work | Source seam and exit evidence |
 |---|---|---|
 | Immediate / M2 | Qualify the restored original production entry in a native candidate and the paired xLog workflow | Frontend and complete-host browser checks passed; preserve their exact source identity in a new version/build receipt. Native history/connection tests and private candidate lifecycle, then paired RX/needs/history acceptance, remain open. Desktop-control automation stays off after cursor recovery. |
-| 1 / M4 | Reconcile accepted control requests with later owner observations; retain uncertain outcomes without automatic resubmission | `ui/src/xlog/App.tsx`, `api.ts`, `src-tauri/src/xlog_mode.rs` and owner command receipts. Current UI reports Accepted/awaiting observation but exposes no follow-up control status. Test delayed confirmation, rejection, replacement and disconnect through actual owner handlers. |
+| 1 / M4 | Bind the original global rotor strip to exact owner targets, then reconcile explicit Point requests with later observations | `ui/src/xlog/OriginalHost.tsx`, `useOwnerConnection.ts`, the existing RotorStrip and the tested pure observer. The original unknown-azimuth Stop fallback already exists. Complete full connection/token/owner/workspace target retention, fresh telemetry and Stop access from Spots without native readers or duplicate polling; then qualify the independent owner bearing read and Point outcomes. |
 | 2 / M5 | Connect the original contact editor to the durable xLog outbox, then qualify native create/edit/receipt/restart against disposable actual-owner SQLite | Add an authenticated by-contact-ID full-detail read using the owner's existing contact snapshot; compact history `details_complete` only covers its bounded projection. Preserve nullable fields and confirmation provenance. Reuse original editor markup, distinguish queued from applied, and keep unsupported fields read-only. Terminal archive work must preserve uncertain requests, auditability and duplicate protection. No production-log mutation is part of this software gate. |
 | 3 / M3 | Expand owner confirmation/award provenance and its presentation, then reuse propagation views without starting independent station services | `HistoryPanel.tsx`/history DTO currently expose worked/confirmed booleans; companion views reuse band/offline world maps, not the propagation engine. Add actual-producer fixtures for source-specific eligibility, corrections and revision changes; keep propagation evidence distinct from authoritative owner needs. |
 | 4 / M6 | Implement the reviewed TX draft's offline owner state machine, durable one-shot journal and independent release before a hardware backend; then modem/scheduler and bounded protocol | [TX_DESIGN_DRAFT.md](TX_DESIGN_DRAFT.md). Use fake transports/clocks and disposable journals for lost replies, blocked acquisition, stale release, restart without replay and timing bounds. Wire limits and ownership contracts require owner agreement; no TX capability or RF qualification follows from offline tests. |

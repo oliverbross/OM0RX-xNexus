@@ -14,8 +14,10 @@ operating UI with xLog services underneath. M6 TX is required and remains
 unfinished software work, not merely waiting for a hardware test.
 
 The original-interface host is committed at
-`ceb0ef61bb1360d8979ddb8bb329a06ad5e9c4f4`; checkpoint `773a77c65` includes
-the tested rotor helper, offline waveform exporter and native history wiring. The production
+`ceb0ef61bb1360d8979ddb8bb329a06ad5e9c4f4`; checkpoint `a13077213` also includes
+the original Spots view, the read-only original contact-card surface, a strict
+contact-detail codec and updated notice tooling. The tested rotor helper,
+offline waveform exporter and native history wiring remain included. The production
 xLog entry now mounts the original Nexus cockpit. These changes do not change
 the installed application or qualify a paired native station candidate:
 
@@ -32,6 +34,10 @@ the installed application or qualify a paired native station candidate:
 | [Current-context waterfall reader](SPECTRUM_READER.md) (`e75996693`) | 33 frontend tests with actual Rust fixtures and integrated TypeScript passed. Full-host browser checks also rendered a real frame and observed its lease-driven reset. |
 | [Original default operating window](ORIGINAL_HOST_VALIDATION.md) (`ceb0ef61b`) | Original TopBar, ModeNav, Classic/Roster cockpit and waterfall/history panes are the production entry. Focused 34-, 449- and five-case gates, full integrated TypeScript, three-viewport/six-layout browser checks and actual production bundle graph proof passed. Groups overlap; these are not a unique-test total. No native installation or RF qualification follows. |
 | [Rotor observation helper](ROTOR_CONTROL_OBSERVATION.md) (`21249e7c7`) | 31 focused tests and a separate strict TypeScript gate passed. The helper preserves command receipts separately from later owner snapshots; it is still unwired to Point dispatch. |
+| [Original Spots view](ORIGINAL_SPOTS_DRAFT.md) (`0829c6f5b`) | 29 owner/hook cases, 50 existing native cases, 406 catalog checks, TypeScript/Vite and 12 browser cases passed. Real original components render synthetic owner observations; exact IDs/Hz, expiry, Unknown assessments, preserved cockpit state and global receive Stop were checked. Row selection does not tune or transmit. |
+| [Original contact-card surface](ORIGINAL_CONTACT_CARD_SOURCE_DRAFT.md) (`a13077213`) | 70 component cases plus 13 corrected by-ID cases, 435 catalog checks, three actual Swift producer replays, final strict TypeScript and seven browser cases passed. The original native card remains a positive control. This owner surface is read-only and not yet connected to the host or native by-ID read. |
+| [Strict contact-detail codec](../../integrations/xlog/fixtures/CONTACT_DETAIL_PROVENANCE.md) (`aa23015ab`) | 15 focused tests, including the three actual Swift producer states, and all-target Clippy passed. Explicit nulls, raw confirmation provenance, UUID representation and complete edit bases remain distinct. HTTP/native/UI wiring is a subsequent gate; the other 100 SDK tests were filtered. |
+| [Locked notices and exact resource coverage](SOURCE_DELIVERY_GAPS.md) (`e1799c3f1`) | Offline generation/check covers 531 normal-edge desktop crates; 13 Node and nine Python controls passed. Historical notice mappings were checked without modifying retained artifacts. Complete corresponding-source/model provenance and platform release gates remain open. |
 
 The actual original window now passes isolated frontend/browser qualification.
 It preserves nullable owner facts, explicit receive controls and original decode
@@ -61,9 +67,26 @@ preserved. xLog committed this offline validator foundation at `cf30734b` with
 12 synthetic tests and the actual producer replay. No output route, scheduler,
 transmit endpoint or hardware backend follows from content validation.
 
-M5 next reuses the original contact editor and requires a full by-ID owner read:
-the existing compact history projection does not establish full contact or
-confirmation completeness. Rotor Point/reconciliation and other original
+The catalog repair at `6b40a539b` passed 441 checks. Combining the Spots and
+contact-card changes required retaining both independent catalog additions;
+the resulting source passed all 407 selected catalog checks before promotion.
+None of these commits bumps a version, packages an application or changes an
+installed binary. The additional browser failures remain recorded as fixture
+corrections, without relaxing product geometry or lease limits.
+
+xLog's source-only by-ID producer is committed at `635f754d`. Its actual
+found/deleted/not-found fixtures preserve nullable frequency, multiline comment,
+stored mode/submode and authoritative paper QSL method. The subsequent passive
+read lifecycle correction at `7fe76148` passed five focused host tests in a clean
+cached confirmation: read timeouts preserve the exact worker while mutations
+retain their existing retirement policy. The earlier retained VCTIP failures
+remain failures. The authenticated endpoint and native client integration are
+still in qualification; installed xLog does not gain this capability from these
+source commits.
+
+M5 next connects this full by-ID read, the original contact editor and the
+existing durable outbox. The compact history projection alone does not establish
+full contact or confirmation completeness. Rotor Point/reconciliation and other original
 cluster/propagation views remain software work. TX's pure waveform preparation
 and an offline owner reservation/journal foundation have focused checks, but the
 actual manifest transfer, scheduler, exact physical ownership/release and original
