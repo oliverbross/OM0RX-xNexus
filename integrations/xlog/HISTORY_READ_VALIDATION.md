@@ -72,8 +72,10 @@ and bundle compilation; browser and installed UI behavior remain separate gates.
 
 ## Remaining boundaries
 
-Actual UI consumer checks remain separate. The focused
-native read-lane tests do not compile Tauri command macros or qualify the full
-shell. No package, installer, native launch, production log, device or RF operation
+Actual UI consumer checks remain separate. The subsequent actual Tauri
+all-target check and 12 selected native tests are recorded in
+[NATIVE_HISTORY_READ_VALIDATION.md](NATIVE_HISTORY_READ_VALIDATION.md); the earlier
+standalone lane harness alone did not compile Tauri command macros. No package,
+installer, native launch, production log, device or RF operation
 was used in these SDK checks. Keep these boundaries explicit when promoting the
 source; no live history/recent UI pass is claimed here.

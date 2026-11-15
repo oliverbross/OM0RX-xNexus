@@ -18,6 +18,8 @@ use std::{
     },
 };
 use tauri::State;
+#[path = "xlog_history_read.rs"]
+mod passive_history;
 #[path = "xlog_window.rs"]
 mod private_window;
 #[cfg(target_os = "macos")]
@@ -25,7 +27,8 @@ mod private_window;
 mod profile_store;
 use xnexus_xlog_client::outbox::{LogbookMutation, Outbox, OutboxEntry};
 use xnexus_xlog_client::{
-    BridgeClient, Command, CommandReceipt, Hello, History, Snapshot, StopClient,
+    BridgeClient, Command, CommandReceipt, Hello, History, HistoryQuery, Recent, Snapshot,
+    StopClient,
 };
 
 #[tauri::command]
@@ -47,6 +50,70 @@ async fn xlog_history(state: State<'_, Shared>, callsign: String) -> Result<Hist
     })
     .await
     .map_err(|_| "xLog history request failed")?
+}
+
+fn current_read(shared: &Shared, expected_token: &str) -> Result<(u64, Arc<Connection>), String> {
+    let (generation, connection) = current(shared)?;
+    if connection.history.token() != expected_token {
+        return Err("Connection changed".into());
+    }
+    Ok((generation, connection))
+}
+
+fn check_read_connection(
+    shared: &Shared,
+    generation: u64,
+    connection: &Arc<Connection>,
+) -> Result<(), String> {
+    let session = lock(shared)?;
+    if session.generation != generation
+        || !session
+            .connection
+            .as_ref()
+            .is_some_and(|live| Arc::ptr_eq(live, connection))
+    {
+        return Err("Connection changed".into());
+    }
+    Ok(())
+}
+
+#[tauri::command]
+async fn xlog_history_read(
+    state: State<'_, Shared>,
+    callsign: String,
+    band: Option<String>,
+    exact_mode: Option<String>,
+    connection_token: String,
+) -> Result<passive_history::Response<History>, String> {
+    let query = HistoryQuery::new(&callsign, band.as_deref(), exact_mode.as_deref())
+        .map_err(|error| error.to_string())?;
+    let shared = Arc::clone(&state);
+    let (generation, connection) = current_read(&shared, &connection_token)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        check_read_connection(&shared, generation, &connection)?;
+        let response = connection.history.history(&connection_token, &query)?;
+        check_read_connection(&shared, generation, &connection)?;
+        Ok(response)
+    })
+    .await
+    .map_err(|_| "xLog history read failed")?
+}
+
+#[tauri::command]
+async fn xlog_recent(
+    state: State<'_, Shared>,
+    connection_token: String,
+) -> Result<passive_history::Response<Recent>, String> {
+    let shared = Arc::clone(&state);
+    let (generation, connection) = current_read(&shared, &connection_token)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        check_read_connection(&shared, generation, &connection)?;
+        let response = connection.history.recent(&connection_token)?;
+        check_read_connection(&shared, generation, &connection)?;
+        Ok(response)
+    })
+    .await
+    .map_err(|_| "xLog recent contacts read failed")?
 }
 
 type Queue = Arc<Mutex<Option<Outbox>>>;
@@ -228,6 +295,7 @@ struct Pairing {
 
 struct Connection {
     client: Mutex<BridgeClient>,
+    history: passive_history::Lane,
     hello: Hello,
     needs_blocked: Arc<AtomicBool>,
 }
@@ -250,6 +318,7 @@ struct View {
     endpoint: Option<String>,
     hello: Option<Hello>,
     snapshot: Option<Snapshot>,
+    connection_token: Option<String>,
 }
 
 fn view(session: &Session, snapshot: Option<Snapshot>) -> View {
@@ -259,6 +328,10 @@ fn view(session: &Session, snapshot: Option<Snapshot>) -> View {
         endpoint: session.pairing.as_ref().map(|p| p.endpoint.clone()),
         hello: session.connection.as_ref().map(|c| c.hello.clone()),
         snapshot,
+        connection_token: session
+            .connection
+            .as_ref()
+            .map(|c| c.history.token().to_owned()),
     }
 }
 
@@ -284,6 +357,9 @@ fn parse_pairing(bytes: &[u8]) -> Result<Pairing, String> {
 
 fn begin(session: &Shared) -> Result<u64, String> {
     let mut session = lock(session)?;
+    if let Some(connection) = &session.connection {
+        connection.history.revoke();
+    }
     session.generation = session.generation.wrapping_add(1);
     session.rx = None;
     session.rx_generation = session.rx_generation.wrapping_add(1);
@@ -305,6 +381,7 @@ fn establish(shared: &Shared, generation: u64, pairing: Pairing) -> Result<View,
         None
     };
     let snapshot = client.poll().map_err(|e| e.to_string())?.clone();
+    let history = passive_history::Lane::new(&client)?;
     let mut session = lock(shared)?;
     if session.generation != generation {
         return Err("Connection request cancelled".into());
@@ -313,6 +390,7 @@ fn establish(shared: &Shared, generation: u64, pairing: Pairing) -> Result<View,
     session.stop = stop;
     session.connection = Some(Arc::new(Connection {
         client: Mutex::new(client),
+        history,
         hello,
         needs_blocked: Arc::new(AtomicBool::new(true)),
     }));
@@ -421,6 +499,7 @@ async fn xlog_poll(state: State<'_, Shared>) -> Result<View, String> {
                 Ok(view(&session, Some(snapshot)))
             }
             Err(error) => {
+                connection.history.revoke();
                 session.rx = None;
                 session.connection = None;
                 Err(error)
@@ -440,8 +519,14 @@ fn xlog_rx_status(state: State<'_, Shared>) -> Result<crate::xlog_rx_worker::Vie
 }
 
 #[tauri::command]
-fn xlog_rx_spectrum(state: State<'_, Shared>, after: Option<crate::xlog_rx_worker::SpectrumCursor>) -> Result<Option<crate::xlog_rx_worker::SpectrumFrame>, String> {
-    lock(&state)?.rx.as_ref().map_or(Ok(None), |worker| worker.spectrum(after.as_ref()))
+fn xlog_rx_spectrum(
+    state: State<'_, Shared>,
+    after: Option<crate::xlog_rx_worker::SpectrumCursor>,
+) -> Result<Option<crate::xlog_rx_worker::SpectrumFrame>, String> {
+    lock(&state)?
+        .rx
+        .as_ref()
+        .map_or(Ok(None), |worker| worker.spectrum(after.as_ref()))
 }
 
 #[tauri::command]
@@ -666,6 +751,8 @@ pub(crate) fn run() {
             xlog_outbox_enqueue,
             xlog_outbox_deliver,
             xlog_history,
+            xlog_history_read,
+            xlog_recent,
             xlog_rx_status,
             xlog_rx_spectrum,
             xlog_rx_start,
@@ -701,14 +788,15 @@ mod tests {
         use std::io::Write;
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let endpoint = format!("http://{}", listener.local_addr().unwrap());
-        let hello = serde_json::json!({"application":"OM0RX-xLog","protocol_version":1,"server_instance":"read-only-fixture","workspace_id":"fixture-workspace","capabilities":["snapshot.read"]});
+        let hello = serde_json::json!({"application":"OM0RX-xLog","protocol_version":1,"server_instance":"read-only-fixture","workspace_id":"fixture-workspace","capabilities":["snapshot.read","logbook.read"]});
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_millis() as u64;
         let snapshot = serde_json::json!({"protocol_version":1,"server_instance":"read-only-fixture","workspace_id":"fixture-workspace","revision":1,"generated_at_unix_ms":now,"max_age_ms":10000,"station":{"connected":false,"radio_id":null,"frequency_hz":null,"mode":null,"transmitting":null},"rotor":{"connected":false,"rotor_id":null,"azimuth_deg":null,"moving":null},"spots":[]});
+        let history = serde_json::json!({"protocol_version":1,"server_instance":"read-only-fixture","workspace_id":"fixture-workspace","callsign":"K1ABC","generated_at_unix_ms":now,"contacts":[],"matrix":[]});
         let server = std::thread::spawn(move || {
-            for body in [hello.to_string(), snapshot.to_string()] {
+            for body in [hello.to_string(), snapshot.to_string(), history.to_string()] {
                 let (mut stream, _) = listener.accept().unwrap();
                 let mut request = [0; 4096];
                 stream.read(&mut request).unwrap();
@@ -725,7 +813,31 @@ mod tests {
         };
         assert!(establish(&shared, generation, pairing).unwrap().connected);
         assert!(lock(&shared).unwrap().stop.is_none());
+        let (_, retained) = current(&shared).unwrap();
+        let old_token = retained.history.token().to_owned();
+        let response = retained
+            .history
+            .history(&old_token, &HistoryQuery::new("K1ABC", None, None).unwrap())
+            .unwrap();
+        assert!(serde_json::to_value(&response).is_ok());
         server.join().unwrap();
+        assert_eq!(
+            view(&lock(&shared).unwrap(), None)
+                .connection_token
+                .as_deref(),
+            Some(old_token.as_str())
+        );
+        begin(&shared).unwrap();
+        assert!(serde_json::to_value(&response).is_err());
+        // Retaining the full connection (and its BridgeClient) cannot postpone
+        // retirement, and a view never exposes the previous connection token.
+        assert!(check_read_connection(&shared, generation, &retained).is_err());
+        assert!(
+            matches!(retained.history.recent(&old_token), Err(error) if error == "Connection changed")
+        );
+        assert!(view(&lock(&shared).unwrap(), None)
+            .connection_token
+            .is_none());
     }
     #[test]
     fn pairing_requires_xlog_loopback_and_valid_secret() {
