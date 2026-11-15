@@ -9,6 +9,9 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 pub struct Audio {
     pub buffer: Arc<Mutex<Buffer>>,
+    gap_requested: Arc<AtomicBool>,
+    timing_requested: Arc<AtomicBool>,
+    pub gap_evidence: Arc<Mutex<Option<serde_json::Value>>>,
     stop: Arc<AtomicBool>,
     producer: Option<std::thread::JoinHandle<()>>,
 }
@@ -42,14 +45,21 @@ impl Audio {
         let stop = Arc::new(AtomicBool::new(false));
         let producer_stop = stop.clone();
         let producer_buffer = buffer.clone();
+        let gap_requested = Arc::new(AtomicBool::new(false));
+        let producer_gap = gap_requested.clone();
+        let timing_requested = Arc::new(AtomicBool::new(false));
+        let producer_timing = timing_requested.clone();
+        let gap_evidence = Arc::new(Mutex::new(None));
+        let producer_evidence = gap_evidence.clone();
         let producer = std::thread::spawn(move || {
             let start = Instant::now() + Duration::from_millis(200);
             let origin_us = SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .unwrap()
                 .as_micros() as u64
-                + 200_000;
+                + 100_000; // Explicit synthetic 100ms delivery latency, not future PCM.
             let mut first = 0_u64;
+            let mut timestamp_offset_ticks = 0_u64;
             while !producer_stop.load(Ordering::Acquire) {
                 let deadline = start + Duration::from_micros((first + 960) * 1_000_000 / 48_000);
                 if let Some(wait) = deadline.checked_duration_since(Instant::now()) {
@@ -69,8 +79,42 @@ impl Audio {
                         .stop("Synthetic producer missed its deadline");
                     break;
                 }
-                let sample_ticks = first * 10_000_000 / 48_000;
-                let samples = callback_samples(period.as_deref(), origin_us, first);
+                let sample_ticks = first * 10_000_000 / 48_000 + timestamp_offset_ticks;
+                if producer_timing.swap(false, Ordering::AcqRel) {
+                    timestamp_offset_ticks += 600_000;
+                    let ticks = first * 10_000_000 / 48_000 + timestamp_offset_ticks;
+                    let mut buffer = producer_buffer.lock().unwrap();
+                    let before = buffer.descriptor.clone().unwrap();
+                    assert!(!buffer.push(first, 10_000_000 + ticks, origin_us * 10 + ticks,
+                        100, &[30000;960]).expect("synthetic timing recovery"));
+                    assert_ne!(before["epoch"], buffer.descriptor.as_ref().unwrap()["epoch"],
+                        "overflow must discard, not publish or silently extend the clock");
+                    *producer_evidence.lock().unwrap() = Some(serde_json::json!({
+                        "kind":"timing","old_descriptor":before,"new_descriptor":buffer.descriptor,
+                        "discarded_first_frame":first,"next_first_frame":first+960,
+                        "raw_sample0_unix_us":origin_us+ticks/10,
+                        "waiting":buffer.response(0, origin_us/1000+ticks/10_000)}));
+                    first += 960;
+                    continue;
+                }
+                if producer_gap.swap(false, Ordering::AcqRel) {
+                    // Simulate one missing callback then discard the declared packet.
+                    // Advance physical positions/time, never splice or fill missing PCM.
+                    let gap_first = first + 960;
+                    let gap_ticks = gap_first * 10_000_000 / 48_000 + timestamp_offset_ticks;
+                    let mut buffer = producer_buffer.lock().unwrap();
+                    let before = buffer.descriptor.clone().unwrap();
+                    buffer.discard_gap(gap_first, 10_000_000 + gap_ticks,
+                        origin_us * 10 + gap_ticks, 100, 960).expect("synthetic declared gap");
+                    *producer_evidence.lock().unwrap() = Some(serde_json::json!({
+                        "kind":"gap","old_descriptor":before,"new_descriptor":buffer.descriptor,
+                        "missing_first_frame":first,"discarded_first_frame":gap_first,
+                        "next_first_frame":first+1920,"raw_sample0_unix_us":origin_us+gap_ticks/10,
+                        "waiting":buffer.response(0, origin_us/1000+gap_ticks/10_000)}));
+                    first += 1920;
+                    continue;
+                }
+                let samples = callback_samples(period.as_deref(), origin_us + timestamp_offset_ticks / 10, first);
                 if producer_buffer
                     .lock()
                     .unwrap()
@@ -90,10 +134,15 @@ impl Audio {
         });
         Self {
             buffer,
+            gap_requested,
+            timing_requested,
+            gap_evidence,
             stop,
             producer: Some(producer),
         }
     }
+    pub fn request_gap(&self) { self.gap_requested.store(true, Ordering::Release); }
+    pub fn request_timing_recovery(&self) { self.timing_requested.store(true, Ordering::Release); }
     pub fn stop(&mut self) {
         self.stop.store(true, Ordering::Release);
         self.buffer

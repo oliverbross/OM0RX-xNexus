@@ -205,7 +205,27 @@ fn main() {
         "Synthetic owner ready; pairing path: {}",
         root.join("pairing.json").display()
     );
+    let mut gap_requested = false;
+    let mut timing_requested = false;
     while !root.join("STOP").exists() {
+        #[cfg(feature = "owner-audio")]
+        if let Some(audio) = audio.as_ref() {
+            if !gap_requested && root.join("GAP_REQUEST").exists() {
+                gap_requested = true;
+                audio.request_gap();
+            }
+            if !timing_requested && root.join("TIMING_REQUEST").exists() {
+                timing_requested = true;
+                audio.request_timing_recovery();
+            }
+            if let Some(evidence) = audio.gap_evidence.lock().unwrap().as_ref() {
+                let name=if evidence["kind"]=="timing" {"TIMING_ACK"} else {"GAP_ACK"};
+                if !root.join(format!("{name}.json")).exists() {
+                    std::fs::write(root.join(format!("{name}.tmp")), serde_json::to_vec_pretty(evidence).unwrap()).unwrap();
+                    std::fs::rename(root.join(format!("{name}.tmp")), root.join(format!("{name}.json"))).unwrap();
+                }
+            }
+        }
         #[cfg(feature = "owner-audio")]
         if root.join("STOP_AUDIO").exists() {
             if let Some(audio) = audio.as_mut() {
