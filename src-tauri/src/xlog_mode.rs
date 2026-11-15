@@ -18,6 +18,8 @@ use std::{
     },
 };
 use tauri::State;
+#[path = "xlog_bearing_read.rs"]
+mod passive_bearing;
 #[path = "xlog_contact_detail_read.rs"]
 mod passive_contact_detail;
 #[path = "xlog_history_read.rs"]
@@ -116,6 +118,33 @@ async fn xlog_recent(
     })
     .await
     .map_err(|_| "xLog recent contacts read failed")?
+}
+
+#[tauri::command]
+async fn xlog_bearing_read(
+    state: State<'_, Shared>,
+    connection_token: String,
+    callsign: String,
+) -> Result<passive_bearing::Response, String> {
+    let shared = Arc::clone(&state);
+    let (generation, connection) = current_read(&shared, &connection_token)?;
+    let prepared = connection
+        .bearing
+        .capture(&connection_token, &callsign, || {
+            let client = connection
+                .client
+                .try_lock()
+                .map_err(|_| "xLog bearing context is busy or unavailable")?;
+            client.bearing_context().map_err(|error| error.to_string())
+        })?;
+    tauri::async_runtime::spawn_blocking(move || {
+        check_read_connection(&shared, generation, &connection)?;
+        let response = connection.bearing.read(prepared)?;
+        check_read_connection(&shared, generation, &connection)?;
+        Ok(response)
+    })
+    .await
+    .map_err(|_| "xLog bearing read failed")?
 }
 
 #[tauri::command]
@@ -319,6 +348,7 @@ struct Connection {
     client: Mutex<BridgeClient>,
     history: passive_history::Lane,
     detail: passive_contact_detail::Lane,
+    bearing: passive_bearing::Lane,
     hello: Hello,
     needs_blocked: Arc<AtomicBool>,
 }
@@ -383,6 +413,7 @@ fn begin(session: &Shared) -> Result<u64, String> {
     if let Some(connection) = &session.connection {
         connection.history.revoke();
         connection.detail.revoke();
+        connection.bearing.revoke();
     }
     session.generation = session.generation.wrapping_add(1);
     session.rx = None;
@@ -407,6 +438,7 @@ fn establish(shared: &Shared, generation: u64, pairing: Pairing) -> Result<View,
     let snapshot = client.poll().map_err(|e| e.to_string())?.clone();
     let history = passive_history::Lane::new(&client)?;
     let detail = passive_contact_detail::Lane::new(&client, history.token())?;
+    let bearing = passive_bearing::Lane::new(&client, history.token())?;
     let mut session = lock(shared)?;
     if session.generation != generation {
         return Err("Connection request cancelled".into());
@@ -417,6 +449,7 @@ fn establish(shared: &Shared, generation: u64, pairing: Pairing) -> Result<View,
         client: Mutex::new(client),
         history,
         detail,
+        bearing,
         hello,
         needs_blocked: Arc::new(AtomicBool::new(true)),
     }));
@@ -527,6 +560,7 @@ async fn xlog_poll(state: State<'_, Shared>) -> Result<View, String> {
             Err(error) => {
                 connection.history.revoke();
                 connection.detail.revoke();
+                connection.bearing.revoke();
                 session.rx = None;
                 session.connection = None;
                 Err(error)
@@ -781,6 +815,7 @@ pub(crate) fn run() {
             xlog_history_read,
             xlog_recent,
             xlog_contact_detail_read,
+            xlog_bearing_read,
             xlog_rx_status,
             xlog_rx_spectrum,
             xlog_rx_start,
