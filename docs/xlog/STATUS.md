@@ -14,8 +14,8 @@ operating UI with xLog services underneath. M6 TX is required and remains
 unfinished software work, not merely waiting for a hardware test.
 
 The original-interface host is committed at
-`ceb0ef61bb1360d8979ddb8bb329a06ad5e9c4f4`; the following source checkpoint adds
-the independently tested rotor-observation helper at `21249e7c7`. The production
+`ceb0ef61bb1360d8979ddb8bb329a06ad5e9c4f4`; checkpoint `773a77c65` includes
+the tested rotor helper, offline waveform exporter and native history wiring. The production
 xLog entry now mounts the original Nexus cockpit. These changes do not change
 the installed application or qualify a paired native station candidate:
 
@@ -43,9 +43,23 @@ private candidate checks and paired acceptance are still required before install
 The native all-target check passed with fresh normal and test application
 targets (receipt `69E860819DF1EDBED291B1AEEA3755842BB77D7BBD5385585D26E0BF602EF364`).
 The linked test build exceeded its original 4 GiB cap before executing tests;
-that failed result is preserved. A separately reviewed 8 GiB test profile uses
-14/14 GiB admission and 4/4 GiB runtime reserves. It has not yet qualified the
-12 selected connection/history tests.
+that failed result is preserved. A separately reviewed 8 GiB test profile with
+14/14 GiB admission and 4/4 GiB runtime reserves then passed all 12 selected
+connection/history tests. It exited naturally with zero remaining processes and
+no limit notifications (receipt
+`0CD14FFFFD904CBFA34A2D56F969ED9725E502C5ADE9FA149AAAFBF33968FC90`).
+The [native evidence record](../../integrations/xlog/NATIVE_HISTORY_READ_VALIDATION.md)
+preserves the earlier resource-tool, sandbox and memory failures. This remains
+source/test qualification; it does not constitute a packaged native-window pass.
+
+The [offline waveform corpus](../../integrations/xlog-tx-prepare/examples/README.md)
+contains 14 actual CQ/grid/report/closing periods across FT8 and FT4. Independent
+byte/manifest checks passed, and xLog's actual validator accepted every period
+without transforming the bytes. Its cached confirmation run retired normally
+with zero remaining processes; the earlier retained-compiler-helper failure is
+preserved. xLog committed this offline validator foundation at `cf30734b` with
+12 synthetic tests and the actual producer replay. No output route, scheduler,
+transmit endpoint or hardware backend follows from content validation.
 
 M5 next reuses the original contact editor and requires a full by-ID owner read:
 the existing compact history projection does not establish full contact or
