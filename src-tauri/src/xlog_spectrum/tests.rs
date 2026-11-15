@@ -79,6 +79,10 @@ fn complete_real_window_matches_original_nexus_fft_and_exact_host_position() {
     };
     let first = published.read(None).unwrap();
     assert!(first.remaining_valid_ms <= 500);
+    println!(
+        "XNEXUS_SPECTRUM_FIXTURE {}",
+        serde_json::to_string(&first).unwrap()
+    );
     let mut cursor = Cursor {
         worker_instance: first.context.worker_instance.clone(),
         worker_epoch: first.context.worker_epoch,
@@ -414,4 +418,62 @@ fn worker_read_fences_full_context_even_if_published_frame_survives_reset() {
             "read fence: {boundary}"
         );
     }
+}
+
+#[test]
+fn receive_view_exports_current_context_before_decode_and_clears_it_on_retirement() {
+    let (mut bridge, _audio, batch) = live_authority();
+    let worker = test_worker(state(batch));
+    let view = worker.view().unwrap();
+    assert!(
+        view.rows.is_empty(),
+        "context must not be inferred from decoded rows"
+    );
+    let ctx = view
+        .current_context
+        .as_ref()
+        .expect("fresh audio authority");
+    assert_eq!(ctx.worker_instance, "fixture");
+    assert_eq!(ctx.worker_epoch, 1);
+    assert_eq!(ctx.server_instance, "worker-fixture");
+    assert_eq!(ctx.workspace_id, "worker-workspace");
+    assert_eq!(Some(&ctx.route), view.route.as_ref());
+    assert_eq!(Some(ctx.decoder_mode), view.mode);
+    let json = serde_json::to_value(&view).unwrap();
+    assert_eq!(json["current_context"]["worker_epoch"], 1);
+    assert_eq!(json["current_context"]["decoder_mode"], "FT8");
+    assert_eq!(json["current_context"]["route"], json["route"]);
+    println!(
+        "XNEXUS_RX_CONTEXT_FIXTURE {}",
+        serde_json::to_string(&view).unwrap()
+    );
+    {
+        let mut state = worker.state.lock().unwrap();
+        state.reset("waiting", "synthetic gap");
+    }
+    assert!(worker.view().unwrap().current_context.is_none());
+    assert!(worker.state.lock().unwrap().view.current_context.is_none());
+    bridge.disconnect();
+    assert!(worker.view().unwrap().current_context.is_none());
+    worker.stop();
+    assert!(worker.view().unwrap().current_context.is_none());
+}
+
+#[test]
+fn receive_context_has_no_authority_after_ordinary_expiry_or_without_mode() {
+    let (_bridge, _audio, batches) = authority_batches(48000, &[100]);
+    let batch = batches[0].clone();
+    let worker = test_worker(state(batch.clone()));
+    assert!(worker.view().unwrap().current_context.is_some());
+    worker.state.lock().unwrap().view.mode = None;
+    assert!(worker.view().unwrap().current_context.is_none());
+    worker.state.lock().unwrap().view.mode = Some(Mode::FT8);
+    let deadline = Instant::now() + Duration::from_millis(300);
+    while batch.is_fresh() && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    assert!(!batch.is_fresh());
+    let view = worker.view().unwrap();
+    assert!(view.current_context.is_none());
+    assert!(view.route.is_none());
 }

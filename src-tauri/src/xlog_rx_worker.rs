@@ -103,6 +103,8 @@ pub struct View {
     pub phase: String,
     pub reason: String,
     pub route: Option<AudioDescriptor>,
+    /// Current receive authority, independent of whether a station has decoded.
+    pub current_context: Option<NeedsContext>,
     pub rows: Vec<Row>,
 }
 impl Default for View {
@@ -113,6 +115,7 @@ impl Default for View {
             phase: "off".into(),
             reason: "Receive decoding is off.".into(),
             route: None,
+            current_context: None,
             rows: vec![],
         }
     }
@@ -144,6 +147,7 @@ impl State {
         self.spectrum = None;
         self.spectrum_mailbox.clear();
         self.view.route = None;
+        self.view.current_context = None;
         self.view.rows.clear();
         self.view.phase = phase.into();
         self.view.reason = reason.into();
@@ -499,7 +503,27 @@ impl Worker {
         let mut state = self.state.lock().map_err(|_| "Receive state unavailable")?;
         state.expire();
         state.refresh_needs();
-        Ok(state.view.clone())
+        let epoch = state.epoch;
+        let current_context = if state.accepts(epoch) {
+            state
+                .view
+                .route
+                .clone()
+                .zip(state.view.mode)
+                .map(|(route, decoder_mode)| NeedsContext {
+                    worker_instance: state.spectrum_identity.0.clone(),
+                    worker_epoch: epoch,
+                    server_instance: state.spectrum_identity.1.clone(),
+                    workspace_id: state.spectrum_identity.2.clone(),
+                    route,
+                    decoder_mode,
+                })
+        } else {
+            None
+        };
+        let mut view = state.view.clone();
+        view.current_context = current_context;
+        Ok(view)
     }
     /// No HTTP, DSP, device or Engine access. An absent/newless/stale spectrum
     /// is None, never an invented row of zero measurements.
