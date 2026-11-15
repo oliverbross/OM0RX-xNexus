@@ -101,9 +101,11 @@ M7 receive/control beta deliberately excludes unqualified transmission. Full pro
 completion includes M6 and M8; the bootstrap does not meet those gates.
 
 M6's remaining transmit boundary is recorded in the
-[owner-reviewed TX design draft](TX_DESIGN_DRAFT.md). It is not implemented or
-enabled; offline implementation gates and supervised station acceptance remain
-separate requirements.
+[owner-reviewed TX design draft](TX_DESIGN_DRAFT.md). The isolated
+[pure period-preparation module](../../integrations/xlog-tx-prepare/VALIDATION.md)
+now has focused reference/boundary tests, but remains unwired. The owner state
+machine, scheduler, release path and sequencer are not complete or enabled;
+offline implementation and supervised station acceptance remain separate gates.
 
 ### Next independent software slices
 
@@ -112,12 +114,18 @@ and [internal-only `.5` Windows build/audit/retention](WINDOWS_BUILD_1.24.1-xlog
 Installed xNexus remains `.4`; xLog owner `.31` installation is a separate
 checkpoint, not paired live qualification. The highest product priority is M2:
 preserve the original Nexus interface and route its services through xLog.
+Source checkpoint `ff59ec067` now contains tested original cockpit service
+connections, scoped log readers, saved station identity, real native waterfall
+frames, the original recent-contacts pane's external-read seam, and an unwired
+pure transmit-period generator. Their exact evidence and limitations are in the
+[execution ledger](STATUS.md). These component passes do not qualify the complete
+original operating window, which is the active next implementation slice.
 The work below remains necessary and can be prepared in isolated branches
 without operating the station; `.5` will not be installed as the final UI.
 
 | Priority / milestone | Concrete software work | Source seam and exit evidence |
 |---|---|---|
-| Immediate / M2 | Restore the original Nexus operating interface with an xLog service adapter underneath; retain diagnostic views only as supporting tools | Original `ui/` cockpits and API/state boundaries. Preserve operating layout/workflow while replacing local hardware/log/cluster authority; actual integrated original-UI browser and native tests are required. A diagnostic-dashboard pass cannot satisfy this gate. |
+| Immediate / M2 | Mount the actual original Nexus operating window over its tested service connections; finish nullable owner/decode facts and current-context waterfall delivery | Original `TopBar`, `ModeNav`, Classic/Roster cockpit and recent-contact markup. Do not construct an invented `AppSnapshot` or treat unknown worked status as unworked. Preserve immutable decode IDs and original controls; actual complete-host browser and native tests are still required. |
 | 1 / M4 | Reconcile accepted control requests with later owner observations; retain uncertain outcomes without automatic resubmission | `ui/src/xlog/App.tsx`, `api.ts`, `src-tauri/src/xlog_mode.rs` and owner command receipts. Current UI reports Accepted/awaiting observation but exposes no follow-up control status. Test delayed confirmation, rejection, replacement and disconnect through actual owner handlers. |
 | 2 / M5 | Complete Windows native create/edit/receipt/restart coverage against a disposable actual-owner SQLite workspace; design terminal receipt archive/export | `integrations/xlog/src/outbox.rs`, native queue endpoints and `QsoPanel.tsx`. Current outbox retains terminal operations and refuses new entries at 10,000. Archive must preserve uncertain work, immutable request IDs, auditability and duplicate protection across crashes. No production-log mutation is part of this software gate. |
 | 3 / M3 | Expand owner confirmation/award provenance and its presentation, then reuse propagation views without starting independent station services | `HistoryPanel.tsx`/history DTO currently expose worked/confirmed booleans; companion views reuse band/offline world maps, not the propagation engine. Add actual-producer fixtures for source-specific eligibility, corrections and revision changes; keep propagation evidence distinct from authoritative owner needs. |

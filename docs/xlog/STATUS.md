@@ -11,12 +11,36 @@ testing only**, not native-qualified or installed. The user requires the origina
 Nexus operating interface; the diagnostic companion dashboard is not the final
 product and `.5` will not be installed over it. M2 must preserve the original
 operating UI with xLog services underneath. M6 TX is required and remains
-unimplemented, not merely waiting for a hardware test.
+unfinished software work, not merely waiting for a hardware test.
+
+The original-interface source checkpoint is `ff59ec067be461b9f6746eff99715e192abaa0ff`.
+The following changes are committed and pushed; none changes the installed
+application or qualifies a complete replacement operating window:
+
+| Source change | Evidence and remaining boundary |
+|---|---|
+| Scoped original log readers (`453bdc7c3`) | 18 focused tests and integrated TypeScript/Vite passed. Changing an owner source clears retained answers; unsupported owner reads never fall back to the native log. |
+| [Saved station identity client](STATION_IDENTITY_CLIENT_VALIDATION.md) (`cccf2360b`) | 85 SDK tests, actual owner-produced synthetic identity replay, pinned Clippy and integrated TypeScript/Vite passed. Saved call/grid are display facts, not transmit authority. |
+| [Native waterfall](WATERFALL_SOURCE_DRAFT.md) (`c686560bb`) | Six SDK audio, nine assembler and 34 native Worker tests passed. Real existing PCM supplies the FFT; gap/expiry/context changes discard old frames. Full Tauri command compilation and original waterfall presentation are still required. |
+| [Pure FT8/FT4 period preparation](../../integrations/xlog-tx-prepare/VALIDATION.md) (`5e7f3e47f`) | Six actual encoder/waveform reference and boundary tests, formatting and offline locked manifest checks passed. This deliberately unwired module covers strict standard type-1 messages only; it does not provide sequencing, scheduling, PTT or a TX endpoint. |
+| [Original cockpit service connections](ORIGINAL_COCKPIT_SERVICES_DRAFT.md) (`795cfe955`) | 19 new tests, integrated TypeScript/Vite and 21 original CallCard browser cases passed. The closest upstream suites recorded 365 passing cases across a preserved partial timeout and completed follow-up; the broader 161-file run is not qualified. Original markup/layout remains; missing services cannot acquire a separate station owner. |
+| Original recent-contacts pane (`ff59ec067`) | Nine unit tests, integrated TypeScript/Vite and 12 real-pane browser cases passed. Distinct native positive controls, the original responsive viewport hook, visible callsigns and row clicks were checked. Explicit owner loading/unavailable states remain different from an empty log, without fabricated QSO frequency/confirmation fields. |
+
+The actual original operating-window host and its nullable owner/decode model
+are now being implemented. Additive authoritative receive-context/spectrum
+delivery and full-count history/recent contracts are separate active slices.
+The owner history producer and client still need cross-language fixture replay
+and integrated native/UI checks. TX still needs the reviewed owner state machine,
+durable one-shot journal, independent release, scheduler and original sequencer
+integration. M2 and M3–M8 remain open. No new package, version, RF test or
+installation is claimed by this source checkpoint.
 
 Installed xNexus remains `.4` at `ae35fc643`. The xLog owner reports `1.6.31`
 at `a00697f5458c64cf806e4c9647fcd133fc30391b` packaged, installed and privately
 checked; its subsequent normal handoff also passed. Both applications were
-closed for the serial package build. No current live RX/needs pass is claimed.
+closed for the serial package build; xLog's later normal handoff left it open.
+That is historical lifecycle evidence, not a current process observation.
+No current live RX/needs pass is claimed.
 The following diagnostic history preceded that owner installation.
 The native metadata diagnostic reproduced an oversized UTC/QPC correlation
 bracket. Owner correction `fa312941188991c6cf5a1a7e7c6bf8241c450647`
