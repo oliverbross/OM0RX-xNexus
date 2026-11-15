@@ -67,12 +67,15 @@ This metadata check does not imply a fresh compilation of that Cargo graph.
 
 ## Owner and operating gates remain separate
 
-The next fixture gate imports actual owner Body and the independent period
-validator, using all fourteen retained raw manifests/PCM cases. It is not yet
-run. That gate's planned scope is fake prepare/commit/observation correlation,
-not an integrated validated-PCM transfer into a commissioned owner backend.
-The owner's pending raw-manifest/body-identity and Permit corrections require
-their own pinned source and later integrated replay.
+A separate combined fixture passed all fourteen retained corpus cases plus four
+negative controls through actual owner `ValidatedPeriod`, `PreparedOperation`,
+Body, Permit and a fake sink retaining the actual operation. It preserves exact
+raw manifest/PCM/body identity and distinguishes ACK from an explicit synthetic
+effect record. The maintained acceptance crate and complete evidence are in
+[the paired regression](../xlog-tx-paired/VALIDATION.md). Its maintained-source
+rerun passed the same 18 cases plus five required-input rejection controls; the
+original successful ignored harness is retained.
+This is offline actual-source interoperability, not a commissioned owner backend.
 
 No TX endpoint, waveform output, physical timing, watchdog/release, AP/memo change,
 logging, native UI, version bump or package is included. Process-restart
