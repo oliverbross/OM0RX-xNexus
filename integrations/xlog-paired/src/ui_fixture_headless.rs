@@ -10,7 +10,9 @@ impl Fixture {
     fn launch(kind: &str, malformed: bool) -> Self {
         let id=uuid::Uuid::new_v4(); let root=std::env::temp_dir().join(format!("xnexus-ui-{id}"));
         fs::create_dir(&root).unwrap();
-        fs::write(root.join(".xnexus-ui-fixture.json"),serde_json::to_vec(&json!({"schema":1,"id":id.to_string(),"synthetic":true,"synthetic_audio":kind})).unwrap()).unwrap();
+        let delivery=if kind=="generated-ft4" {std::env::var("XNEXUS_UI_NEEDS_DELIVERY").unwrap_or("direct".into())}else{"direct".into()};
+        assert!(matches!(delivery.as_str(),"direct"|"scheduled-cache"));
+        fs::write(root.join(".xnexus-ui-fixture.json"),serde_json::to_vec(&json!({"schema":1,"id":id.to_string(),"synthetic":true,"synthetic_audio":kind,"needs_delivery":delivery})).unwrap()).unwrap();
         if kind=="generated-ft4" {
             if malformed {fs::write(root.join("generated-ft4.s16le"),[0;4]).unwrap();}
             else {fs::copy(std::env::var_os("XNEXUS_UI_WAVE").unwrap(),root.join("generated-ft4.s16le")).unwrap();}
@@ -43,6 +45,7 @@ impl Fixture {
 }
 impl Drop for Fixture { fn drop(&mut self) {let _=fs::write(self.root.join("STOP"),[]);} }
 fn main() {
+    let scheduled=std::env::var("XNEXUS_UI_NEEDS_DELIVERY").as_deref()==Ok("scheduled-cache");
     let evidence=PathBuf::from(std::env::var_os("XNEXUS_UI_EVIDENCE").unwrap());
     let mut bad=Fixture::launch("generated-ft4",true);
     let until=Instant::now()+Duration::from_secs(3);
@@ -68,7 +71,7 @@ fn main() {
             let snapshot=client.poll().unwrap();
             if let Some(needs)=snapshot.needs.as_ref(){worker.needs_snapshot_observed(needs.generated_at_unix_ms);}
             fs::write(evidence.join("last-native-view.json"),serde_json::to_vec_pretty(&worker.view().unwrap()).unwrap()).unwrap();
-            next_poll=Instant::now()+Duration::from_millis(500);
+            next_poll=Instant::now()+Duration::from_millis(if scheduled {1000}else{500});
         }
         let view=worker.view().unwrap(); assert!(view.enabled);
         if phase==0 {if let Some(row)=view.rows.iter().find(|r|r.message=="CQ K1ABC FN42" && r.needs.status==NeedStatus::Needed){
@@ -86,6 +89,7 @@ fn main() {
             }
         }} else if phase==2 {if let Some(row)=view.rows.iter().find(|r|r.decode_id==decode_id && r.needs.status==NeedStatus::Needed && r.needs.generated_at_unix_ms>old_generated){
             timings.push(json!({"phase":"new_known","elapsed_ms":started.elapsed().as_millis(),"row":row}));
+            if scheduled {phase=5;continue;}
             previous_context=Some(row.context.clone());
             old_generated=row.needs.generated_at_unix_ms;
             fs::write(owner.root.join("GAP_REQUEST"),[]).unwrap(); phase=3;
@@ -121,6 +125,33 @@ fn main() {
     }
     worker.stop();assert!(!worker.view().unwrap().enabled);assert!(worker.view().unwrap().rows.is_empty());
     drop(worker);owner.finish();
+    if scheduled {
+        let checks=verify_scheduled_cache(&owner.root);
+        fs::write(evidence.join("scheduled-cache-chain.json"),serde_json::to_vec_pretty(&checks).unwrap()).unwrap();
+    }
     fs::write(evidence.join("headless.json"),serde_json::to_vec_pretty(&json!({"passed":true,"actual_decode":true,"synthetic_classification":true,"hardware":false,"gui":false,"malformed_root":bad.root,"silence_root":silence.root,"generated_root":owner.root,"timings":timings,"normal_stop":true})).unwrap()).unwrap();
-    println!("PASS malformed waveform, silence, actual FT4 decode -> Needed -> Unknown with PCM progress -> fresh Needed -> declared gap/empty -> new-epoch decoded Needed -> timing-overflow discard/empty -> new-epoch decoded Needed -> Stop -> normal fixture exit");
+    if scheduled {println!("PASS actual FT4 decode -> actual owner Mailbox/QueryCache 503 -> same-ID retry -> Known -> STOP_NEEDS Unknown with PCM progress -> fresh Known -> Stop -> normal fixture exit; classifier synthetic");}
+    else {println!("PASS malformed waveform, silence, actual FT4 decode -> Needed -> Unknown with PCM progress -> fresh Needed -> declared gap/empty -> new-epoch decoded Needed -> timing-overflow discard/empty -> new-epoch decoded Needed -> Stop -> normal fixture exit");}
+}
+
+fn verify_scheduled_cache(root:&std::path::Path)->Value {
+    let records:Vec<Value>=fs::read_to_string(root.join("needs-cache-events.jsonl")).unwrap()
+        .lines().map(|line|serde_json::from_str(line).unwrap()).collect();
+    let queries:Vec<_>=records.iter().filter(|e|e["kind"]=="query").collect();
+    let classifications:Vec<_>=records.iter().filter(|e|e["kind"]=="classified_on_ordinary_poll").collect();
+    assert!(!classifications.is_empty(),"no actual ordinary poll classification");
+    let mut recovered=std::collections::HashSet::new();
+    for (index,query) in queries.iter().enumerate().filter(|(_,q)|q["status"]==200) {
+        let answer=&query["answer"];
+        assert!(classifications.iter().any(|c|c["response"]["result"]["needs_reply"]["result"]==*answer),
+            "cache read fabricated or refreshed classification evidence");
+        for row in answer["results"].as_array().unwrap() {
+            if queries[..index].iter().any(|miss|miss["status"]==503 && miss["queries"].as_array().unwrap().iter().any(|q|
+                q["query_id"]==row["query_id"] && q["callsign"]==row["normalized_callsign"] && q["mode"]==row["decoder_mode"] && q["dial_frequency_hz"]==row["dial_frequency_hz"])) {recovered.insert(answer["generated_at_unix_ms"].as_u64().unwrap());}
+        }
+    }
+    assert!(recovered.len()>=2,"both initial and post-invalidation known must follow actual same-ID pending retries");
+    json!({"passed":true,"ordinary_poll_ms":1738,"sdk_http_deadline_ms":1000,"evidence_ttl_ms":2000,
+        "same_id_pending_to_ready_generations":recovered,"query_count":queries.len(),"classification_count":classifications.len(),
+        "actual_owner_cache_mailbox":true,"actual_swift_classifier":false,"synthetic_classification":true})
 }

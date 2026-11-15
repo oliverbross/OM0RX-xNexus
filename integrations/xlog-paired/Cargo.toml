@@ -14,6 +14,7 @@ bench = false
 
 [features]
 owner-audio = []
+owner-needs-cache = ["owner-audio"]
 
 [dependencies]
 base64 = "=0.23.1"
