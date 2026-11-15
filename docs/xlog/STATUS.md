@@ -14,9 +14,10 @@ operating UI with xLog services underneath. M6 TX is required and remains
 unfinished software work, not merely waiting for a hardware test.
 
 The original-interface host is committed at
-`ceb0ef61bb1360d8979ddb8bb329a06ad5e9c4f4`; checkpoint `a13077213` also includes
+`ceb0ef61bb1360d8979ddb8bb329a06ad5e9c4f4`; checkpoint `77950e35f` also includes
 the original Spots view, the read-only original contact-card surface, a strict
-contact-detail codec and updated notice tooling. The tested rotor helper,
+contact-detail codec, bounded SDK/native/frontend readers, the original global
+rotor strip and updated notice tooling. The tested rotor helper,
 offline waveform exporter and native history wiring remain included. The production
 xLog entry now mounts the original Nexus cockpit. These changes do not change
 the installed application or qualify a paired native station candidate:
@@ -35,8 +36,12 @@ the installed application or qualify a paired native station candidate:
 | [Original default operating window](ORIGINAL_HOST_VALIDATION.md) (`ceb0ef61b`) | Original TopBar, ModeNav, Classic/Roster cockpit and waterfall/history panes are the production entry. Focused 34-, 449- and five-case gates, full integrated TypeScript, three-viewport/six-layout browser checks and actual production bundle graph proof passed. Groups overlap; these are not a unique-test total. No native installation or RF qualification follows. |
 | [Rotor observation helper](ROTOR_CONTROL_OBSERVATION.md) (`21249e7c7`) | 31 focused tests and a separate strict TypeScript gate passed. The helper preserves command receipts separately from later owner snapshots; it is still unwired to Point dispatch. |
 | [Original Spots view](ORIGINAL_SPOTS_DRAFT.md) (`0829c6f5b`) | 29 owner/hook cases, 50 existing native cases, 406 catalog checks, TypeScript/Vite and 12 browser cases passed. Real original components render synthetic owner observations; exact IDs/Hz, expiry, Unknown assessments, preserved cockpit state and global receive Stop were checked. Row selection does not tune or transmit. |
-| [Original contact-card surface](ORIGINAL_CONTACT_CARD_SOURCE_DRAFT.md) (`a13077213`) | 70 component cases plus 13 corrected by-ID cases, 435 catalog checks, three actual Swift producer replays, final strict TypeScript and seven browser cases passed. The original native card remains a positive control. This owner surface is read-only and not yet connected to the host or native by-ID read. |
-| [Strict contact-detail codec](../../integrations/xlog/fixtures/CONTACT_DETAIL_PROVENANCE.md) (`aa23015ab`) | 15 focused tests, including the three actual Swift producer states, and all-target Clippy passed. Explicit nulls, raw confirmation provenance, UUID representation and complete edit bases remain distinct. HTTP/native/UI wiring is a subsequent gate; the other 100 SDK tests were filtered. |
+| [Original contact-card surface](ORIGINAL_CONTACT_CARD_SOURCE_DRAFT.md) (`a13077213`) | 70 component cases plus 13 corrected by-ID cases, 435 catalog checks, three actual Swift producer replays, final strict TypeScript and seven browser cases passed. The original native card remains a positive control. This initial surface is read-only; the readers below are subsequent source changes. Production host mounting and supported editing remain in qualification. |
+| [Strict contact-detail codec](../../integrations/xlog/fixtures/CONTACT_DETAIL_PROVENANCE.md) (`aa23015ab`) | 15 focused tests, including the three actual Swift producer states, and all-target Clippy passed. Explicit nulls, raw confirmation provenance, UUID representation and complete edit bases remain distinct. This codec gate alone does not qualify transport or UI; the other 100 SDK tests were filtered. |
+| [Bounded SDK detail client](../../integrations/xlog/CONTACT_DETAIL_READ_VALIDATION.md) (`aa237af25`) | 37 codec/client cases and all-target Clippy passed. Exact by-ID transport, independent request fences and retained serialization leases were checked; no live paired endpoint follows. Earlier Windows fixture and lint failures remain preserved. |
+| [Native detail lane](../../integrations/xlog/NATIVE_CONTACT_DETAIL_VALIDATION.md) (`2103df7c6`, record `9103d9c2b`) | 13 focused runtime cases passed. A separate actual integrated-shell check passed fresh normal and test targets with zero test execution, natural retirement and unchanged retained evidence. The initial three-document checkout-byte failure and narrow Git line-ending verification remain distinct records. |
+| [Frontend selected-contact reader](CONTACT_READER_VALIDATION.md) (`77950e35f`) | 90 selected cases (47 contact, 35 history, eight actual history producer replays), full TypeScript/Vite and seven original-card browser cases passed. The native-only reader preserves request-start deadlines, repeated-evidence high-water marks through availability loss, worker retirement and immutable facts. It is not yet mounted from Recent/Recall. |
+| [Original global rotor strip](OWNER_ROTOR_STRIP.md) (`26d2d6841`) | 24 owner, 12 native and 406 catalog cases, full TypeScript/Vite and nine original-host browser cases passed. Exact retained Stop remains available through telemetry expiry, pending work and poll failure; actual connection/target replacement retires its authority. No physical movement is claimed. |
 | [Locked notices and exact resource coverage](SOURCE_DELIVERY_GAPS.md) (`e1799c3f1`) | Offline generation/check covers 531 normal-edge desktop crates; 13 Node and nine Python controls passed. Historical notice mappings were checked without modifying retained artifacts. Complete corresponding-source/model provenance and platform release gates remain open. |
 
 The actual original window now passes isolated frontend/browser qualification.
@@ -74,20 +79,40 @@ None of these commits bumps a version, packages an application or changes an
 installed binary. The additional browser failures remain recorded as fixture
 corrections, without relaxing product geometry or lease limits.
 
-xLog's source-only by-ID producer is committed at `635f754d`. Its actual
+xLog's by-ID producer is committed at `635f754d`. Its actual
 found/deleted/not-found fixtures preserve nullable frequency, multiline comment,
 stored mode/submode and authoritative paper QSL method. The subsequent passive
 read lifecycle correction at `7fe76148` passed five focused host tests in a clean
 cached confirmation: read timeouts preserve the exact worker while mutations
 retain their existing retirement policy. The earlier retained VCTIP failures
-remain failures. The authenticated endpoint and native client integration are
-still in qualification; installed xLog does not gain this capability from these
-source commits.
+remain failures. The authenticated endpoint is now committed on the xLog side;
+canonical `70599ecf` also contains the escaped-comment wire-size correction with
+seven actual mutation/replay tests. The bounded client, native lane and frontend
+reader are qualified source as recorded above. Installed xLog does not gain this
+capability from source commits.
 
-M5 next connects this full by-ID read, the original contact editor and the
-existing durable outbox. The compact history projection alone does not establish
+The actual integrated native check at `2103df7c6` passed under the unchanged
+4 GiB profile, with fresh normal and test metadata targets, zero remaining
+processes and no forced cleanup. It executed zero tests; the 13 focused native
+lane tests are separate runtime evidence. Receipt:
+`FE1FADADF0538D0F3928CD15FD3C011A1D21AD6D1F34E1B711441C75762BE98E`.
+The near-cap peak and retained source/tool/cache inventories are recorded in the
+native validation document, without implying a linked test or packaged pass.
+
+M5 next mounts the by-ID read and original supported editor from the actual
+Recent/Recall gestures. The editor remains uncommitted qualification work: its
+corrected five-suite run passed 85 cases and the catalog follow-up passed 436.
+Earlier recovery and orphan-key failures remain preserved; strict TypeScript
+and browser qualification are still pending. The host must check synchronous
+current read/write authority, respect close/replacement guards and preserve the
+existing durable outbox's immutable operation identity. The compact history projection alone does not establish
 full contact or confirmation completeness. Rotor Point/reconciliation and other original
-cluster/propagation views remain software work. TX's pure waveform preparation
+cluster/propagation views remain software work. The next Point tracking slice has
+64 focused and nine original-host browser passes, but remains uncommitted while
+strict typing is queued. Its 407 catalog assertions passed; the aggregate runner
+still records failure for a stale 406-count expectation, with separate read-only
+qualification evidence. xLog's passive bearing producer is under actual Core/
+Swift qualification, not an advertised or installed endpoint. TX's pure waveform preparation
 and an offline owner reservation/journal foundation have focused checks, but the
 actual manifest transfer, scheduler, exact physical ownership/release and original
 sequencer remain unfinished. M2 and M3–M8 remain open. No new package, version,
