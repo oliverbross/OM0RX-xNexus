@@ -123,5 +123,6 @@ checks and packages, physical DAX reception, clock/route qualification, signing
 and distribution remain separate. Digital TX is neither implemented nor enabled.
 The xLog owner reports 1.6.27 packages, installation and installed qualification
 passed. Current documentation is `7789c569` over application `16cac867`; ordinary
-handoff and live pairing remain pending. No hardware or live station acceptance
+handoff subsequently passed and left xLog connected. Settings automation stopped
+before enabling pairing or capture; live pairing remains pending. No hardware or live station acceptance
 is implied.

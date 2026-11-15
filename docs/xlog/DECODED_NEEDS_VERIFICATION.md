@@ -152,6 +152,7 @@ subsequently passed at exact source `ae35fc6435f861e38029049299833afe57de4885`;
 paired native acceptance and physical DAX reception remain separate gates.
 Canonical xLog 1.6.27 at `16cac86739274073ab2f8000a3916b4e37bc57a5` contains
 the reviewed owner source. Its owner reports packages, installation and installed
-qualification passed; current documentation is `7789c569`. Ordinary owner
-handoff and live pairing remain pending. The installed endpoint still requires
+qualification passed; current documentation is `7789c569`. Normal installed
+handoff passed and left xLog connected, but Settings automation stopped before
+pairing or capture. The installed endpoint still requires
 paired UI and physical station acceptance.

@@ -57,7 +57,9 @@ installed acceptance remain owned by the “xlog work” chat; an SDK/owner sour
 test does not establish that those changes are installed. The owner reports
 1.6.27 portable/installer packages, installation and installed qualification
 passed. Current owner documentation is `7789c569` over application `16cac867`;
-ordinary owner handoff and live pairing remain pending. Changing packaged
+normal installed handoff passed and left xLog connected. Settings automation
+stopped before pairing or capture; live pairing and reception remain pending.
+Installed xNexus remains closed awaiting the operator pairing step. Changing packaged
 source requires a new visible version, including failed qualification candidates.
 
 The fork retains KD9TAW attribution, COPYING, NOTICE, and third-party notices.

@@ -10,10 +10,22 @@ passed, followed by native A→B→A profile/lifecycle checks and permanent curr
 installation. The installed application was left closed; paired UI remains pending.
 It remains unsigned. [The build record](WINDOWS_BUILD_1.24.1-xlog.4.md) binds the
 actual tools, reviewed 12 GiB supervisor, artifacts and warning qualification.
-Canonical source remains frozen during acceptance. The xLog owner reports
+The packaging freeze is released for reviewed documentation/tooling integration;
+canonical `main` now includes that evidence at `78e1c288`, with application/runtime
+and packaged provenance still exact `ae35`. The xLog owner reports
 1.6.27 packages, installation and installed qualification passed. Its current
-documentation is `7789c569` over application source `16cac867`. xLog is currently
-closed; ordinary owner handoff and live pairing remain pending.
+documentation is `7789c569` over application source `16cac867`. Its normal installed
+handoff passed a 35-second observation and left xLog open and connected.
+Installed xNexus remains closed awaiting pairing. The project plan is not complete.
+
+At that handoff, the owner verified installed host PID 27440 and worker PID 17076,
+10.136 MHz DIGU, receive slice A, TX idle and connected FLEX/rotor/KPA/KAT.
+Settings input failed because coordinate geometry was unavailable; bounded
+activation and Ctrl+,/Tab recovery did not change the focused pane, so input
+stopped. Pairing was not enabled and capture was not started. The operator has
+been asked to open **Settings → WSJT-X → Enable and create pairing file**.
+Native `.4` paired/RX acceptance remains pending; this automation limitation
+does not establish an endpoint or radio failure.
 
 **Preserved isolation failure:** the fresh Mac `.2` profile displayed a draft from
 the prior `.1` test before pairing. Both processes exited normally and no station

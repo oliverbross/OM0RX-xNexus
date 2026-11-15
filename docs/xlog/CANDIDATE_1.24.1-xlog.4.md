@@ -19,8 +19,10 @@ The paired owner is canonical xLog 1.6.27 source
 `16cac86739274073ab2f8000a3916b4e37bc57a5`, whose pre-version implementation is
 `8bd486abd2e62aa079e8b4248126e1e186561452`. The xLog owner reports package,
 installation and installed qualification passed; documentation is now at
-`7789c569`. xLog is currently closed, with ordinary owner handoff and live
-pairing pending. Installed qualification does not establish paired endpoint
+`7789c569`. Normal installed handoff passed and left xLog open and connected;
+installed xNexus remains closed. Settings automation stopped before enabling
+pairing or capture; an operator pairing step remains pending. Installed
+qualification does not establish paired endpoint
 or physical station acceptance.
 
 ## Changes and qualification
@@ -54,7 +56,9 @@ The packaged canonical source is `ae35fc6435f861e38029049299833afe57de4885`,
 verified clean and equal to the fetched fork `origin/main`. The build receipt
 binds that exact source, version, upstream pin, actual tools, lockfile,
 configuration, native/model/license inputs and artifact hashes. Canonical source
-remains frozen during acceptance. Do not reuse this version for different source.
+was frozen through build and installation acceptance; subsequent canonical
+documentation/tooling integration does not change the package's exact `ae35`
+provenance. Do not reuse this version for different packaged source.
 
 Historical invocation for the one completed Windows attempt (not a retry request):
 
