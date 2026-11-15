@@ -132,9 +132,8 @@ try {
             # Normal NSIS uninstall copies itself to TEMP. Same audited generated
             # bytes and the retained install-root argument are mandatory; unknown
             # helper forms stop rather than silently extending the allowlist.
-            $temp=[IO.Path]::GetFullPath($env:TEMP).TrimEnd('\')+'\'
-            if ($Name -ne 'uninstall' -or !$child.executable.StartsWith($temp,[StringComparison]::OrdinalIgnoreCase) -or
-                $child.arguments -cne ('"'+$child.executable+'" /S _?='+$plan.target)) { throw 'Unreviewed NSIS temporary handoff identity/arguments.' }
+            if ($Name -ne 'uninstall') { throw 'Unreviewed installer child process.' }
+            Assert-XnNsisHandoff $child $plan.target $env:TEMP
         }
         $observation
     }

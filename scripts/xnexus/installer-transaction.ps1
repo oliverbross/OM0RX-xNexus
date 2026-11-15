@@ -24,6 +24,15 @@ function ConvertTo-XnCanonicalJson($Value) {
 function Assert-XnSame($Before,$After,[string]$Label) {
     if ((ConvertTo-XnCanonicalJson $Before) -cne (ConvertTo-XnCanonicalJson $After)) { throw "Changed $Label; preserve state and stop." }
 }
+function Assert-XnNsisHandoff($Child,[string]$Target,[string]$TempRoot) {
+    # Exact form captured from the audited .4 NSIS toolchain. No whitespace
+    # normalization, optional flags, alternate target, or suffix is admitted.
+    # The caller has already verified every member's same-byte hash/exit code.
+    $temp=[IO.Path]::GetFullPath($TempRoot).TrimEnd('\')+'\'
+    $expected='"'+$Child.executable+'"  /S _?='+$Target+'\'
+    if (!$Child.executable.StartsWith($temp,[StringComparison]::OrdinalIgnoreCase) -or
+        $Child.arguments -cne $expected) { throw 'Unreviewed NSIS temporary handoff identity/arguments.' }
+}
 function Assert-XnObservedRetirement($Observation,[string]$ExpectedHash) {
     if ($Observation.status -cne 'retired-identities-observed' -or !$Observation.atomicMembership -or
         $Observation.limitFlags -ne 0 -or $Observation.memoryLimit -ne 0 -or !$Observation.rootExited -or

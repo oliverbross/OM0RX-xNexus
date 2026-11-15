@@ -1,12 +1,36 @@
 # SPDX-License-Identifier: GPL-3.0-only
 # Adapter controls are intentionally inert. No installer/registry/GUI invocation.
-param([string]$ReviewedPreparation,[string]$FreshPreparation)
+param([string]$ReviewedPreparation,[string]$FreshPreparation,[string]$ActualUninstallObservation,[string]$ActualTarget)
 $ErrorActionPreference='Stop'
 . (Join-Path $PSScriptRoot 'installer-transaction.ps1')
 $repo=Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
 $evidence=Join-Path $repo ('target\installer-transaction-tests\'+[guid]::NewGuid().ToString('N'))
 [IO.Directory]::CreateDirectory($evidence) | Out-Null
 $results=[Collections.Generic.List[object]]::new()
+$handoff=[pscustomobject]@{executable='C:\inert-temp\~nsu2.tmp\Un.exe';arguments='"C:\inert-temp\~nsu2.tmp\Un.exe"  /S _?=C:\inert-private\app\'}
+Assert-XnNsisHandoff $handoff 'C:\inert-private\app' 'C:\inert-temp'
+$results.Add(@{case='exact-reviewed-nsis-spacing-and-root-separator';status='passed'})
+$good=$handoff.arguments
+foreach($bad in @($good.Replace('inert-private','foreign-root'),($good+' /REBOOTOK'),($good+'payload'),$good.Replace('  /S',' /S'),$good.TrimEnd('\'),($good+'\'))) {
+    $handoff.arguments=$bad;$refused=$false
+    try{Assert-XnNsisHandoff $handoff 'C:\inert-private\app' 'C:\inert-temp'}catch{$refused=$_.Exception.Message -like '*Unreviewed NSIS*'}
+    if(!$refused){throw 'Unreviewed handoff variant admitted'}
+    $results.Add(@{case="handoff-negative-$($results.Count)";status='passed'})
+}
+$handoff.arguments=$good;$handoff.executable='C:\outside-temp\Un.exe'
+$refused=$false;try{Assert-XnNsisHandoff $handoff 'C:\inert-private\app' 'C:\inert-temp'}catch{$refused=$true}
+if(!$refused){throw 'Foreign helper path admitted'}
+$results.Add(@{case='handoff-foreign-temp-refused';status='passed'})
+if($ActualUninstallObservation -or $ActualTarget) {
+    if(!$ActualUninstallObservation -or !$ActualTarget){throw 'Actual handoff regression requires observation and exact target'}
+    $actual=Get-Content -LiteralPath $ActualUninstallObservation -Raw|ConvertFrom-Json
+    Assert-XnObservedRetirement $actual $actual.sha256
+    $children=@($actual.identities|Where-Object pid -ne $actual.rootPid)
+    if($children.Count -ne 1){throw 'Expected exact captured NSIS child'}
+    Assert-XnNsisHandoff $children[0] $ActualTarget $env:TEMP
+    $results.Add(@{case='actual-captured-nsis-handoff';status='passed'})
+    @{path=$ActualUninstallObservation;sha256=Get-XnHash $ActualUninstallObservation;target=$ActualTarget}|ConvertTo-Json|Set-Content -LiteralPath (Join-Path $evidence 'actual-handoff.json') -Encoding utf8
+}
 foreach ($json in @('{}','[]','[{}]','null','[null]','0','false','"source"','{"a":[],"b":{},"c":[{},[]],"d":{"a":1,"z":"text"}}')) {
     $value=ConvertFrom-Json -InputObject $json -NoEnumerate
     if ((ConvertTo-XnCanonicalJson $value) -cne $json) { throw "Canonical empty/populated shape changed: $json" }

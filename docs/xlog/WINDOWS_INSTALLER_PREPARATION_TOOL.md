@@ -81,6 +81,11 @@ The executor performs those checks. A preparation report does not reserve shared
 registration. The actual candidate NSIS temporary-child filename, arguments and
 byte identity remain runtime gates: unrecognized helpers or historical identity
 gaps stop the transaction rather than extending an allowlist automatically.
+The reviewed `.4` runtime handoff is exactly `"<temporary child executable>"`
+followed by two spaces, `/S _?=`, the exact retained install root, and one trailing
+backslash. The child must be under TEMP and match the generated uninstaller hash;
+extra options, another root, trailing payload, or other spacing are refused.
+The earlier runtime receipt that discovered this form remains unqualified.
 
 Run `pwsh -NoProfile -File scripts/xnexus/installer-acceptance.test.ps1` for inert
 positive/negative controls. These test actual junction refusal, exact receipts,
@@ -96,8 +101,10 @@ controls prove orchestration ordering and refusal, not actual NSIS behavior.
 Two additional cases invoke the actual executor's non-mutating default and
 wrong-review-hash refusal. Seven more exercise the actual typed registry
 projection and ACL descriptor validator, plus ten JSON shape controls, give 43
-checks. Supplying `-ReviewedPreparation` and `-FreshPreparation` adds nine checks
+checks, plus eight exact NSIS handoff controls. Supplying `-ReviewedPreparation` and `-FreshPreparation` adds nine checks
 against actual deserialized receipt projections and their JSON roundtrips.
+`-ActualUninstallObservation` with `-ActualTarget` adds one regression against
+the retained, fully observed candidate handoff, giving 61 checks with all inputs.
 
 `installer-observer.test.ps1` compiles only a tiny inert fixture. The observer uses
 [atomic Job-list assignment](https://learn.microsoft.com/windows/win32/api/processthreadsapi/nf-processthreadsapi-updateprocthreadattribute)
