@@ -1,11 +1,36 @@
 # SPDX-License-Identifier: GPL-3.0-only
 # Adapter controls are intentionally inert. No installer/registry/GUI invocation.
+param([string]$ReviewedPreparation,[string]$FreshPreparation)
 $ErrorActionPreference='Stop'
 . (Join-Path $PSScriptRoot 'installer-transaction.ps1')
 $repo=Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
 $evidence=Join-Path $repo ('target\installer-transaction-tests\'+[guid]::NewGuid().ToString('N'))
 [IO.Directory]::CreateDirectory($evidence) | Out-Null
 $results=[Collections.Generic.List[object]]::new()
+foreach ($json in @('{}','[]','[{}]','null','[null]','0','false','"source"','{"a":[],"b":{},"c":[{},[]],"d":{"a":1,"z":"text"}}')) {
+    $value=ConvertFrom-Json -InputObject $json -NoEnumerate
+    if ((ConvertTo-XnCanonicalJson $value) -cne $json) { throw "Canonical empty/populated shape changed: $json" }
+    $results.Add(@{case="canonical-shape-$json";status='passed'})
+}
+Assert-XnSame ('{"z":{},"a":[]}'|ConvertFrom-Json) ([ordered]@{a=@();z=@{}}) 'dictionary versus deserialized object'
+$results.Add(@{case='canonical-dictionary-deserialized-equivalence';status='passed'})
+if ($ReviewedPreparation -or $FreshPreparation) {
+    if (!$ReviewedPreparation -or !$FreshPreparation) { throw 'Supply both actual preparation receipts.' }
+    $reviewed=Get-Content -LiteralPath $ReviewedPreparation -Raw|ConvertFrom-Json
+    $fresh=Get-Content -LiteralPath $FreshPreparation -Raw|ConvertFrom-Json
+    foreach ($field in 'source','version','artifacts','registry','profiles','shortcuts','webview2','defaultInstallAbsent') {
+        Assert-XnSame $reviewed.$field $fresh.$field "actual fresh preparation $field"
+        $serialized=ConvertTo-XnCanonicalJson $reviewed.$field
+        Assert-XnSame $reviewed.$field (ConvertFrom-Json -InputObject $serialized -NoEnumerate) "actual roundtrip $field"
+        $results.Add(@{case="actual-preparation-fresh-and-roundtrip-$field";status='passed'})
+    }
+    $changed=Get-Content -LiteralPath $FreshPreparation -Raw|ConvertFrom-Json
+    $changed.registry[0].values|Add-Member NoteProperty 'unexpected' 'value'
+    $refused=$false;try{Assert-XnSame $reviewed.registry $changed.registry 'actual registry addition'}catch{$refused=$_.Exception.Message -like '*Changed actual registry addition*'}
+    if (!$refused) { throw 'Actual empty registry object did not detect added value' }
+    $results.Add(@{case='actual-empty-registry-detects-added-value';status='passed'})
+    @{reviewed=@{path=$ReviewedPreparation;sha256=Get-XnHash $ReviewedPreparation};fresh=@{path=$FreshPreparation;sha256=Get-XnHash $FreshPreparation}}|ConvertTo-Json -Depth 4|Set-Content -LiteralPath (Join-Path $evidence 'actual-inputs.json') -Encoding utf8
+}
 function Scenario([string]$Fault,[string]$ExpectedStage) {
     $root=Join-Path $evidence $Fault;[IO.Directory]::CreateDirectory($root) | Out-Null
     $target=Join-Path $root 'app';[IO.Directory]::CreateDirectory($target) | Out-Null

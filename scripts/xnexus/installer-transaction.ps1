@@ -9,13 +9,17 @@ function ConvertTo-XnCanonicalJson($Value) {
         if ($Item -is [Collections.IDictionary]) {
             $ordered=[ordered]@{}; foreach ($key in @($Item.Keys) | Sort-Object) { $ordered[$key]=Normalize $Item[$key] };return $ordered
         }
-        if ($Item -is [pscustomobject]) {
-            $ordered=[ordered]@{}; foreach ($key in @($Item.PSObject.Properties.Name) | Sort-Object) { $ordered[$key]=Normalize $Item.$key };return $ordered
-        }
+        # ConvertFrom-Json -NoEnumerate can wrap arrays in PSObject; classify
+        # IEnumerable before PSCustomObject so arrays retain their JSON shape.
         if ($Item -is [Collections.IEnumerable] -and $Item -isnot [string]) { return ,@($Item | ForEach-Object { Normalize $_ }) }
+        if ($Item.GetType() -eq [System.Management.Automation.PSCustomObject]) {
+            $ordered=[ordered]@{}; foreach ($property in $Item.PSObject.Properties | Sort-Object Name) { $ordered[$property.Name]=Normalize $property.Value };return $ordered
+        }
         return $Item
     }
-    Normalize $Value | ConvertTo-Json -Depth 30 -Compress
+    # InputObject preserves top-level empty and singleton arrays. Piping them
+    # would drop an empty array or unwrap a single element before serialization.
+    ConvertTo-Json -InputObject (Normalize $Value) -Depth 30 -Compress
 }
 function Assert-XnSame($Before,$After,[string]$Label) {
     if ((ConvertTo-XnCanonicalJson $Before) -cne (ConvertTo-XnCanonicalJson $After)) { throw "Changed $Label; preserve state and stop." }
