@@ -13,27 +13,48 @@ product and `.5` will not be installed over it. M2 must preserve the original
 operating UI with xLog services underneath. M6 TX is required and remains
 unfinished software work, not merely waiting for a hardware test.
 
-The original-interface source checkpoint is `ff59ec067be461b9f6746eff99715e192abaa0ff`.
-The following changes are committed and pushed; none changes the installed
-application or qualifies a complete replacement operating window:
+The original-interface host is committed at
+`ceb0ef61bb1360d8979ddb8bb329a06ad5e9c4f4`; the following source checkpoint adds
+the independently tested rotor-observation helper at `21249e7c7`. The production
+xLog entry now mounts the original Nexus cockpit. These changes do not change
+the installed application or qualify a paired native station candidate:
 
 | Source change | Evidence and remaining boundary |
 |---|---|
 | Scoped original log readers (`453bdc7c3`) | 18 focused tests and integrated TypeScript/Vite passed. Changing an owner source clears retained answers; unsupported owner reads never fall back to the native log. |
 | [Saved station identity client](STATION_IDENTITY_CLIENT_VALIDATION.md) (`cccf2360b`) | 85 SDK tests, actual owner-produced synthetic identity replay, pinned Clippy and integrated TypeScript/Vite passed. Saved call/grid are display facts, not transmit authority. |
-| [Native waterfall](WATERFALL_SOURCE_DRAFT.md) (`c686560bb`) | Six SDK audio, nine assembler and 34 native Worker tests passed. Real existing PCM supplies the FFT; gap/expiry/context changes discard old frames. Full Tauri command compilation and original waterfall presentation are still required. |
+| [Native waterfall](WATERFALL_SOURCE_DRAFT.md) (`c686560bb`) | Six SDK audio, nine assembler and 34 native Worker tests passed. Real existing PCM supplies the FFT; gap/expiry/context changes discard old frames. Subsequent native all-target checking and original full-host waterfall presentation passed; linked native tests remain a separate gate. |
 | [Pure FT8/FT4 period preparation](../../integrations/xlog-tx-prepare/VALIDATION.md) (`5e7f3e47f`) | Six actual encoder/waveform reference and boundary tests, formatting and offline locked manifest checks passed. This deliberately unwired module covers strict standard type-1 messages only; it does not provide sequencing, scheduling, PTT or a TX endpoint. |
 | [Original cockpit service connections](ORIGINAL_COCKPIT_SERVICES_DRAFT.md) (`795cfe955`) | 19 new tests, integrated TypeScript/Vite and 21 original CallCard browser cases passed. The closest upstream suites recorded 365 passing cases across a preserved partial timeout and completed follow-up; the broader 161-file run is not qualified. Original markup/layout remains; missing services cannot acquire a separate station owner. |
 | Original recent-contacts pane (`ff59ec067`) | Nine unit tests, integrated TypeScript/Vite and 12 real-pane browser cases passed. Distinct native positive controls, the original responsive viewport hook, visible callsigns and row clicks were checked. Explicit owner loading/unavailable states remain different from an empty log, without fabricated QSO frequency/confirmation fields. |
+| [Complete owner history/recent read models](../../integrations/xlog/HISTORY_READ_VALIDATION.md) (`93358bb7a`) | 97 SDK tests, actual Swift history and identity producer replays, pinned Clippy and integrated TypeScript passed. Native connection wiring has a separate qualification gate. |
+| [Original history panes](ORIGINAL_HISTORY_UI.md) (`984fbaadd`) | 84 focused card/reader regressions, eight actual Swift payload replay cases and both single-pane and original Classic-rail browser checks passed. Full counts and paper-QSL/LoTW policy remain distinct from limited detail rows. |
+| [Current-context waterfall reader](SPECTRUM_READER.md) (`e75996693`) | 33 frontend tests with actual Rust fixtures and integrated TypeScript passed. Full-host browser checks also rendered a real frame and observed its lease-driven reset. |
+| [Original default operating window](ORIGINAL_HOST_VALIDATION.md) (`ceb0ef61b`) | Original TopBar, ModeNav, Classic/Roster cockpit and waterfall/history panes are the production entry. Focused 34-, 449- and five-case gates, full integrated TypeScript, three-viewport/six-layout browser checks and actual production bundle graph proof passed. Groups overlap; these are not a unique-test total. No native installation or RF qualification follows. |
+| [Rotor observation helper](ROTOR_CONTROL_OBSERVATION.md) (`21249e7c7`) | 31 focused tests and a separate strict TypeScript gate passed. The helper preserves command receipts separately from later owner snapshots; it is still unwired to Point dispatch. |
 
-The actual original operating-window host and its nullable owner/decode model
-are now being implemented. Additive authoritative receive-context/spectrum
-delivery and full-count history/recent contracts are separate active slices.
-The owner history producer and client still need cross-language fixture replay
-and integrated native/UI checks. TX still needs the reviewed owner state machine,
-durable one-shot journal, independent release, scheduler and original sequencer
-integration. M2 and M3–M8 remain open. No new package, version, RF test or
-installation is claimed by this source checkpoint.
+The actual original window now passes isolated frontend/browser qualification.
+It preserves nullable owner facts, explicit receive controls and original decode
+versus Stations-selection gestures. Four failed browser probes remain preserved;
+their corrections changed fixture assumptions/readiness, not product behavior or
+expiry limits. The real production bundle includes OriginalHost and excludes the
+old dashboard from that entry. Native tests, a new version with build provenance,
+private candidate checks and paired acceptance are still required before installation.
+The native all-target check passed with fresh normal and test application
+targets (receipt `69E860819DF1EDBED291B1AEEA3755842BB77D7BBD5385585D26E0BF602EF364`).
+The linked test build exceeded its original 4 GiB cap before executing tests;
+that failed result is preserved. A separately reviewed 8 GiB test profile uses
+14/14 GiB admission and 4/4 GiB runtime reserves. It has not yet qualified the
+12 selected connection/history tests.
+
+M5 next reuses the original contact editor and requires a full by-ID owner read:
+the existing compact history projection does not establish full contact or
+confirmation completeness. Rotor Point/reconciliation and other original
+cluster/propagation views remain software work. TX's pure waveform preparation
+and an offline owner reservation/journal foundation have focused checks, but the
+actual manifest transfer, scheduler, exact physical ownership/release and original
+sequencer remain unfinished. M2 and M3–M8 remain open. No new package, version,
+RF test or installation is claimed by this source checkpoint.
 
 Installed xNexus remains `.4` at `ae35fc643`. The xLog owner reports `1.6.31`
 at `a00697f5458c64cf806e4c9647fcd133fc30391b` packaged, installed and privately
