@@ -119,10 +119,17 @@ recorded source hashes stayed unchanged. This is synthetic compatibility evidenc
 not live DAX, actual logbook classification or installed GUI qualification.
 
 The clean, pushed owner candidate is xLog 1.6.29 at
-`1ff361bfa4f0d1f92c1f1f0323f9dcd166f1da44`. Its build is underway; package
-completion and installation are not claimed. Installed 1.6.28 remains the failed
-live candidate with sharing stopped. Live 1.6.29 receive/needs acceptance is
-pending. No xNexus runtime edit, version change or rebuild is required by the
+`1ff361bfa4f0d1f92c1f1f0323f9dcd166f1da44`. Optimized native compilation completed
+in 18m31s with root exit 0, but a retained VCTIP helper caused lifecycle exit 125;
+cleanup confirmed zero processes. The candidate is superseded and was never
+packaged or installed. Installed 1.6.28 remains the failed live candidate with
+sharing stopped. The [cluster correction](RETAINED_CLUSTER_INCIDENT_2026-11-15.md)
+subsequently passed actual producer regression, related suites and unchanged-input
+replay. Both fixes are in clean, published xLog 1.6.30 candidate
+`8795606bdbb5ac029287518a826f189d8873d117`, implementation
+`4025ee6f057e811343a506ea131bba9acd1ea312`. Package, installation and live
+receive/needs acceptance are still pending.
+No xNexus runtime edit, version change or rebuild is required by the
 tested recovery compatibility result.
 
 ## Separate UI backlog: obsolete polling alert

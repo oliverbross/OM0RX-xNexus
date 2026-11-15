@@ -15,13 +15,20 @@ attempt, but at 04:07:59 UTC it failed a distinct 50 ms uncertainty guard
 (50,459 microseconds). No decoded rows/needs were observed or receive soak started.
 Installed 1.6.28 sharing remains stopped. The reviewed recovery correction is in
 clean, pushed xLog 1.6.29 candidate `1ff361bfa4f0d1f92c1f1f0323f9dcd166f1da44`;
-its build is underway, not yet reported packaged or installed.
-Installation of that frozen candidate and owner closure are now held for a
+its optimized native compile completed in 18m31s with root exit 0. A retained
+MSVC VCTIP helper caused lifecycle exit 125; cleanup confirmed zero processes.
+That candidate is superseded and was never packaged or installed. Owner closure
+remains held for a
 separately confirmed [retained-cluster reply-shape defect](RETAINED_CLUSTER_INCIDENT_2026-11-15.md).
 The host/projector read an extra `response.result` level, guaranteeing empty
-companion cluster output even for a nonempty retained owner payload. A reviewed
-patch is prepared, but canonical correction and compiled regression remain
-pending. Installed 1.6.28 is unchanged; planned 1.6.30 will combine fixes after tests.
+companion cluster output even for a nonempty retained owner payload. The
+actual producer regression reproduced the missing classification/logbook revisions,
+then passed after correction `4025ee6f057e811343a506ea131bba9acd1ea312`.
+Related 20 cluster/nine projection tests, 127 bridge tests and 29 unchanged-input
+export replays passed. Clean, published xLog 1.6.30 candidate
+`8795606bdbb5ac029287518a826f189d8873d117` combines both fixes; package and
+installation remain pending. Installed 1.6.28 is unchanged. The earlier tests
+are not retroactively reclassified as actual retained-owner wiring proof.
 It remains unsigned. [The build record](WINDOWS_BUILD_1.24.1-xlog.4.md) binds the
 actual tools, reviewed 12 GiB supervisor, artifacts and warning qualification.
 The packaging freeze is released for reviewed documentation/tooling integration;
@@ -44,7 +51,7 @@ input. Native six-minute metadata observation and exact Buffer replay passed;
 [cross-application recovery acceptance](../../integrations/xlog-paired/RX_RECOVERY_ACCEPTANCE.md)
 also passed against unchanged `.4`: two five-client cases, 19 Worker tests and
 generated FT4 recovery after actual declared-gap/timing discards. These results
-do not qualify live 1.6.29 receive/needs, whose candidate is still building.
+do not qualify live receive/needs; the 1.6.29 candidate is now superseded.
 Owner `stopped` state retains the companion subscription
 and can resume on a new valid descriptor, so this is not a terminal UI-state claim.
 Both live failures remain preserved; see [the incident and exact evidence](RX_CLOCK_INCIDENT_2026-11-15.md).

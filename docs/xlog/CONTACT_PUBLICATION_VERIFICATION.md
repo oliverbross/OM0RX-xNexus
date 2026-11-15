@@ -8,8 +8,11 @@ evidence, not installed host, native UI or physical station acceptance.
 envelope with an extra `response.result` level, matching the erroneous consumer
 instead of the actual ClusterSession producer. Its 23 exports establish mapping
 of worker classifications, not retained-owner wiring. The newly confirmed
-[reply-shape incident](RETAINED_CLUSTER_INCIDENT_2026-11-15.md) requires a real
-producer-to-consumer regression; no compiled correction is claimed yet.
+[reply-shape incident](RETAINED_CLUSTER_INCIDENT_2026-11-15.md) now records the real
+producer-to-consumer failing-then-passing regression, 20 cluster/nine projection
+and 127 bridge tests, plus corrected replay of all 23 publication/six classification
+exports with unchanged inputs. Correction `4025ee6f` is published in candidate
+1.6.30 source `8795606b`; package/install and live propagation remain pending.
 
 ## Owner mutations
 
