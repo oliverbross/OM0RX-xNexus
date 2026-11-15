@@ -116,8 +116,9 @@ have not been measured. See [RX_DESKTOP.md](RX_DESKTOP.md) for qualification.
 ## Current boundaries
 
 Theme and interface scale currently reset on restart. The saved QSO draft and
-native queue use separate persistent storage; Mac private draft recovery has
-been verified.
+native queue use separate persistent storage. Windows `.4` and the earlier Mac
+`.3` passed their separate private A→B→A draft recovery checks; the updated Mac
+candidate still requires qualification.
 
 Companion mode has no automatic QSO sequence or transmit control. Physical DAX
 receive qualification is still pending. Closing xLog leaves xNexus open with

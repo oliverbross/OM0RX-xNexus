@@ -7,8 +7,10 @@ repair, installer hardening and completed SDK/native/UI integration.
 [The exact build evidence](WINDOWS_BUILD_1.24.1-xlog.4.md) records artifacts,
 actual tools, resource limits, natural process cleanup and the NSIS warning
 qualification. The [real disposable install/uninstall](WINDOWS_INSTALLER_1.24.1-xlog.4.md)
-passed; permanent installation and native UI acceptance remain in progress.
-The candidate is unsigned; canonical source remains frozen during acceptance.
+passed, followed by native A→B→A profile/lifecycle checks and permanent current-user
+installation. The installed application was left closed. Paired UI and physical
+station acceptance remain open. The candidate is unsigned; package/runtime
+source remains exact `ae35`, regardless of later documentation/tooling commits.
 Source tests, an artifact audit, native lifecycle checks and physical station
 qualification remain separate gates; see the maintained [execution ledger](STATUS.md).
 

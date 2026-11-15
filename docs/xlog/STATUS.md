@@ -6,7 +6,8 @@ binaries and physical station acceptance are separate evidence levels.
 [Candidate 1.24.1-xlog.4](CANDIDATE_1.24.1-xlog.4.md) has a completed Windows
 build, static artifact audit and independent retention from clean canonical
 `ae35fc6435f861e38029049299833afe57de4885`. The [disposable install/uninstall](WINDOWS_INSTALLER_1.24.1-xlog.4.md)
-passed; permanent installation and native UI acceptance remain in progress.
+passed, followed by native A→B→A profile/lifecycle checks and permanent current-user
+installation. The installed application was left closed; paired UI remains pending.
 It remains unsigned. [The build record](WINDOWS_BUILD_1.24.1-xlog.4.md) binds the
 actual tools, reviewed 12 GiB supervisor, artifacts and warning qualification.
 Canonical source remains frozen during acceptance. The xLog owner reports
@@ -38,12 +39,12 @@ new implementation still requires its own source tests and candidate qualificati
 |---|---|---|
 | M0 | Complete: full upstream history, private fork, fetch-only upstream, nine tracked milestones | Maintain upstream review and patch inventory |
 | M1 | 80 client tests plus exact replay of 40 Swift needs replies; actual owner HTTP and SQLite restart/receipt tests; base bridge merged into canonical xLog | Paired installed-application acceptance |
-| M2 | Separate companion startup, native pairing and private profile; no local station services | Final candidate native GUI and lifecycle acceptance |
+| M2 | Separate companion startup; no local station services; `.4` Windows A→B→A private profiles and ordinary lifecycle passed | Final candidate native pairing and installed station lifecycle |
 | M3 | xLog-authoritative call/DXCC needs, band/world maps, selected-call history; owner/SDK/native/UI tests and integrated Windows all-targets check passed; `.4` Windows artifact audited | Paired UI; installed classification propagation; richer confirmation/award policy evidence |
 | M4 | Owner-mediated tune/point and independent Stop; connection-bound Stop fix merged after 95 focused and 1,164 full native tests; xLog 1.6.27 installed qualification passed | Paired UI and physical control qualification |
 | M5 | Durable outbox and atomic owner write/receipt; restart, replay and edit-conflict tests | Paired native GUI acceptance; queue archive/export design |
 | M6 | FLEX slice A → DAX Audio RX 1 selected; bounded owner PCM, client, FIR/period assembler, threaded native FT8/FT4 decoder and receive UI; generated FT4 to needs chain passed | Confirm live mapping/endpoint; active reception and clock/route qualification; TX implementation and supervised qualification |
-| M7 | Distinct identity, repaired profile construction, reviewed installer guards; `.4` Windows build, audit, retention and disposable install/uninstall passed | Isolated application and permanent installation acceptance |
+| M7 | Distinct identity, repaired profile construction, reviewed installer guards; `.4` Windows build, audit, retention, A→B→A, disposable install/uninstall and permanent installation passed | Paired installed station acceptance |
 | M8 | `.4` Windows artifact audited; Mac .3 A→B→A isolation and exact .3 Linux contract/desktop checks passed | Updated Linux/Mac checks and packages, paired UI, native lifecycle, signing and distribution qualification |
 
 RX runtime integration source is `e3ae1534ade5c34dd4e2d3a81bfbe3a72be15d5c`.
@@ -132,7 +133,11 @@ checks, but capture/input geometry failed and keyboard navigation did not move
 focus. That sequence remains incomplete, with evidence retained; production
 xLog was untouched. That historical failure remains preserved. The operator
 has since confirmed the desktop is unlocked and available; new private Nexus
-UI acceptance is in progress with process/isolation checks before observation.
+UI acceptance has now passed A→B→A private profile/lifecycle checks, with exact
+process/isolation checks before accessibility observation. Graphics capture
+timed out; no screenshot qualification is claimed. No pairing or QSO submission
+was part of that check. Permanent current-user installation also passed and left
+the application closed. See [the exact receipts](WINDOWS_INSTALLER_1.24.1-xlog.4.md).
 
 ## CI and upstream
 

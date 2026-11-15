@@ -116,8 +116,9 @@ changed packaged source requires a new version. This fixture does not qualify
 a real installation or another NSIS toolchain.
 
 [Subsequent disposable installer acceptance](WINDOWS_INSTALLER_1.24.1-xlog.4.md)
-passed. Permanent installation, native private profile/lifecycle and paired UI
-acceptance remain in progress. Updated Linux/macOS
+passed, followed by permanent installation and native A→B→A private
+profile/lifecycle acceptance. The installed application was left closed; paired
+UI acceptance remains pending. Updated Linux/macOS
 checks and packages, physical DAX reception, clock/route qualification, signing
 and distribution remain separate. Digital TX is neither implemented nor enabled.
 The xLog owner reports 1.6.27 packages, installation and installed qualification

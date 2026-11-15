@@ -3,7 +3,8 @@
 This private development candidate has a completed Windows build, static artifact
 audit and independent retention at exact source
 `ae35fc6435f861e38029049299833afe57de4885`. The [disposable install/uninstall](WINDOWS_INSTALLER_1.24.1-xlog.4.md)
-passed; permanent installation and native UI acceptance remain in progress.
+passed, followed by native A→B→A profile/lifecycle checks and permanent current-user
+installation. The installed application was left closed; paired UI remains pending.
 It is unsigned and not a published release. See [the durable build evidence](WINDOWS_BUILD_1.24.1-xlog.4.md).
 Exact pre-version source is
 `7f08478c564382f4cc9eed775846faa9a088ba1e`.
@@ -42,8 +43,8 @@ Updated Linux tooling fixtures and cache seeding passed, but contract/desktop
 checks were held for host memory. Updated Mac checking remains held; the latest
 32% resource probe was below its 35% admission threshold, with no new frontend
 or compiler child. Earlier `.3` evidence does not qualify this new source.
-Windows native lifecycle and paired acceptance remain open; disposable installer
-acceptance passed. The operator confirmed FLEX slice A → DAX Audio RX 1 and an
+Windows private profile/lifecycle, disposable install/uninstall and permanent
+installation passed. Native paired acceptance remains open. The operator confirmed FLEX slice A → DAX Audio RX 1 and an
 unlocked, available desktop. Exact live mapping, endpoint reception and timing
 still require physical qualification. Digital transmit is not implemented or enabled.
 
