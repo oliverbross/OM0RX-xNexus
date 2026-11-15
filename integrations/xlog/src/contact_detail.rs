@@ -444,3 +444,6 @@ impl<'de> Deserialize<'de> for ContactDetail {
 
 #[cfg(test)]
 mod tests;
+
+/// Authenticated selected-contact reads; no native/UI wiring.
+pub mod client;
