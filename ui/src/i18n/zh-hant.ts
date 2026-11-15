@@ -10536,4 +10536,13 @@ export const ZH_HANT: PartialCatalog = {
   "xlog.need.worked": "已聯絡",
   "xlog.need.unknown": "未知",
   "xlog.history.unavailable": "在 xLog 提供目前結果之前，歷史記錄無法使用。",
+  "contactCard.owner.unavailable": "無法使用",
+  "contactCard.owner.readOnly": "xLog通聯紀錄為唯讀。此處尚未接入編輯功能。",
+  "contactCard.owner.notFound": "在xLog中找不到此通聯紀錄。",
+  "contactCard.owner.deleted": "此通聯紀錄已在xLog中刪除。",
+  "contactCard.owner.mismatch": "通聯詳情與所選紀錄不符。",
+  "contactCard.owner.dependentUnavailable": "此通聯詳情未提供這些資訊。",
+  "contactCard.owner.rawConfirmations": "保留的確認欄位；上傳回執與獎狀認定是獨立資訊。",
+  "contactCard.owner.awardAuthority": "獎狀認定",
+  "contactCard.owner.uploadReceipt": "{{service}}上傳回執",
 }

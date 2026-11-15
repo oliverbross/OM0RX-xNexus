@@ -10542,4 +10542,13 @@ export const IT: PartialCatalog = {
   "xlog.need.worked": "Collegato",
   "xlog.need.unknown": "Sconosciuto",
   "xlog.history.unavailable": "Lo storico non è disponibile finché xLog non fornisce una risposta aggiornata.",
+  "contactCard.owner.unavailable": "Non disponibile",
+  "contactCard.owner.readOnly": "Contatto xLog in sola lettura. La modifica non è ancora collegata qui.",
+  "contactCard.owner.notFound": "Questo contatto non è stato trovato in xLog.",
+  "contactCard.owner.deleted": "Questo contatto è stato eliminato da xLog.",
+  "contactCard.owner.mismatch": "I dettagli del contatto non corrispondono a questa selezione.",
+  "contactCard.owner.dependentUnavailable": "Queste informazioni non sono incluse nei dettagli del contatto.",
+  "contactCard.owner.rawConfirmations": "Campi di conferma conservati; le ricevute di caricamento e la convalida per i diplomi sono separate.",
+  "contactCard.owner.awardAuthority": "Convalida per i diplomi",
+  "contactCard.owner.uploadReceipt": "Ricevuta di caricamento {{service}}",
 }

@@ -10543,4 +10543,13 @@ export const RU: PartialCatalog = {
   "xlog.need.worked": "Сработан",
   "xlog.need.unknown": "Неизвестно",
   "xlog.history.unavailable": "История недоступна, пока xLog не предоставит актуальный ответ.",
+  "contactCard.owner.unavailable": "Недоступно",
+  "contactCard.owner.readOnly": "Связь из xLog доступна только для чтения. Редактирование здесь ещё не подключено.",
+  "contactCard.owner.notFound": "Эта связь не найдена в xLog.",
+  "contactCard.owner.deleted": "Эта связь удалена из xLog.",
+  "contactCard.owner.mismatch": "Данные связи не соответствуют выбранной записи.",
+  "contactCard.owner.dependentUnavailable": "Эти сведения отсутствуют в подробных данных связи.",
+  "contactCard.owner.rawConfirmations": "Сохранённые поля подтверждений; квитанции загрузки и признание для дипломов учитываются отдельно.",
+  "contactCard.owner.awardAuthority": "Признание для дипломов",
+  "contactCard.owner.uploadReceipt": "Квитанция загрузки {{service}}",
 }

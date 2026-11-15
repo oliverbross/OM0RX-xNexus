@@ -10580,4 +10580,13 @@ export const ES: PartialCatalog = {
   "xlog.need.worked": "Trabajado",
   "xlog.need.unknown": "Desconocido",
   "xlog.history.unavailable": "El historial no está disponible hasta que xLog proporcione una respuesta actual.",
+  "contactCard.owner.unavailable": "No disponible",
+  "contactCard.owner.readOnly": "Contacto de xLog de solo lectura. La edición aún no está conectada aquí.",
+  "contactCard.owner.notFound": "No se encontró este contacto en xLog.",
+  "contactCard.owner.deleted": "Este contacto se eliminó de xLog.",
+  "contactCard.owner.mismatch": "Los detalles del contacto no corresponden a esta selección.",
+  "contactCard.owner.dependentUnavailable": "Estos datos no se incluyen en los detalles del contacto.",
+  "contactCard.owner.rawConfirmations": "Campos de confirmación guardados; los comprobantes de subida y la validación para diplomas son independientes.",
+  "contactCard.owner.awardAuthority": "Validación para diplomas",
+  "contactCard.owner.uploadReceipt": "Comprobante de subida de {{service}}",
 }

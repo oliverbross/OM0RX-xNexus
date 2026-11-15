@@ -10534,4 +10534,13 @@ export const ZH: PartialCatalog = {
   "xlog.need.worked": "已联络",
   "xlog.need.unknown": "未知",
   "xlog.history.unavailable": "在 xLog 提供当前结果之前，历史记录不可用。",
+  "contactCard.owner.unavailable": "不可用",
+  "contactCard.owner.readOnly": "xLog通联记录为只读。此处尚未接入编辑功能。",
+  "contactCard.owner.notFound": "在xLog中未找到此通联记录。",
+  "contactCard.owner.deleted": "此通联记录已在xLog中删除。",
+  "contactCard.owner.mismatch": "通联详情与所选记录不匹配。",
+  "contactCard.owner.dependentUnavailable": "此通联详情未提供这些信息。",
+  "contactCard.owner.rawConfirmations": "保留的确认字段；上传回执与奖状认定是独立信息。",
+  "contactCard.owner.awardAuthority": "奖状认定",
+  "contactCard.owner.uploadReceipt": "{{service}}上传回执",
 }

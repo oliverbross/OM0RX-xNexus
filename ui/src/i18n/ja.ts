@@ -10563,4 +10563,13 @@ export const JA: PartialCatalog = {
   "xlog.need.worked": "交信済み",
   "xlog.need.unknown": "不明",
   "xlog.history.unavailable": "xLog から最新の応答が届くまで履歴は利用できません。",
+  "contactCard.owner.unavailable": "利用不可",
+  "contactCard.owner.readOnly": "xLogの交信記録は読み取り専用です。ここでの編集はまだ接続されていません。",
+  "contactCard.owner.notFound": "この交信記録はxLogに見つかりませんでした。",
+  "contactCard.owner.deleted": "この交信記録はxLogで削除されました。",
+  "contactCard.owner.mismatch": "交信記録の詳細が選択内容と一致しません。",
+  "contactCard.owner.dependentUnavailable": "この交信記録の詳細には含まれていません。",
+  "contactCard.owner.rawConfirmations": "保存された確認項目です。アップロード受領記録とアワード認定は別の情報です。",
+  "contactCard.owner.awardAuthority": "アワード認定",
+  "contactCard.owner.uploadReceipt": "{{service}}アップロード受領記録",
 }
