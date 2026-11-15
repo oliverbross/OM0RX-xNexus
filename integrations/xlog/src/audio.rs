@@ -169,13 +169,24 @@ pub(crate) mod tests {
         let mut c = client();
         let mut b = accept(&mut c, fixture(NOW)).unwrap();
         assert!(b.is_fresh());
+        let remaining = b.remaining_valid_ms();
+        assert!(remaining > 0);
+        assert!(b.remaining_valid_ms() <= remaining);
+        b.expires = Instant::now() + Duration::from_nanos(999_999);
+        assert_eq!(
+            b.remaining_valid_ms(),
+            0,
+            "submillisecond lease is not display authority"
+        );
         b.expires = Instant::now();
         assert!(!b.is_fresh());
+        assert_eq!(b.remaining_valid_ms(), 0);
         let mut c = client();
         let b = accept(&mut c, fixture(NOW)).unwrap();
         assert!(b.is_fresh());
         c.disconnect();
         assert!(!b.is_fresh());
+        assert_eq!(b.remaining_valid_ms(), 0);
     }
 }
 impl AudioDescriptor {
@@ -248,6 +259,17 @@ pub struct AudioBatch {
     receiver: Arc<AtomicBool>,
 }
 impl AudioBatch {
+    /// Original authenticated lease, floored to milliseconds. Reading it never
+    /// refreshes samples or extends the owner/session authority.
+    pub fn remaining_valid_ms(&self) -> u64 {
+        if !self.is_fresh() {
+            return 0;
+        }
+        self.expires
+            .saturating_duration_since(Instant::now())
+            .as_millis()
+            .min(u128::from(u64::MAX)) as u64
+    }
     /// Check again immediately before consuming a queued batch.
     pub fn is_fresh(&self) -> bool {
         self.session.load(Ordering::Acquire)

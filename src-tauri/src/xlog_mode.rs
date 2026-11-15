@@ -440,6 +440,11 @@ fn xlog_rx_status(state: State<'_, Shared>) -> Result<crate::xlog_rx_worker::Vie
 }
 
 #[tauri::command]
+fn xlog_rx_spectrum(state: State<'_, Shared>, after: Option<crate::xlog_rx_worker::SpectrumCursor>) -> Result<Option<crate::xlog_rx_worker::SpectrumFrame>, String> {
+    lock(&state)?.rx.as_ref().map_or(Ok(None), |worker| worker.spectrum(after.as_ref()))
+}
+
+#[tauri::command]
 fn xlog_rx_stop(state: State<'_, Shared>) -> Result<crate::xlog_rx_worker::View, String> {
     let mut session = lock(&state)?;
     session.rx_generation = session.rx_generation.wrapping_add(1);
@@ -662,6 +667,7 @@ pub(crate) fn run() {
             xlog_outbox_deliver,
             xlog_history,
             xlog_rx_status,
+            xlog_rx_spectrum,
             xlog_rx_start,
             xlog_rx_stop
         ])

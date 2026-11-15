@@ -175,6 +175,22 @@ pub struct RxAssembler {
     calibration_us: u32,
 }
 
+/// Borrowed real resampler output, exposed only after the entire input chunk
+/// passes assembly checks. The observer must do bounded work and must not block.
+/// Nominal output position i is origin_device_frame + (first_output_index + i)
+/// * source_rate / OUTPUT_RATE + (31.5 when resampling, otherwise zero).
+/// This rational schedule is not an exact analog center: the existing FIR rounds
+/// fractional source phase to its 256-phase table (with the final phase capped).
+pub struct ValidatedSamples<'a> {
+    pub samples: &'a [f32],
+    pub origin_device_frame: u64,
+    pub origin_unix_us: u64,
+    pub first_output_index: u64,
+    pub source_rate: u32,
+    pub host_mapping_uncertainty_us: u32,
+    pub calibration_uncertainty_us: u32,
+}
+
 impl Default for RxAssembler {
     fn default() -> Self {
         Self {
@@ -220,7 +236,16 @@ impl RxAssembler {
         context: &ReceiveContext,
         chunk: PcmChunk<'_>,
     ) -> Result<Option<CompletePeriod>, RxError> {
-        let result = self.push_inner(context, chunk);
+        self.push_observed(context, chunk, |_| {})
+    }
+
+    pub fn push_observed(
+        &mut self,
+        context: &ReceiveContext,
+        chunk: PcmChunk<'_>,
+        mut observe: impl FnMut(ValidatedSamples<'_>),
+    ) -> Result<Option<CompletePeriod>, RxError> {
+        let result = self.push_inner(context, chunk, &mut observe);
         if result.is_err() {
             self.reset();
         }
@@ -231,6 +256,7 @@ impl RxAssembler {
         &mut self,
         context: &ReceiveContext,
         chunk: PcmChunk<'_>,
+        observe: &mut impl FnMut(ValidatedSamples<'_>),
     ) -> Result<Option<CompletePeriod>, RxError> {
         if self.exhausted {
             return Err(RxError::CounterOverflow);
@@ -307,7 +333,8 @@ impl RxAssembler {
         };
         let center_ns = ceil_div(i128::from(center_twice) * 1_000_000_000, 2 * rate) as u64;
         let mut completed = None;
-        for sample in output {
+        let first_output_index = self.output_count;
+        for &sample in &output {
             // Numerator of the physical input center read by this FIR output.
             let center = i128::from(center_twice) * i128::from(OUTPUT_RATE)
                 + 2 * i128::from(self.output_count) * rate;
@@ -376,6 +403,17 @@ impl RxAssembler {
                 .output_count
                 .checked_add(1)
                 .ok_or(RxError::CounterOverflow)?;
+        }
+        if !output.is_empty() {
+            observe(ValidatedSamples {
+                samples: &output,
+                origin_device_frame: self.origin_frame,
+                origin_unix_us: self.origin_us,
+                first_output_index,
+                source_rate: context.owner.sample_rate,
+                host_mapping_uncertainty_us: self.uncertainty_us,
+                calibration_uncertainty_us: self.calibration_us,
+            });
         }
         Ok(completed)
     }
@@ -455,6 +493,77 @@ mod tests {
             index += 1;
         }
         panic!("complete captured period was not emitted");
+    }
+
+    #[test]
+    fn observed_real_samples_are_chunk_invariant_without_warmup_padding() {
+        let input: Vec<i16> = (0..9600).map(|n| ((n % 997) as i16 - 498) * 20).collect();
+        let run = |pattern: &[usize]| {
+            let ctx = context(48000, RxMode::Ft8);
+            let mut assembler = RxAssembler::default();
+            let mut actual = Vec::new();
+            let mut offset = 0;
+            let mut sequence = 1;
+            while offset < input.len() {
+                let count =
+                    pattern[(sequence as usize - 1) % pattern.len()].min(input.len() - offset);
+                assembler
+                    .push_observed(
+                        &ctx,
+                        chunk(
+                            &input[offset..offset + count],
+                            offset as u64,
+                            sequence,
+                            48000,
+                            13_000_006,
+                        ),
+                        |span| {
+                            assert_eq!(span.first_output_index, actual.len() as u64);
+                            assert_eq!(span.origin_unix_us, 13_000_006);
+                            assert_eq!(span.origin_device_frame, 0);
+                            assert_eq!(span.source_rate, 48000);
+                            actual.extend_from_slice(span.samples);
+                        },
+                    )
+                    .unwrap();
+                offset += count;
+                sequence += 1;
+            }
+            actual
+        };
+        let whole = run(&[4096]);
+        let split = run(&[1, 31, 32, 63, 127]);
+        assert_eq!(whole, split);
+        assert!(!whole.is_empty());
+        assert!(whole.len() < input.len() / 4, "full real FIR windows only");
+        let mut assembler = RxAssembler::default();
+        let mut observed = false;
+        assembler
+            .push_observed(
+                &context(48000, RxMode::Ft8),
+                chunk(&input[..63], 0, 1, 48000, 13_000_006),
+                |_| observed = true,
+            )
+            .unwrap();
+        assert!(!observed, "no synthetic FIR warmup padding");
+    }
+
+    #[test]
+    fn rejected_chunk_never_reaches_output_observer() {
+        let ctx = context(12000, RxMode::Ft8);
+        let samples = [1i16; 2048];
+        let mut assembler = RxAssembler::default();
+        assembler
+            .push(&ctx, chunk(&samples, 0, 1, 12000, 13_000_006))
+            .unwrap();
+        let mut observed = false;
+        assert!(assembler
+            .push_observed(&ctx, chunk(&samples, 2049, 2, 12000, 13_000_006), |_| {
+                observed = true
+            })
+            .is_err());
+        assert!(!observed);
+        assert!(assembler.context.is_none());
     }
 
     #[test]
