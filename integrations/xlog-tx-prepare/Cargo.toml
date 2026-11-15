@@ -1,0 +1,19 @@
+[package]
+name = "xnexus-tx-prepare"
+version = "0.1.0"
+edition = "2021"
+license = "GPL-3.0-only"
+publish = false
+description = "Unwired, local-only single-period FT8/FT4 preparation prototype"
+
+# No root/desktop membership: this prototype cannot enable an operating path.
+[workspace]
+
+[dependencies]
+modes = { path = "../../crates/modes" }
+sha2 = "=0.10.9"
+
+[dev-dependencies]
+# Test-only independent vendored reference; never called by the adapter.
+ft8 = { path = "../../crates/ft8" }
+ft4 = { path = "../../crates/ft4" }
