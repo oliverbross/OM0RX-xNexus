@@ -114,20 +114,23 @@ and [internal-only `.5` Windows build/audit/retention](WINDOWS_BUILD_1.24.1-xlog
 Installed xNexus remains `.4`; xLog owner `.31` installation is a separate
 checkpoint, not paired live qualification. The highest product priority is M2:
 preserve the original Nexus interface and route its services through xLog.
-Source checkpoint `ff59ec067` now contains tested original cockpit service
-connections, scoped log readers, saved station identity, real native waterfall
-frames, the original recent-contacts pane's external-read seam, and an unwired
-pure transmit-period generator. Their exact evidence and limitations are in the
-[execution ledger](STATUS.md). These component passes do not qualify the complete
-original operating window, which is the active next implementation slice.
+Source checkpoint `ceb0ef61b` now mounts the actual original Nexus operating
+window as the production xLog entry. Its nullable owner model, original panes,
+shared full-count history reader, receive controls and real waterfall passed
+focused tests, integrated TypeScript and three-viewport/six-layout browser checks.
+The production bundle graph proves the original host is included. The subsequent
+`21249e7c7` adds a tested, still-unwired rotor observation helper. Exact evidence
+and limits are in the [execution ledger](STATUS.md). These passes qualify frontend
+source and isolated browser behavior; native packaging and paired station
+acceptance remain required.
 The work below remains necessary and can be prepared in isolated branches
 without operating the station; `.5` will not be installed as the final UI.
 
 | Priority / milestone | Concrete software work | Source seam and exit evidence |
 |---|---|---|
-| Immediate / M2 | Mount the actual original Nexus operating window over its tested service connections; finish nullable owner/decode facts and current-context waterfall delivery | Original `TopBar`, `ModeNav`, Classic/Roster cockpit and recent-contact markup. Do not construct an invented `AppSnapshot` or treat unknown worked status as unworked. Preserve immutable decode IDs and original controls; actual complete-host browser and native tests are still required. |
+| Immediate / M2 | Qualify the restored original production entry in a native candidate and the paired xLog workflow | Frontend and complete-host browser checks passed; preserve their exact source identity in a new version/build receipt. Native history/connection tests and private candidate lifecycle, then paired RX/needs/history acceptance, remain open. Desktop-control automation stays off after cursor recovery. |
 | 1 / M4 | Reconcile accepted control requests with later owner observations; retain uncertain outcomes without automatic resubmission | `ui/src/xlog/App.tsx`, `api.ts`, `src-tauri/src/xlog_mode.rs` and owner command receipts. Current UI reports Accepted/awaiting observation but exposes no follow-up control status. Test delayed confirmation, rejection, replacement and disconnect through actual owner handlers. |
-| 2 / M5 | Complete Windows native create/edit/receipt/restart coverage against a disposable actual-owner SQLite workspace; design terminal receipt archive/export | `integrations/xlog/src/outbox.rs`, native queue endpoints and `QsoPanel.tsx`. Current outbox retains terminal operations and refuses new entries at 10,000. Archive must preserve uncertain work, immutable request IDs, auditability and duplicate protection across crashes. No production-log mutation is part of this software gate. |
+| 2 / M5 | Connect the original contact editor to the durable xLog outbox, then qualify native create/edit/receipt/restart against disposable actual-owner SQLite | Add an authenticated by-contact-ID full-detail read using the owner's existing contact snapshot; compact history `details_complete` only covers its bounded projection. Preserve nullable fields and confirmation provenance. Reuse original editor markup, distinguish queued from applied, and keep unsupported fields read-only. Terminal archive work must preserve uncertain requests, auditability and duplicate protection. No production-log mutation is part of this software gate. |
 | 3 / M3 | Expand owner confirmation/award provenance and its presentation, then reuse propagation views without starting independent station services | `HistoryPanel.tsx`/history DTO currently expose worked/confirmed booleans; companion views reuse band/offline world maps, not the propagation engine. Add actual-producer fixtures for source-specific eligibility, corrections and revision changes; keep propagation evidence distinct from authoritative owner needs. |
 | 4 / M6 | Implement the reviewed TX draft's offline owner state machine, durable one-shot journal and independent release before a hardware backend; then modem/scheduler and bounded protocol | [TX_DESIGN_DRAFT.md](TX_DESIGN_DRAFT.md). Use fake transports/clocks and disposable journals for lost replies, blocked acquisition, stale release, restart without replay and timing bounds. Wire limits and ownership contracts require owner agreement; no TX capability or RF qualification follows from offline tests. |
 | 5 / M7–M8 | Run updated integrated frontend/native gates and prepare same-source platform artifacts, corresponding source/licenses and maintenance evidence | `scripts/xnexus`, platform build receipts and `PATCH_INVENTORY.md`. Resume resource-held Mac/Linux checks without lowering guards; audit produced artifacts, and rehearse any upstream promotion against the final integrated source. Signing/notarization and native platform lifecycle remain explicit release gates. |
