@@ -1,0 +1,13 @@
+{
+  "schema": 1,
+  "candidate_id": "kaiser-513-fc6000-beta10-x4-candidate1",
+  "sample_rate": 48000,
+  "factor": 4,
+  "taps": 513,
+  "cutoff_hz": 6000,
+  "beta": 10,
+  "delay_frames": 256,
+  "coefficient_sha256": "b3b266e2346da0272cdb1910943a6ba8020d17a56e55a7b0eb0f12cd2c73c764",
+  "coefficient_bytes": 4104,
+  "qualified": false
+}
