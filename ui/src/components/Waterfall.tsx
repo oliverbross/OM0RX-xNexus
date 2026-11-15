@@ -156,11 +156,13 @@ function readOverlayInks(el: Element): OverlayInks {
 }
 
 interface Props {
-  transmitting: boolean
+  /** Retire all retained pixels/history when the external source lease changes. */
+  resetKey?: string | number
+  transmitting: boolean | null
   /** Receive audio offset (Hz) — the green marker (where we listen). */
   rxOffsetHz: number
   /** Transmit audio offset (Hz) — the red marker (where we transmit). */
-  txOffsetHz: number
+  txOffsetHz: number | null
   theme: string
   /** Tune from a waterfall click: set the TX offset, the RX offset, or both. */
   onTune?: (freqHz: number, target: 'tx' | 'rx' | 'both') => void
@@ -383,6 +385,7 @@ function xToFreq(x: number, width: number, lo = F_MIN, hi = F_MAX): number {
 }
 
 export function Waterfall({
+  resetKey,
   transmitting,
   rxOffsetHz,
   txOffsetHz,
@@ -644,12 +647,13 @@ export function Waterfall({
     return `linear-gradient(to top, ${stops.join(', ')})`
   }, [palette, theme, night, skin, contrastCurve])
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const canvas = canvasRef.current
     const host = renderHostRef.current
     if (!canvas || !host) return
     // `canvas` is the gesture box and is measured, never painted; the renderer puts its own canvas
     // in `host` (see `renderHostRef`) and draws the picture there.
+    offsetRef.current = 0
     const renderer = createSpectrumRenderer(host)
     rendererRef.current = renderer
     // Marker/axis overlay context (transparent, cleared when it redraws). Optional — if it can't be
@@ -658,6 +662,7 @@ export function Waterfall({
     const octx = overlay?.getContext('2d') ?? null
     const release = () => {
       renderer.destroy()
+      if (overlay && octx) octx.clearRect(0, 0, overlay.width, overlay.height)
       if (rendererRef.current === renderer) rendererRef.current = null
     }
     // Nothing to draw on at all (no canvas context of either kind, as under jsdom): no loop, as the
@@ -828,7 +833,7 @@ export function Waterfall({
       // bottom line and desync the AGC/legend from the displayed pixels).
       let spec
       try {
-        spec = await getSpectrumRow(txRef.current)
+        spec = await getSpectrumRow(txRef.current === true)
       } catch {
         return
       }
@@ -836,6 +841,7 @@ export function Waterfall({
       // waterfall has moved on. Resolving late must not append a row out of order — a stale
       // row would put a wrong scanline into the history every picture is drawn from.
       if (!latch.owns(myGen)) return
+      if (!spec) return
       const row = spec.row
       if (!row || row.length === 0) return
       // The FT8/FT4 waterfall shows the AUDIO passband (0–5000 Hz) and is NOT source-aware, so a
@@ -1154,7 +1160,7 @@ export function Waterfall({
         }
 
         const txOff = txOffRef.current
-        if (txOff + bw >= vlo && txOff <= vhi) {
+        if (txOff != null && txOff + bw >= vlo && txOff <= vhi) {
           octx.globalAlpha = txRef.current ? 0.95 : 0.7
           const txx = drawMarker(txOff, ink.tx, 0, 2)
           octx.globalAlpha = 1
@@ -1277,7 +1283,7 @@ export function Waterfall({
     }
     // Live display props read via refs; replace the loop when its station service changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [getSpectrumRow])
+  }, [getSpectrumRow, resetKey])
 
   // Shown again: restart the loop that stopped while hidden (after the canvas effect, so on the
   // mount it finds the loop already running and does nothing).

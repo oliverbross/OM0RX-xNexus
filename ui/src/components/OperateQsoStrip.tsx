@@ -1,3 +1,4 @@
+import type { OperatingRadio } from './operatingView'
 import { FtStopControl } from './FtStopControl'
 // ⚠️ THIS FILE IS **PARTIAL** ON THE i18n LIST (i18n/hardcoded-strings.test.ts), and the part
 // that is deferred is deliberate: STOP TX, TUNE, ATU and the TX On/Off tooltip stay written
@@ -14,8 +15,8 @@ import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefO
 import { t } from '../i18n'
 import { catSaysTxOff } from '../features/catDetail'
 import { OPERATE_UNAVAILABLE, useOperateServices } from './operateServices'
-import type { ModeRequest, QsoStatus, RadioStatus } from '../types'
-import { isOnAir } from '../types'
+import type { ModeRequest, QsoStatus } from '../types'
+import { observedOnAir } from './operatingView'
 import { modeMismatch } from './TopBar'
 import { RadioTuneNote } from './RadioTuneNote'
 import { AtuSwitchOutMenu, useAtuSwitchOutMenu } from './AtuSwitchOutMenu'
@@ -58,7 +59,7 @@ interface Props {
   logWaiting?: number
   /** TX controls consolidated beside CQ/S&P (operator request: one cluster,
    * no mousing to the top bar). Present only in the digital cockpit. */
-  radio?: RadioStatus
+  radio?: OperatingRadio
   onSetTxEnabled?: (on: boolean) => void
   onSetTune?: (on: boolean) => void
   /** Run the RADIO's own built-in ATU (Phone/CW/SSTV have carried this since #19; the FT
@@ -101,7 +102,7 @@ interface Props {
   skipTx1?: boolean
   onSkipTx1?: (v: boolean) => void
   /** Live next-slot countdown (seconds). */
-  nextSlotSec?: number
+  nextSlotSec?: number | null
   /** Active DXpedition badge (HOUND), rotor strip, and the fixed-width TX
    *  telemetry cell — slotted nodes owned by the cockpit. */
   specialOpBadge?: ReactNode
@@ -275,12 +276,12 @@ export function OperateQsoStrip({
   // which is shown NOWHERE in this cockpit today).
   //
   // Same verdict function as the TopBar — imported, not re-derived, so the two can never drift.
-  const rigDiverged = radio ? modeMismatch(radio.rigMode, radio.sideband, radio.rigConfirmed) : null
+  const rigDiverged = radio?.sideband != null ? modeMismatch(radio.rigMode, radio.sideband, radio.rigConfirmed) : null
   // The strip's ON AIR wash and "▲ TRANSMITTING" read the arbiter the header's sign reads, never
   // the FT slot flag alone: that said "▼ Receiving" through this cockpit's own Tune, a key held at
   // the radio and an over another screen started. Paint only — no control here keys, enables or
   // routes on it.
-  const onAir = radio ? isOnAir(radio) : false
+  const onAir = radio ? observedOnAir(radio) : null
   const filterHz = radio?.filterWidthHz ?? null
   const narrowFilter = filterHz != null && filterHz > 0 && filterHz < NARROW_FILTER_HZ
 
@@ -307,7 +308,7 @@ export function OperateQsoStrip({
   const catOff = radio && !radio.txEnabled ? catSaysTxOff(radio.catDetail) : null
 
   return (
-    <section ref={stripRef} className={`cockpit-qso cockpit-ftstrip panel${radio ? (onAir ? ' tx' : ' rx') : ''}`}>
+    <section ref={stripRef} className={`cockpit-qso cockpit-ftstrip panel${radio && onAir != null ? (onAir ? ' tx' : ' rx') : ''}`}>
       {/* POSITION-STABILITY ORDER (OperateQsoStrip.geometry.test): the two button
           clusters render FIRST, so the six panic-adjacent controls are anchored at
           the strip's start. Every state-variable readout member (state cap,
@@ -341,7 +342,7 @@ export function OperateQsoStrip({
           <button
             type="button"
             className={`op-btn tune${radio.tuning ? ' keyed' : ''}`}
-            aria-pressed={radio.tuning}
+            aria-pressed={radio.tuning ?? undefined}
             onClick={() => onSetTune?.(!radio.tuning)}
             disabled={radio.tuning ? !canAction('stopTransmit') : noTx}
             title={noTx ? noTxWhy : 'Key a tune carrier'}

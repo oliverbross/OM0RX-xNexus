@@ -1,3 +1,4 @@
+import type { OperatingStation } from './operatingView'
 // ⚠️ THIS FILE IS ON THE MIGRATED LIST (i18n/hardcoded-strings.test.ts). Every operator-visible
 // string comes from the catalog; a hardcoded one fails CI. What does NOT come from it: the
 // callsign, grid, country, distance, bearing and SNR the card prints (data), the `B4` shorthand
@@ -7,7 +8,7 @@
 
 import { useCallMenu } from './useCallMenu'
 import { useOperateServices } from './operateServices'
-import type { NeedTag, Station, Tier } from '../types'
+import type { NeedTag, Tier } from '../types'
 import { callCardTrigger, qrzPageOf } from './CallCard'
 import { t } from '../i18n'
 import { azimuthLabel, azimuthTitle, azimuthTo, distanceLabel } from '../grid'
@@ -22,9 +23,9 @@ import { PathRoute } from './prop/PathRoute'
 import { pathWhyDetail, pathWhyFacts, pathWhyLine } from '../features/pathWhy'
 
 interface Props {
-  station: Station
+  station: OperatingStation
   myGrid: string
-  currentSlot: number
+  currentSlot: number | null
   selected: boolean
   unread: number
   /** Top award-need tier for this call (null = nothing needed / not resolvable) —
@@ -67,7 +68,8 @@ const QRZ_LABEL = 'QRZ'
 /** Worked-before shorthand — the same two characters on every band and in every language. */
 const B4_LABEL = 'B4'
 
-function lastHeardLabel(lastHeardSlot: number, currentSlot: number): string {
+function lastHeardLabel(lastHeardSlot: number, currentSlot: number | null): string {
+  if (currentSlot == null) return '—'
   const slots = currentSlot - lastHeardSlot
   if (slots <= 0) return t('roster.card.heard.now')
   if (slots < 60) return t('roster.card.heard.slots', { count: slots })
@@ -152,6 +154,10 @@ export function StationCard({
                 </span>
               ) : null
             })}
+            {station.external && <span className="need-chip" title={[...station.external.reasons, station.external.reason].filter(Boolean).join(' · ')}>
+              {station.external.status === 'needed' ? t('xlog.need.needed') : station.external.status === 'worked' ? t('xlog.need.worked') : t('xlog.need.unknown')}
+              {station.external.score != null ? ` · ${station.external.score}` : ''}
+            </span>}
             {station.worked && (
               <span
                 className={`b4-chip${station.workedBand ? ' b4-band' : ''}`}

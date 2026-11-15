@@ -25,9 +25,9 @@ const MAX_HZ_PER_EVENT = 500_000
 
 interface WheelTuneOpts {
   /** Current rig dial (MHz) from the snapshot — the seed for a fresh wheel burst. */
-  dialMhz: number
+  dialMhz: number | null
   /** Sideband to preserve so an in-band wheel never flips the mode. */
-  sideband: string
+  sideband: string | null
   /** Only tune when CAT is up AND we're not transmitting (never move the VFO under a live over). */
   enabled: boolean
   /** Hz per tuning step (Shift = ×10). Shared with the tuning strip's step selector. */
@@ -135,7 +135,7 @@ export function useWheelTune(
     // last notch, so a burst that ends just as the operator keys up would otherwise put a CAT
     // set_frequency out DURING a live over — and with a digit step that can be a band change,
     // which halts the over on the engine side.
-    if (!enabled || !serviceRef.current.can('setFrequency')) {
+    if (!enabled || stateRef.current.dialMhz == null || sideband == null || !serviceRef.current.can('setFrequency')) {
       targetHzRef.current = null
       return
     }
@@ -157,11 +157,13 @@ export function useWheelTune(
    *  DOMHighResTimeStamp timeline in a browser but NOT under jsdom's fake timers, and a hook
    *  whose two entry points measure idleness against different clocks re-seeds mid-burst. */
   const seed = useCallback(() => {
+    const dial = stateRef.current.dialMhz
+    if (dial == null) return
     const now = performance.now()
     const idle = now - lastWheelRef.current > IDLE_RESEED_MS
     lastWheelRef.current = now
     if (targetHzRef.current == null || idle) {
-      targetHzRef.current = Math.round(stateRef.current.dialMhz * 1e6)
+      targetHzRef.current = Math.round(dial * 1e6)
       targetSource.current = serviceRef.current
       committedHzRef.current = targetHzRef.current // the live dial IS where the rig is
       accumRef.current = 0
@@ -217,7 +219,7 @@ export function useWheelTune(
    *  of its own: two optimistic targets on one dial is exactly the bug above. */
   const tuneBy = useCallback(
     (deltaHz: number) => {
-      if (!stateRef.current.enabled || !deltaHz) return
+      if (!stateRef.current.enabled || stateRef.current.dialMhz == null || stateRef.current.sideband == null || !deltaHz) return
       seed()
       const from = targetHzRef.current ?? 0
       const { hz, hitEdge } = clampToBand(from + deltaHz, from)
@@ -252,7 +254,7 @@ export function useWheelTune(
 
     const onWheel = (e: WheelEvent) => {
       const { enabled, stepHz, resolveStepHz } = stateRef.current
-      if (!enabled) return
+      if (!enabled || stateRef.current.dialMhz == null || stateRef.current.sideband == null) return
       // Direction from the dominant axis: Shift+wheel arrives as horizontal scroll on Chromium.
       const raw = Math.abs(e.deltaY) >= Math.abs(e.deltaX) ? e.deltaY : e.deltaX
       if (raw === 0) return

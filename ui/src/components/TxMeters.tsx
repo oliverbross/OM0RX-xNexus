@@ -7,8 +7,8 @@
 import { useRef, useState } from 'react'
 import type { ComponentProps, KeyboardEvent, MutableRefObject, PointerEvent, Ref } from 'react'
 import { Maximize2 } from 'lucide-react'
-import type { RadioStatus } from '../types'
-import { isOnAir } from '../types'
+import type { OperatingRadio } from './operatingView'
+import { observedOnAir } from './operatingView'
 import { t } from '../i18n'
 import { fmtTempC, useUnits } from '../units'
 import { useTxMeterStyle } from '../txMeterStyle'
@@ -194,7 +194,7 @@ export function TxMeters({
   controls,
   memory,
 }: {
-  radio: RadioStatus
+  radio: OperatingRadio
   pinned?: boolean
   /** What this panel remembers across overs (the held last readings, which meters the rig has
    *  reported, whether it has keyed), shared with another panel of the same radio: Operate's cell and
@@ -327,16 +327,16 @@ export function TxMeters({
   // lit this pane even though the SWR/ALC/Po poll runs whenever Nexus keys the rig and the
   // readings were sitting in the snapshot unshown. `txBusyReason` is Some for all seven
   // TX owners.
-  const onAir = isOnAir(radio)
+  const onAir = observedOnAir(radio)
   const reading = rows.some((r) => r.bar != null)
-  const live = onAir && reading
+  const live = onAir === true && reading
   if (live) {
     lastRows.current = rows
     everRead.current = true
     for (const r of rows) if (r.bar != null) seen.current.add(r.key)
   }
   if (onAir) keyedOnce.current = true
-  else if (everRead.current) overJudged.current = true
+  else if (onAir === false && everRead.current) overJudged.current = true
 
   // ⭐ FINALS TEMPERATURE (operator request; #247). The radio's own reading, °C on the wire, shown
   // in the operator's units. The amplifier's beside it, reusing the reading its own pane shows.
@@ -472,8 +472,8 @@ export function TxMeters({
           className="ph-txmeter-btn"
           data-ctl="txbw"
           // Never while on the air: the radio's own menu write is not one Nexus will make mid-over.
-          disabled={isOnAir(radio)}
-          title={isOnAir(radio) ? t('meters.tx.txbw.busy') : t('meters.tx.txbw.title', { step: radio.txBw ?? '' })}
+          disabled={observedOnAir(radio) !== false}
+          title={observedOnAir(radio) ? t('meters.tx.txbw.busy') : t('meters.tx.txbw.title', { step: radio.txBw ?? '' })}
           aria-label={t('meters.tx.txbw.aria', { step: radio.txBw ?? '' })}
           onClick={bwNext}
         >
@@ -665,7 +665,7 @@ const isNeedle = (k: MeterKey): k is NeedleKey => (NEEDLE_KEYS as readonly strin
  *
  *  The dialog's panel shares the cell's memory (`useTxMeterMemory`): live while keyed, and between
  *  overs the same held last readings the cell shows, however late it is opened. */
-export function TxMetersCell({ radio, pane }: { radio: RadioStatus; pane?: TxMetersPaneToggleProps }) {
+export function TxMetersCell({ radio, pane }: { radio: OperatingRadio; pane?: TxMetersPaneToggleProps }) {
   const [open, setOpen] = useState(false)
   // One memory for the cell and the dialog: opened between overs, the dialog holds the readings the
   // cell holds, so the two never disagree.
@@ -756,7 +756,7 @@ export function TxMetersPane({
   close,
   lowFloor = '--txmeters-pane-floor',
 }: {
-  radio: RadioStatus
+  radio: OperatingRadio
   paneRef?: Ref<HTMLElement>
   /** Its share of the column, the cockpit's: each sets the weight that gives the half-size dials' pane its
    *  stock height beside that cockpit's own panes (TxNeedles LARGE_DIAL). */

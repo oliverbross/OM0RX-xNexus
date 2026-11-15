@@ -14,10 +14,10 @@ import { useOperateServices } from './operateServices'
 
 interface Props {
   channels: BandChannel[]
-  dialMhz: number
-  band: string
+  dialMhz: number | null
+  band: string | null
   /** current phone mode (USB / FM) as a free string from the snapshot/settings */
-  mode: string
+  mode: string | null
   /** compact = TopBar inline; full = Settings field block */
   variant?: 'compact' | 'full'
   /** Render the big MHz readout (default). Set false when a parent (the shared CockpitHeader)
@@ -73,7 +73,7 @@ export function FrequencyControl({
 }: Props) {
   const { canAction } = useOperateServices()
   const active = useMemo(
-    () => findActive(channels, dialMhz, mode),
+    () => dialMhz == null || mode == null ? null : findActive(channels, dialMhz, mode),
     [channels, dialMhz, mode],
   )
 
@@ -92,7 +92,7 @@ export function FrequencyControl({
   }
 
   const setMode = (next: RadioMode) => {
-    if (next === mode) return
+    if (next === mode || dialMhz == null || band == null) return
     onSet(dialMhz, band, next)
   }
 
@@ -101,7 +101,7 @@ export function FrequencyControl({
   // The band is a primary operating fact — color the control with the active
   // band's color (shared with the map spot dots + the CW/Phone BandPicker) so
   // FT8/FT4 and Tempo read the band the same way CW/Phone do.
-  const bandKey = band || bandLabelForMhz(dialMhz) || ''
+  const bandKey = band || (dialMhz == null ? null : bandLabelForMhz(dialMhz)) || ''
   const col = bandColor(bandKey)
 
   return (
@@ -182,13 +182,13 @@ export function FrequencyControl({
             size="hero"
             editable
             disabled={!canAction('radio')}
-            onCommit={(v) => onSet(v, bandLabelForMhz(v), mode)}
+            onCommit={(v) => { if (mode != null) onSet(v, bandLabelForMhz(v), mode) }}
           />
         </div>
       )}
 
       <div className="freq-band-tag" title={active ? active.note : t('freq.band.title')}>
-        <span className={`band-chip${active ? ' active' : ''}`}>{band || bandLabelForMhz(dialMhz) || '—'}</span>
+        <span className={`band-chip${active ? ' active' : ''}`}>{band || (dialMhz == null ? null : bandLabelForMhz(dialMhz)) || '—'}</span>
       </div>
 
       {showModeToggle && (

@@ -1,3 +1,4 @@
+import type { OperatingStation } from './operatingView'
 // A WSJT-X / GridTracker-style Call Roster: one row per heard station as aligned,
 // sortable columns (Call · Calling · Need · Park · Country · State · Grid · Dist · Brg · SNR · Age) with
 // roster filters (Needed-only, Hide-worked, a distance cap) and double-click-to-work. This is the
@@ -13,7 +14,7 @@ import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEve
 import { t } from '../i18n'
 import { callCardTrigger, qrzPageOf } from './CallCard'
 import { useRovingList } from '../useRovingList'
-import type { NeedAlert, NeedTag, Station } from '../types'
+import type { NeedAlert, NeedTag } from '../types'
 import {
   gridToLatLon,
   haversineKm,
@@ -52,9 +53,9 @@ interface Props {
   /** The pane's id, where its cockpit arranges by drag: its head is then the grip it is dragged by
    *  (panes/PaneDrag). Absent: nothing here can be dragged. */
   grip?: string
-  stations: Station[]
+  stations: OperatingStation[]
   myGrid: string
-  currentSlot: number
+  currentSlot: number | null
   needByCall: Map<string, NeedTag>
   /** FULL per-call alerts — a station needed on several dimensions (grid AND
    * band…) shows EVERY need chip, not just the top tier (operator report). */
@@ -167,7 +168,7 @@ const PARK_PROGRAMS: ReadonlySet<string> = new Set(['POTA', 'SOTA'])
  * own CQ names (`CQ POTA`, with no reference: nobody has spotted it yet), else null. Read from the
  * UNGATED alerts: an activation is the station's, whichever band or mode the spot was taken on.
  */
-function parkOf(s: Station, alerts: readonly NeedAlert[] | undefined): { label: string; spotted: boolean } | null {
+function parkOf(s: OperatingStation, alerts: readonly NeedAlert[] | undefined): { label: string; spotted: boolean } | null {
   const ref = alerts?.find((a) => a.park?.reference)?.park?.reference
   if (ref) return { label: ref, spotted: true }
   const cq = s.cqDir?.toUpperCase()
@@ -299,15 +300,15 @@ export function OperateRoster({
         // the first contact on this band is already waiting on (#350) — and a station on the
         // watch list, which counts the way a new park does, worked or not (maintainer,
         // 2026-09-23: "always show it").
-        stillNeeded: (need != null && !confirmOnlyOnWorkedBand(needAll, s.workedBand)) || watch != null,
-        needRank: chaseRank(alerts, need),
+        stillNeeded: s.external ? s.external.status === 'needed' : (need != null && !confirmOnlyOnWorkedBand(needAll, s.workedBand)) || watch != null,
+        needRank: s.external ? -(s.external.score ?? -2147483648) : chaseRank(alerts, need),
         distKm: me && ll ? haversineKm(me, ll) : Infinity,
         // Sorts on the SAME number the Brg cell prints, centroid fallback included.
         // Left as `me && ll ? … : 999` it would file every `~` row at the end of a
         // Brg sort while showing it a real heading — the column would read as broken.
         // 999 still parks a row with no bearing at all after everything that has one.
         brg: azimuthTo(myGrid, s.grid, s.country, centroids)?.deg ?? 999,
-        age: currentSlot - s.lastHeardSlot,
+        age: currentSlot == null ? Infinity : currentSlot - s.lastHeardSlot,
       }
     })
     // Keep only stations heard within the recency window — the roster stays a
@@ -778,7 +779,7 @@ export function OperateRoster({
                 >
                   {/* `CQ DX`, not a translated phrase: the modifier is what went on the air,
                       and CQ is a Q-code. Both are invariant tokens. */}
-                  {s.calling ?? (s.cqDir ? `${ROSTER_TOKENS.cq} ${s.cqDir}` : ROSTER_TOKENS.cq)}
+                  {s.external ? (s.external.isCq ? ROSTER_TOKENS.cq : '—') : s.calling ?? (s.cqDir ? `${ROSTER_TOKENS.cq} ${s.cqDir}` : ROSTER_TOKENS.cq)}
                 </span>
                 <span
                   className="or-need"
@@ -788,6 +789,10 @@ export function OperateRoster({
                 >
                   {/* The WATCH tile leads: this cell clips what does not fit, and the tile is
                       the one the operator asked for by name. */}
+                  {s.external && <span className="need-chip" title={[...s.external.reasons, s.external.reason].filter(Boolean).join(' · ')}>
+                    {s.external.status === 'needed' ? t('xlog.need.needed') : s.external.status === 'worked' ? t('xlog.need.worked') : t('xlog.need.unknown')}
+                    {s.external.score != null ? ` · ${s.external.score}` : ''}
+                  </span>}
                   {watch && <WatchTile entry={watch} />}
                   {chips.map((t) => {
                     const c = NEED_CHIP[t]

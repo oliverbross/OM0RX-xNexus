@@ -1,3 +1,4 @@
+import type { OperatingStation } from './operatingView'
 // ⚠️ THIS FILE IS ON THE MIGRATED LIST (i18n/hardcoded-strings.test.ts). Every operator-visible
 // string comes from the catalog; a hardcoded one fails CI. What does NOT: the callsigns and
 // message previews in the recents list (data), and the presence CODE a dot's tooltip falls back
@@ -29,9 +30,9 @@ interface Props {
   /** The pane's id, where its cockpit arranges by drag: its head is then the grip it is dragged by
    *  (panes/PaneDrag). Absent: nothing here can be dragged. */
   grip?: string
-  stations: Station[]
+  stations: OperatingStation[]
   myGrid: string
-  currentSlot: number
+  currentSlot: number | null
   activePeer: string | null
   unreadByPeer: Record<string, number>
   /** Top need tier per heard callsign (uppercased), for award-aware colouring. */
@@ -183,7 +184,7 @@ export function StationList({
     if (matches) list = list.filter((s) => matches(s.call))
     // Decode-cycle flush (FT cockpit only): count MISSED DECODE CYCLES, not wall time.
     if (dropAfterCycles != null) {
-      list = list.filter((s) => currentSlot - s.lastHeardSlot <= dropAfterCycles)
+      list = list.filter((s) => currentSlot != null && currentSlot - s.lastHeardSlot <= dropAfterCycles)
     }
     if (filter === 'heard-now') list = list.filter((s) => s.presence === 'active')
     else if (filter === 'beaconing') list = list.filter((s) => s.heardCount >= 3)
@@ -195,6 +196,7 @@ export function StationList({
     // A station on the watch list counts whatever else it has, as it does there.
     else if (filter === 'needed')
       list = list.filter((s) => {
+        if (s.external) return s.external.status === 'needed'
         const tags = needAll(s.call, needByCall.get(s.call.toUpperCase()) ?? null)
         return (
           (tags.length > 0 && !confirmOnlyOnWorkedBand(tags, s.workedBand)) ||

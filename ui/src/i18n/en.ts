@@ -94,6 +94,11 @@
 import type { Message } from './types'
 
 export const EN = {
+  // Owner classifications are labels, never independent award calculations.
+  'xlog.need.needed': 'Needed',
+  'xlog.need.worked': 'Worked',
+  'xlog.need.unknown': 'Unknown',
+  'xlog.history.unavailable': 'History is unavailable until xLog supplies a current answer.',
   // Hosted Remote observation and local station approval.
   "remote.settingsLegend": "Remote access",
   "remote.stations": "Your stations",
