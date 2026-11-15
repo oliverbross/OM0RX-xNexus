@@ -8,9 +8,13 @@ export interface RxRoute {
   sample_rate: number; sample_format: string; timestamp_basis: string
   remote_rf_latency_us: number | null; utc_sync_accuracy_us: number | null
 }
+export interface RxContext {
+  worker_instance: string; worker_epoch: number; server_instance: string
+  workspace_id: string; route: RxRoute; decoder_mode: RxMode
+}
 export interface RxRow {
   decode_id: string; sender_callsign: string | null
-  context: { worker_instance: string; worker_epoch: number; server_instance: string; workspace_id: string; route: RxRoute; decoder_mode: RxMode }
+  context: RxContext
   needs: RxNeeds
   host_period_start_unix_us: number; mode: RxMode; message: string; snr_db: number
   time_offset_seconds: number; audio_frequency_hz: number
@@ -34,7 +38,7 @@ export interface RxNeeds extends NeedsStatus {
   owner: NeedsResult | null; authority: NeedsAuthority | null
   generated_at_unix_ms: number | null; max_age_ms: number | null; remaining_valid_ms: number
 }
-export interface RxView { enabled: boolean; mode: RxMode | null; phase: string; reason: string; route: RxRoute | null; rows: RxRow[] }
+export interface RxView { enabled: boolean; mode: RxMode | null; phase: string; reason: string; route: RxRoute | null; current_context?: RxContext | null; rows: RxRow[] }
 export const rxOff: RxView = { enabled:false, mode:null, phase:'off', reason:'Receive decoding is off.', route:null, rows:[] }
 export const rxApi = {
   status: () => invoke<RxView>('xlog_rx_status'),
