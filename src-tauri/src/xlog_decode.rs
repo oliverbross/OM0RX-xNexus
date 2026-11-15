@@ -186,6 +186,41 @@ pub struct DecodedPeriod {
     pub rows: Vec<DecodeRow>,
 }
 
+/// Actual native records and their exact receive provenance. This type is not an
+/// IPC DTO: it deliberately has no serialization or clone implementation. Future
+/// native consumers must run only after the worker accepts the job's authority.
+#[derive(Debug)]
+pub struct NativeDecodedPeriod {
+    pub context: DecodeContext,
+    pub owner: OwnerIdentity,
+    pub host_period_start_unix_us: u64,
+    pub frame_time_ms: i64,
+    pub clock: ClockProvenance,
+    pub rows: Vec<modes::Decode>,
+}
+
+impl NativeDecodedPeriod {
+    /// Consume the typed period at the existing presentation boundary. Raw decode
+    /// metrics and owner coordinates are never reconstructed from this UI DTO.
+    pub fn into_presentation(self) -> DecodedPeriod {
+        DecodedPeriod {
+            context: self.context,
+            host_period_start_unix_us: self.host_period_start_unix_us,
+            clock: self.clock.into(),
+            rows: self
+                .rows
+                .into_iter()
+                .map(|d| DecodeRow {
+                    message: d.message,
+                    snr_db: d.snr,
+                    time_offset_seconds: d.dt,
+                    audio_frequency_hz: d.freq,
+                })
+                .collect(),
+        }
+    }
+}
+
 #[derive(Default)]
 pub struct Decoder {
     source: Option<NativeSource>,
@@ -206,6 +241,11 @@ impl Decoder {
     }
 
     pub fn decode(&mut self, frame: CompleteFrame) -> Result<DecodedPeriod, String> {
+        self.decode_native(frame)
+            .map(NativeDecodedPeriod::into_presentation)
+    }
+
+    pub fn decode_native(&mut self, frame: CompleteFrame) -> Result<NativeDecodedPeriod, String> {
         if let Err(error) = frame.validate() {
             self.reset();
             return Err(error);
@@ -244,21 +284,15 @@ impl Decoder {
             }
         };
         self.context = Some(frame.context.clone());
-        self.owner = Some(frame.owner);
+        self.owner = Some(frame.owner.clone());
         self.last_period = Some((frame.host_period_start_unix_us, frame.frame_time_ms));
-        Ok(DecodedPeriod {
+        Ok(NativeDecodedPeriod {
             context: frame.context,
+            owner: frame.owner,
             host_period_start_unix_us: frame.host_period_start_unix_us,
-            clock: frame.clock.into(),
-            rows: decoded
-                .into_iter()
-                .map(|d| DecodeRow {
-                    message: d.message,
-                    snr_db: d.snr,
-                    time_offset_seconds: d.dt,
-                    audio_frequency_hz: d.freq,
-                })
-                .collect(),
+            frame_time_ms: frame.frame_time_ms,
+            clock: frame.clock,
+            rows: decoded,
         })
     }
 }
@@ -371,6 +405,153 @@ mod tests {
         assert!(decoder.context.is_none());
         assert!(decoder.owner.is_none());
         assert!(decoder.last_period.is_none());
+    }
+
+    fn generated_frame(mode: DecoderMode) -> CompleteFrame {
+        let modem = modes::make_mode(mode.kind());
+        let tones = modem.encode("CQ K1ABC FN42");
+        assert!(!tones.is_empty());
+        let wave = modem.gen_wave(&tones, SAMPLE_RATE as f32, 1_500.0);
+        let mut frame = frame(mode);
+        for (dest, sample) in frame.samples.iter_mut().zip(wave) {
+            *dest = (sample * 1000.0).clamp(-32768.0, 32767.0) as i16;
+        }
+        frame
+    }
+
+    #[test]
+    fn actual_native_records_preserve_owner_context_and_clock_before_presentation() {
+        for mode in [DecoderMode::Ft8, DecoderMode::Ft4] {
+            let mut frame = generated_frame(mode);
+            frame.owner = owner(48_000);
+            frame.owner.workspace_id = "exact-owner-workspace".into();
+            frame.owner.device_id = "exact-selected-device".into();
+            frame.owner.dax_channel = 3;
+            frame.owner.selected_channel = 1;
+            frame.frame_time_ms = 987_654_321;
+            frame.clock.host_mapping_uncertainty_us = 23_456;
+            frame.clock.calibration_uncertainty_us = 17;
+            frame.clock.sample_alignment_offset_ns = 31_234;
+            frame.clock.resampler_center_offset_ns = 656_250;
+            frame.validate().unwrap();
+            let expected_owner = frame.owner.clone();
+            let owner_device_allocation = frame.owner.device_id.as_ptr();
+            let expected_context = frame.context.clone();
+            let expected_clock = frame.clock.clone();
+            let host_start = frame.host_period_start_unix_us;
+            let frame_time = frame.frame_time_ms;
+            // Independent actual decoder result includes metrics absent from the
+            // UI DTO. This second DSP invocation is a test oracle only.
+            let mut reference = NativeSource::from_kind(mode.kind());
+            let mut request = DecodeRequest::full_band(&frame.samples);
+            request.frame_time_ms = frame_time;
+            request.ap = false;
+            request.ndepth = 1;
+            let expected_records = reference.decode(&request);
+            assert!(expected_records
+                .iter()
+                .any(|row| row.message.contains("K1ABC")));
+            let mut decoder = Decoder::default();
+            let native = decoder.decode_native(frame).unwrap();
+            assert_eq!(native.rows, expected_records);
+            assert!(native
+                .rows
+                .iter()
+                .all(|row| row.mode == Some(mode.kind()) && row.nap == 0));
+            assert_eq!(native.owner, expected_owner);
+            assert_eq!(native.owner.device_id.as_ptr(), owner_device_allocation);
+            assert_eq!(decoder.owner.as_ref(), Some(&expected_owner));
+            assert_eq!(native.context, expected_context);
+            assert_eq!(native.host_period_start_unix_us, host_start);
+            assert_eq!(native.frame_time_ms, frame_time);
+            assert_eq!(native.clock, expected_clock);
+            assert_eq!(decoder.last_period, Some((host_start, frame_time)));
+
+            let display = native.into_presentation();
+            assert_eq!(display.context, expected_context);
+            assert_eq!(display.host_period_start_unix_us, host_start);
+            assert_eq!(display.rows.len(), expected_records.len());
+            for (row, actual) in display.rows.iter().zip(&expected_records) {
+                assert_eq!(row.message, actual.message);
+                assert_eq!(row.snr_db, actual.snr);
+                assert_eq!(row.time_offset_seconds, actual.dt);
+                assert_eq!(row.audio_frequency_hz, actual.freq);
+            }
+            let json = serde_json::to_value(display).unwrap();
+            let object = json.as_object().unwrap();
+            assert_eq!(object.len(), 4);
+            for field in ["context", "host_period_start_unix_us", "clock", "rows"] {
+                assert!(object.contains_key(field));
+            }
+            for row in json["rows"].as_array().unwrap() {
+                assert_eq!(row.as_object().unwrap().len(), 4);
+                for field in [
+                    "message",
+                    "snr_db",
+                    "time_offset_seconds",
+                    "audio_frequency_hz",
+                ] {
+                    assert!(row.get(field).is_some());
+                }
+            }
+            assert_eq!(
+                json["clock"]["utc_sync_accuracy_us"],
+                serde_json::Value::Null
+            );
+            assert_eq!(
+                json["clock"]["remote_rf_latency_us"],
+                serde_json::Value::Null
+            );
+            assert_eq!(json["clock"]["host_mapping_uncertainty_us"], 23_456);
+            assert_eq!(json["clock"]["calibration_uncertainty_us"], 17);
+            assert_eq!(json["clock"]["sample_alignment_offset_ns"], 31_234);
+            assert_eq!(json["clock"]["resampler_center_offset_ns"], 656_250);
+        }
+    }
+
+    #[test]
+    fn compatibility_wrapper_preserves_generated_presentation() {
+        for mode in [DecoderMode::Ft8, DecoderMode::Ft4] {
+            let native = Decoder::default()
+                .decode_native(generated_frame(mode))
+                .unwrap();
+            let expected = serde_json::to_value(native.into_presentation()).unwrap();
+            let legacy = Decoder::default().decode(generated_frame(mode)).unwrap();
+            assert_eq!(serde_json::to_value(legacy).unwrap(), expected);
+        }
+    }
+
+    #[test]
+    fn native_period_duplicate_reset_and_full_owner_change_keep_existing_fences() {
+        let mode = DecoderMode::Ft4;
+        let mut decoder = Decoder::default();
+        let first = decoder.decode_native(generated_frame(mode)).unwrap();
+        assert!(first.rows.iter().any(|row| row.message.contains("K1ABC")));
+        assert_eq!(
+            decoder.decode_native(generated_frame(mode)).unwrap_err(),
+            "duplicate or reordered decode period"
+        );
+        assert!(decoder.source.is_none());
+        assert!(decoder.context.is_none());
+        assert!(decoder.owner.is_none());
+        assert!(decoder.last_period.is_none());
+        // Existing reset semantics permit a new stream to establish its first
+        // period; this adapter does not add a cross-reset sequence highwater.
+        decoder.decode_native(generated_frame(mode)).unwrap();
+        let mut changed_owner = generated_frame(mode);
+        changed_owner.owner.workspace_id = "replacement-workspace".into();
+        let expected_owner = changed_owner.owner.clone();
+        let native = decoder.decode_native(changed_owner).unwrap();
+        assert_eq!(native.owner, expected_owner);
+        assert_eq!(decoder.owner.as_ref(), Some(&expected_owner));
+        let mut invalid = generated_frame(mode);
+        invalid.clock.host_mapping_uncertainty_us = MAX_HOST_UNCERTAINTY_US + 1;
+        assert!(decoder.decode_native(invalid).is_err());
+        assert!(decoder.source.is_none());
+        assert!(decoder.owner.is_none());
+        assert!(decoder.last_period.is_none());
+        decoder.reset();
+        assert!(decoder.context.is_none());
     }
 
     #[test]
