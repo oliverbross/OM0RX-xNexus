@@ -32,7 +32,7 @@ so the bound holds for any subscriber origin. Per-packet wall-step, frame,
 flags and liveness guards must remain. This is not permission to invent samples,
 resample away timing evidence or claim measured global UTC/RF accuracy.
 
-## Owner correction installed; live repeat pending
+## Owner correction installed before the live repeat
 
 xLog 1.6.28 now includes timing fix `389281bf` and restart UI change `b233a991`.
 The owner reports 16 Rust and four UI tests passed. Independent replay checked
@@ -60,8 +60,41 @@ Host compilation passed in 11m18s, but its exact MSVC telemetry-helper guard
 failure and separately reviewed narrow cleanup qualification remain recorded.
 Worker, Portable and Installer jobs exited naturally and passed.
 
-The operator has been asked to pair the new owner session, confirm A/RX1 sharing
-and start FT8 again. The new receiving outcome is pending: live 1.6.28 RX and
-decoded-needs are **not yet qualified**. The 1.6.27 failure above remains a
-failure. Repeat live receive/needs acceptance before promoting either capability;
-the broader project, TX and updated platform/distribution gates remain incomplete.
+## Fresh 1.6.28 attempt failed the 50 ms uncertainty bound
+
+After the operator confirmed all new pairing/sharing/FT8 steps, a fresh native
+observation at 04:07:59 UTC on 15 November reported:
+
+> Receive timestamp uncertainty exceeded 50 ms (50459 us); restart sharing.
+
+The exact installed xNexus process was verified before observation. It was paired
+with the real workspace but had zero decoded rows, no current audio route and no
+needs evidence. No input was performed and the planned six-minute receive soak
+was not started. This is a new, distinct 1.6.28 owner-bound failure, not reuse of
+the earlier 1.6.27 observation and not successful live RX qualification.
+
+Receipt beside the earlier failure is
+`rx-1.6.28-new-attempt-uncertainty.json`, SHA-256
+`FD536564A009BAA06D75FA52FE3FF53DC7FB6943EEED9B771619EDC48D4B797E`.
+Diagnosis is ongoing; no further timing fix or guard relaxation has been chosen.
+
+Source review of [the native worker](../../src-tauri/src/xlog_rx_worker.rs)
+confirms that an owner `stopped` audio state clears current route/authority and
+waits while retaining the companion subscription. A new valid running descriptor
+can resume reception automatically; this state is not itself a terminal stale UI.
+Transport failures and explicit Stop have separate handling.
+
+The 1.6.27 failure and 1.6.28 uncertainty failure both remain preserved. Repeat
+live receive/needs acceptance before promoting either capability; the broader
+project, TX and updated platform/distribution gates remain incomplete.
+
+## Separate UI backlog: obsolete polling alert
+
+Source review of [RxPanel](../../ui/src/xlog/RxPanel.tsx) confirms that a status-poll
+catch sets the local `error` alert, while subsequent successful `api.status()`
+acceptance updates the view/needs leases without clearing that error. A transient
+poll failure can therefore leave an obsolete alert until an action or connection
+effect clears it. This is a separate backlog defect, not an explanation for the
+fresh owner uncertainty reason above. Add a failure-then-success recovery test
+and clear only the appropriately superseded polling error when implementing it;
+no runtime edit or new package is part of this checkpoint.

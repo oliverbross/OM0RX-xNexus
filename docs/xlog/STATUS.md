@@ -10,7 +10,9 @@ passed, followed by native A→B→A profile/lifecycle checks and permanent curr
 installation. A subsequent explicit installed launch passed; both applications
 were left open. The operator subsequently completed live native pairing, but
 receive failed an owner clock guard and RX sharing was stopped. The owner fix is
-now installed as xLog 1.6.28; a fresh manual pairing/receive outcome is pending.
+now installed as xLog 1.6.28. The operator confirmed a fresh pairing/sharing/FT8
+attempt, but at 04:07:59 UTC it failed a distinct 50 ms uncertainty guard
+(50,459 microseconds). No decoded rows/needs were observed or receive soak started.
 It remains unsigned. [The build record](WINDOWS_BUILD_1.24.1-xlog.4.md) binds the
 actual tools, reviewed 12 GiB supervisor, artifacts and warning qualification.
 The packaging freeze is released for reviewed documentation/tooling integration;
@@ -25,8 +27,10 @@ zero decoded rows and no decoded-needs evidence. The operator stopped RX sharing
 An owner metadata-only probe identified 10–17 ms endpoint sample-clock residuals
 against existing 2 ms guards. The reviewed owner correction and restart UI passed
 16 Rust/four UI tests and independent origin-pair replay, then shipped in 1.6.28.
-Fresh live RX/needs acceptance is still pending; installation does not turn the
-earlier failure into a pass. See [the incident and exact evidence](RX_CLOCK_INCIDENT_2026-11-15.md).
+The fresh 1.6.28 attempt then failed the uncertainty bound; diagnosis is ongoing
+with no further fix chosen. Owner `stopped` state retains the companion subscription
+and can resume on a new valid descriptor, so this is not a terminal UI-state claim.
+Both live failures remain preserved; see [the incident and exact evidence](RX_CLOCK_INCIDENT_2026-11-15.md).
 The project plan is not complete; live RX/needs, physical controls, TX and updated
 platform/distribution qualification remain open.
 
@@ -234,6 +238,10 @@ Transmission is unavailable in companion mode.
 
 The native outbox retains up to 10,000 operations, including terminal receipts.
 An archive/export flow remains a long-term operational item.
+
+A separate source-confirmed UI backlog item remains: RxPanel's successful status
+poll does not clear an earlier poll-error alert. The [incident record](RX_CLOCK_INCIDENT_2026-11-15.md)
+distinguishes that obsolete-alert risk from the fresh owner timing failure.
 
 Full Windows GNU all-targets compilation passed on exact RX runtime `e3ae1534`
 with pinned Rust 1.93.1 and locked dependencies. The isolated receipt verified
