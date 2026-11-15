@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-only
 # Inert filesystem/DTO controls only. Never invokes an installer or registry write.
+param([string]$ActualConfig)
 $ErrorActionPreference='Stop'
 . (Join-Path $PSScriptRoot 'installer-acceptance-lib.ps1')
 $repo=Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
@@ -12,6 +13,12 @@ function Reject([string]$Name,[scriptblock]$Body,[string]$Reason='') {
     try { & $Body | Out-Null } catch { $caught=$_.Exception.Message }
     if (!$caught -or ($Reason -and $caught -notlike "*$Reason*")) { throw "Expected refusal ($Name / $Reason), got: $caught" }
     $passed.Add($Name)
+}
+Pass 'empty optional property collections under strict mode' { Assert-XnNoAssociations ('{"bundle":{},"plugins":{}}' | ConvertFrom-Json) }
+Reject 'configured file association refused' { Assert-XnNoAssociations ('{"bundle":{"fileAssociations":[{"ext":["log"]}]},"plugins":{}}' | ConvertFrom-Json) } 'policy needs review'
+Reject 'configured deep link refused' { Assert-XnNoAssociations ('{"bundle":{},"plugins":{"deep-link":{"desktop":{"schemes":["xnexus"]}}}}' | ConvertFrom-Json) } 'policy needs review'
+if ($ActualConfig) {
+    Pass 'actual candidate distribution config admitted' { Assert-XnNoAssociations (Get-Content -LiteralPath $ActualConfig -Raw | ConvertFrom-Json) }
 }
 Pass 'canonical local existing path' { $null=Assert-XnLocalPath $fixture -NoSpaces }
 Pass 'absent child admitted without creation' { Assert-XnFreshTarget (Join-Path $fixture 'app'); if (Test-Path (Join-Path $fixture 'app')) { throw 'Created target' } }
@@ -83,5 +90,6 @@ Pass 'retained external profile positive control' { Assert-XnRetainedFiles @($be
 Reject 'changed retained profile bytes detected' { Assert-XnRetainedFiles @($before) } 'Retained bytes'
 # This deliberately altered inert fixture remains intact; no test cleanup hides it.
 $receipt=[ordered]@{status='passed';tests=$passed.Count;names=$passed.ToArray();fixture=$fixture;inert=$true;installerInvoked=$false;registryChanged=$false;filesRetained=$true;finishedUtc=[DateTime]::UtcNow.ToString('o')}
+if ($ActualConfig) { $receipt.actualConfig=@{path=$ActualConfig;sha256=Get-XnHash $ActualConfig} }
 $receipt | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $fixture 'receipt.json') -Encoding utf8
 Write-Output "$($passed.Count) inert tests passed; evidence: $fixture"

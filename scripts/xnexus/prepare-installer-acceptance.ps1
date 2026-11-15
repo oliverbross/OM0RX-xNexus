@@ -47,8 +47,7 @@ try {
     $config=Get-Content -LiteralPath $build.distribution.configPath -Raw | ConvertFrom-Json
     if ($config.identifier -cne 'sk.om0rx.xnexus' -or $config.bundle.windows.nsis.installMode -cne 'currentUser' -or
         $config.bundle.windows.webviewInstallMode.type -cne 'offlineInstaller') { throw 'Unreviewed identity/install/runtime policy.' }
-    if (($config.bundle.PSObject.Properties.Name -contains 'fileAssociations' -and $config.bundle.fileAssociations) -or
-        ($config.plugins.PSObject.Properties.Name -contains 'deep-link' -and $config.plugins.'deep-link')) { throw 'Association/deep-link policy needs review.' }
+    Assert-XnNoAssociations $config
     $generated=Join-Path $repo 'target\xnexus-windows\x86_64-pc-windows-gnu\release\nsis\x64\installer.nsi'
     Assert-XnHash $generated $build.generatedNsisSha256
     if ($audit.generatedNsisSha256 -ine $build.generatedNsisSha256) { throw 'Generated NSIS audit mismatch.' }

@@ -2,6 +2,15 @@
 # Read-only admission primitives. No installer/application/registry writes.
 Set-StrictMode -Version Latest
 
+function Assert-XnNoAssociations($Config) {
+    # Indexing the collection also works for plugins={}, unlike member enumeration
+    # through Properties.Name under StrictMode.
+    $associations=$Config.bundle.PSObject.Properties['fileAssociations']
+    $deepLink=$Config.plugins.PSObject.Properties['deep-link']
+    if (($null -ne $associations -and $associations.Value) -or
+        ($null -ne $deepLink -and $deepLink.Value)) { throw 'Association/deep-link policy needs review.' }
+}
+
 function Assert-XnLocalPath([string]$Path, [switch]$AllowMissing, [switch]$NoSpaces, [switch]$ObservedImage) {
     if ($Path -notmatch '^[A-Za-z]:\\[^\\]' -or $Path.Contains('/') -or
         $Path.Substring(2) -match '[:*?"<>|]' -or (!$ObservedImage -and $Path.Contains('~')) -or $Path.EndsWith('\') -or
