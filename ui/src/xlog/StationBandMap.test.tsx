@@ -34,4 +34,23 @@ describe('Nexus band map with xLog observations', () => {
     expect(container.querySelectorAll('.bandmap-spot')).toHaveLength(2)
     expect(container.querySelector('.bandmap-spot.worked')).toBeNull()
   })
+  it('selects the displayed mode when another observation shares its call and frequency', () => {
+    const cw = { ...spot, frequency_hz: 14_074_000 }
+    const digital = { ...cw, id: 'digital', mode: 'FT8' }
+    const select = vi.fn()
+    render(<StationBandMap spots={[cw, digital]} dialHz={14_074_000} select={select} />)
+    fireEvent.change(screen.getByLabelText('Band map mode'), { target: { value: 'Digital' } })
+    fireEvent.click(screen.getByRole('button', { name: /OM0RX/ }))
+    expect(select).toHaveBeenCalledWith(digital)
+  })
+  it('preserves each observation identity when call, frequency and mode collide', () => {
+    const first = { ...spot, source: 'owner-a', need: { status: 'worked' as const, score: 0, reasons: ['First observation'] } }
+    const second = { ...spot, id: 'second', source: 'owner-b', need: { status: 'needed' as const, score: 58, reasons: ['Second observation'] } }
+    const select = vi.fn()
+    render(<StationBandMap spots={[first, second]} dialHz={14_025_000} select={select} />)
+    fireEvent.click(screen.getByTitle(/Second observation/))
+    expect(select).toHaveBeenCalledWith(second)
+    fireEvent.click(screen.getByTitle(/First observation/))
+    expect(select).toHaveBeenLastCalledWith(first)
+  })
 })
