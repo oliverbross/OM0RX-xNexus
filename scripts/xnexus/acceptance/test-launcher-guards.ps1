@@ -155,6 +155,26 @@ Check 'STOP sentinel refuses a still-live owner' {
     New-Item -ItemType File -Path (Join-Path $testRoot 'STOP') | Out-Null
     Reject { Verify-Owner $owner $testRoot }
 }
+Check 'JSON date representation preserves exact creation ticks' {
+    $json='{"creationUtc":"2026-11-15T01:31:00.0953910Z"}'|ConvertFrom-Json
+    Require (Same-Creation $json.creationUtc '2026-11-15T01:31:00.095391Z')
+    Require (!(Same-Creation $json.creationUtc '2026-11-15T01:31:00.0953911Z'))
+}
+# Evaluate the actual prior-identity refusal predicate, never the launch body.
+$guard=@($ast.FindAll({param($node) $node -is [System.Management.Automation.Language.IfStatementAst] -and $node.Extent.Text.StartsWith('if ($prior.schema')},$true))
+Require ($guard.Count -eq 1)
+$predicate=$guard[0].Clauses[0].Item1.Extent.Text
+$launcherSha256='a'*64;$ReviewedPriorLauncherSha256='b'*64
+$ExpectedSource='c'*40;$ExpectedVersion='1.24.1-xlog.4';$ExpectedSha256='d'*64
+$fixture='C:\Private\xnexus-ui-inert';$marker=@{id='inert'}
+$ownerBefore=@{pid=123;creationUtc='2026-11-15T01:31:00.0953910Z';executable='C:\inert-owner.exe';commandLine='exact inert owner command'}
+$prior=@{schema=1;status='verified-process-isolation';launcherSha256=('b'*64);source=$ExpectedSource;version=$ExpectedVersion;executable=$exe;executableSha256=$ExpectedSha256;fixture=$fixture;fixtureId='inert';owner=$ownerBefore}|ConvertTo-Json|ConvertFrom-Json
+Check 'explicit reviewed old launcher with identical owner admitted' { Require (!(Invoke-Expression $predicate)) }
+Check 'old launcher without explicit review refused' { $ReviewedPriorLauncherSha256='';Require (Invoke-Expression $predicate);$ReviewedPriorLauncherSha256='b'*64 }
+Check 'foreign prior launcher hash refused' { $prior.launcherSha256='e'*64;Require (Invoke-Expression $predicate);$prior.launcherSha256='b'*64 }
+Check 'different prior source refused' { $prior.source='e'*40;Require (Invoke-Expression $predicate);$prior.source=$ExpectedSource }
+Check 'different prior fixture root refused' { $prior.fixture='C:\foreign';Require (Invoke-Expression $predicate);$prior.fixture=$fixture }
+Check 'different owner creation tick refused' { $prior.owner.creationUtc='2026-11-15T01:31:00.0953911Z';Require (Invoke-Expression $predicate) }
 @{status='passed';candidateLaunched=$false;testCount=$results.Count;tests=$results;launcherSha256=(Get-FileHash -LiteralPath $scriptFile -Algorithm SHA256).Hash} |
     ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $testRoot 'results.json') -Encoding utf8NoBOM
 [pscustomobject]@{passed=$results.Count;candidateLaunched=$false;evidence=$testRoot}

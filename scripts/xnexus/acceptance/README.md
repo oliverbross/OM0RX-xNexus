@@ -49,6 +49,14 @@ that profile have exited. The previous receipt remains intact; a new receipt is
 written. Never use this route after a panic, uncertain exit or forced termination;
 those require stopping the sequence and reviewing the preserved evidence.
 
+Creation identity compares exact UTC ticks, so JSON date formatting cannot
+confuse an unchanged owner with a replacement. A reviewed tooling correction
+may use `-ReviewedPriorLauncherSha256` with `-PriorLaunchReceipt` to pin the exact
+previous launcher hash explicitly. The original receipt stays immutable; the
+new receipt records both launcher hashes and the reviewed pin. Without this
+explicit pin, reuse still requires the current launcher hash. All candidate,
+owner, private-root, profile-marker and exit checks remain mandatory.
+
 Validation performed without an application launch: PowerShell parser passed;
 24 function/AST guard checks passed, including initial missing/mismatched metadata,
 persistent browser versus transient utility lifecycle, newly foreign live children,
