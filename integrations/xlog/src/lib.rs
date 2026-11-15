@@ -158,7 +158,10 @@ pub use station_identity::{
 };
 mod history;
 pub mod outbox;
-pub use history::{History, HistoryCell, HistoryContact};
+pub use history::{
+    History, HistoryCell, HistoryClient, HistoryContact, HistoryQuery, HistorySummary, ReadLease,
+    Recent,
+};
 
 fn bounded(text: &str, max: usize) -> bool {
     !text.trim().is_empty() && text.len() <= max && !text.chars().any(char::is_control)

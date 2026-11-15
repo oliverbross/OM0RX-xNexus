@@ -53,6 +53,30 @@ remain separate integration gates.
 budget for native scheduling. Reading it does not poll, renew authority or promise
 that a query will complete; the query still captures and checks its own lease.
 
+The additive `history_handle()` uses `logbook.read` for independent passive
+`history(HistoryQuery)` and optional `recent()` reads. Retain one handle per
+connection so revision and repeated-timestamp fences survive successive queries;
+keep its HTTP outside the ordinary station, PCM and Stop locks. Missing capability
+or HTTP 404 means unavailable, never an empty log. The existing `BridgeClient::history`
+API and its legacy 60-second freshness behavior remain supported.
+
+New owner summaries and recent contacts carry a maximum five-second lease,
+workspace generation and logbook revision. `ReadLease::value()` and
+`remaining_valid_ms()` expire on the original deadline, session retirement or a
+subsequent revision/error on that retained handle. Request elapsed time is included;
+re-reading the lease cannot renew it. Native delivery must preserve the lease until
+serialization and independently fence connection replacement. The webview must
+match its current connection/query and add the remaining duration to the monotonic
+time captured **before** invoking native code.
+
+Full-call counts, confirmation policy and requested band/exact-mode facts come
+from the owner summary, independently of the bounded 25-contact page and legacy
+256-cell matrix. Recent reads contain at most five contacts with the owner's total
+and completeness flags. FT8 and FT4 remain distinct; no empty or incomplete page
+implies an unworked call. A contact with incomplete details and a null revision is
+view-only. [Validation evidence](HISTORY_READ_VALIDATION.md) separates synthetic
+checks, actual producer DTO replay and the remaining native/UI gates.
+
 Run synthetic tests from the repository root:
 
 ```

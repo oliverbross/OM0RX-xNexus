@@ -60,6 +60,8 @@ export interface View {
   endpoint: string | null
   hello: Hello | null
   snapshot: Snapshot | null
+  /** Missing on older native shells; passive owner reads stay unavailable. */
+  connection_token?: string | null
 }
 export type Command =
   | { kind: 'station.tune'; radio_id: string; frequency_hz: number; mode: string }
@@ -92,7 +94,32 @@ export interface OutboxEntry {
   state: 'Pending' | 'NeedsReceipt' | { Settled: Receipt }
 }
 export type DeliveryAction = 'submit' | 'reconcile' | 'retry_missing'
-export interface HistoryContact extends QsoDraft { contact_revision: number | null }
+export interface HistoryContact extends QsoDraft {
+  contact_revision: number | null
+  /** Additive owner schema. Missing fields are legacy, never complete details. */
+  submode?: string
+  exact_mode?: string
+  details_complete?: boolean
+}
+export interface HistorySummary {
+  schema_version: 1
+  scope: 'normal_log_base_callsign'
+  complete: boolean
+  total: number
+  worked_before: boolean
+  confirmed_count: number
+  confirmation_policy: 'xlog_cluster_paper_or_lotw_v1'
+  confirmation_sources: ['paper_qsl', 'lotw']
+  last_started_at_unix_ms: number | null
+  bands: string[]
+  bands_complete: boolean
+  modes: string[]
+  modes_complete: boolean
+  requested_band: string | null
+  requested_exact_mode: string | null
+  requested_band_worked: boolean | null
+  requested_band_exact_mode_worked: boolean | null
+}
 export interface History {
   protocol_version: number
   server_instance: string
@@ -101,6 +128,36 @@ export interface History {
   generated_at_unix_ms: number
   contacts: HistoryContact[]
   matrix: { band: string; mode: string; worked: boolean; confirmed: boolean }[]
+  /** Optional as one complete group. Legacy pages are not full-call summaries. */
+  generation?: string
+  logbook_revision?: number
+  max_age_ms?: number
+  contacts_limit?: 25
+  contacts_complete?: boolean
+  matrix_complete?: boolean
+  history_summary?: HistorySummary
+}
+export interface RecentContacts {
+  protocol_version: number
+  server_instance: string
+  workspace_id: string
+  schema_version: 1
+  generation: string
+  logbook_revision: number
+  generated_at_unix_ms: number
+  max_age_ms: number
+  contacts: HistoryContact[]
+  limit: 5
+  total: number
+  complete: boolean
+  ordering: 'qso_start_desc_contact_id_asc'
+}
+/** Native emits this only after rechecking the original session/read lease.
+ * UI anchors expiry at IPC request start, never receipt time or each re-render. */
+export interface HistoryReadView<T> {
+  payload: T
+  connection_token: string
+  remaining_valid_ms: number
 }
 type Native = { core: { invoke: <T>(name: string, args?: Record<string, unknown>) => Promise<T> } }
 export function invoke<T>(name: string, args?: Record<string, unknown>): Promise<T> {
@@ -121,4 +178,11 @@ export const bridge = {
   history: (callsign: string) => invoke<History>('xlog_history', { callsign }),
 }
 export type Bridge = typeof bridge
+/** Caller captures performance.now BEFORE invoke and fences token + query on return. */
+export const historyReads = {
+  history: (connectionToken: string, callsign: string, band?: string, exactMode?: string) =>
+    invoke<HistoryReadView<History>>('xlog_history_read', { connectionToken, callsign, band: band ?? null, exactMode: exactMode ?? null }),
+  recent: (connectionToken: string) =>
+    invoke<HistoryReadView<RecentContacts>>('xlog_recent', { connectionToken }),
+}
 export const disconnected: View = { paired: false, connected: false, endpoint: null, hello: null, snapshot: null }
