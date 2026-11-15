@@ -17,6 +17,13 @@ fn main() {
         "#[path = {:?}] mod companion_bridge;\n",
         source.to_str().unwrap()
     );
+    // Current owner bridge delegates input/reply validation to this sibling.
+    let needs = source.parent().unwrap().join("companion_needs.rs");
+    if needs.exists() {
+        let needs = needs.canonicalize().unwrap();
+        println!("cargo:rerun-if-changed={}", needs.display());
+        modules.push_str(&format!("#[path = {:?}] mod companion_needs;\n", needs.to_str().unwrap()));
+    }
     if std::env::var_os("CARGO_FEATURE_OWNER_AUDIO").is_some() {
         let buffer = source
             .parent()

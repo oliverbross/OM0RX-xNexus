@@ -85,10 +85,11 @@ fn main() {
         .map(|v| v.as_str().expect("synthetic audio kind"))
         .unwrap_or("off");
     assert!(
-        matches!(synthetic_audio, "off" | "silence48k"),
+        matches!(synthetic_audio, "off" | "silence48k" | "generated-ft4"),
         "known synthetic audio kind required"
     );
-    let has_audio = synthetic_audio == "silence48k";
+    let has_audio = synthetic_audio != "off";
+    let has_needs = synthetic_audio == "generated-ft4";
     #[cfg(not(feature = "owner-audio"))]
     assert_eq!(
         synthetic_audio, "off",
@@ -114,7 +115,20 @@ fn main() {
         "fresh audio fixture required"
     );
     #[cfg(feature = "owner-audio")]
-    let mut audio = (synthetic_audio == "silence48k").then(ui_fixture_audio::Audio::start);
+    let mut audio = has_audio.then(|| {
+        if has_needs {
+            let path = root.join("generated-ft4.s16le");
+            let meta = std::fs::symlink_metadata(&path).unwrap();
+            assert!(meta.is_file() && !meta.file_type().is_symlink() && meta.len() == 720_000);
+            #[cfg(windows)] {
+                use std::os::windows::fs::MetadataExt;
+                assert_eq!(meta.file_attributes() & 0x400, 0, "no waveform reparse point");
+            }
+            let bytes = std::fs::read(path).unwrap();
+            let samples = bytes.chunks_exact(2).map(|b| i16::from_le_bytes([b[0], b[1]])).collect();
+            ui_fixture_audio::Audio::start_period(Some(samples))
+        } else { ui_fixture_audio::Audio::start() }
+    });
     #[cfg(feature = "owner-audio")]
     let audio_buffer = audio.as_ref().map(|audio| audio.buffer.clone());
     let owner = Arc::new(Mutex::new(Owner {
@@ -125,10 +139,18 @@ fn main() {
         receipts: HashMap::new(),
     }));
     let evidence = root.join("events.jsonl");
+    let needs_stop = root.join("STOP_NEEDS");
+    assert!(!needs_stop.exists(), "fresh needs fixture required");
     let bridge=Bridge::start("xnexus-disposable-ui-fixture".into(),Arc::new(move|request|{
         use std::io::Write;
         let mut state=owner.lock().unwrap();
         if let Some(request)=request{
+            if let Some(batch) = request.get("needs_query") {
+                let mut event=std::fs::OpenOptions::new().create(true).append(true).open(&evidence).unwrap();
+                writeln!(event,"{}",json!({"synthetic_needs_query":batch,"at_unix_ms":now()})).unwrap();
+                event.sync_all().unwrap();
+                return Ok(synthetic_needs(batch, has_needs && !needs_stop.exists()));
+            }
             #[cfg(feature = "owner-audio")]
             if let (Some(after), Some(buffer)) = (request["audio_after"].as_u64(), audio_buffer.as_ref()) { return Ok(buffer.lock().unwrap().response(after, now())); }
             if let Some(after)=request["audio_after"].as_u64(){return Ok(json!({"generated_at_unix_ms":now(),"max_age_ms":1000,"state":"stopped","reason":"Synthetic control fixture has no audio capture","descriptor":null,"oldest_sequence":1,"next_sequence":after+1,"gap":false,"chunks":[]}));}
@@ -161,10 +183,17 @@ fn main() {
             state.receipts.insert(id,result.clone());return Ok(result);
         }
         state.revision+=1;
-        Ok(json!({"revision":state.revision,"generated_at_unix_ms":now(),"max_age_ms":3000,
+        let mut snapshot = json!({"revision":state.revision,"generated_at_unix_ms":now(),"max_age_ms":3000,
             "station":{"connected":true,"radio_id":if has_audio {"radio1"} else {"synthetic-radio"},"frequency_hz":state.frequency,"mode":if has_audio {"DIGU"} else {"FT8"},"transmitting":false},
             "rotor":{"connected":true,"rotor_id":"synthetic-rotor","azimuth_deg":state.azimuth,"moving":false},
-            "spots":[{"id":"fixture-W1AW","callsign":"W1AW","frequency_hz":14074000,"mode":"FT8","observed_at_unix_ms":now(),"source":"Disposable synthetic cluster","country":"United States","adif":291,"latitude":41.7,"longitude":-72.7,"band":"20m","call_status":"New Call","dxcc_status":"ATNO","need":{"status":"needed","score":100,"reasons":["Synthetic new entity for acceptance"]}}]}))
+            "spots":[{"id":"fixture-W1AW","callsign":"W1AW","frequency_hz":14074000,"mode":"FT8","observed_at_unix_ms":now(),"source":"Disposable synthetic cluster","country":"United States","adif":291,"latitude":41.7,"longitude":-72.7,"band":"20m","call_status":"New Call","dxcc_status":"ATNO","need":{"status":"needed","score":100,"reasons":["Synthetic new entity for acceptance"]}}]});
+        if has_needs {
+            let ready = !needs_stop.exists();
+            snapshot["needs"] = json!({"generated_at_unix_ms":now(),"max_age_ms":2000,
+                "readiness":if ready {"ready"} else {"unavailable"},
+                "authority":if ready { synthetic_authority() } else {Value::Null}});
+        }
+        Ok(snapshot)
     })).unwrap();
     let pairing = json!({"application":"OM0RX-xLog","protocol_version":1,"endpoint":bridge.endpoint,"token":bridge.token});
     use std::io::Write;
@@ -186,4 +215,30 @@ fn main() {
         std::thread::sleep(Duration::from_millis(200));
     }
     bridge.revoke();
+}
+
+fn synthetic_authority() -> Value {
+    json!({"logbook_revision":1,"classification_revision":1,
+        "country_reference_revision":"xlog-country-facts-v3:synthetic-ui",
+        "policy_revision":"xlog-call-dxcc-needs-v1"})
+}
+fn synthetic_needs(batch: &Value, ready: bool) -> Value {
+    let results: Vec<_> = batch["queries"].as_array().unwrap().iter().map(|q| {
+        let known = ready && q["callsign"] == "K1ABC" && q["mode"] == "FT4" && q["dial_frequency_hz"] == 14_074_000_u64;
+        json!({"query_id":q["query_id"],"normalized_callsign":q["callsign"],
+            "dial_frequency_hz":q["dial_frequency_hz"],"decoder_mode":q["mode"],
+            "classification_mode":"DIGI","band":if known {Some("20m")} else {None},
+            "country":if known {Some("United States")} else {None},
+            "adif":if known {Some(291)} else {None},
+            "country_resolution":if known {Some("resolved")} else {None},
+            "call_status":if known {"New Call"} else {"Unknown"},
+            "dxcc_status":if known {"ATNO"} else {"Unknown"},
+            "need":{"status":if known {"needed"} else {"unknown"},
+                "score":if known {Some(100)} else {None},
+                "reason_code":if known {None} else {Some("unavailable")},
+                "reasons":if known {vec!["Synthetic classification fixture; no real logbook"]} else {vec![]}}})
+    }).collect();
+    json!({"generated_at_unix_ms":now(),"max_age_ms":2000,
+        "readiness":if ready {"ready"} else {"unavailable"},
+        "authority":if ready {synthetic_authority()} else {Value::Null},"results":results})
 }
