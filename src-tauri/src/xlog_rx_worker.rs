@@ -4,6 +4,9 @@
 use crate::xlog_decode::{CompleteFrame, Decoder};
 #[path = "xlog_decoded_needs.rs"]
 mod decoded_needs;
+#[path = "xlog_spectrum.rs"]
+mod spectrum;
+pub use spectrum::{Cursor as SpectrumCursor, Frame as SpectrumFrame};
 #[cfg(test)]
 #[path = "xlog_rx_needs_transport_tests.rs"]
 mod needs_transport_tests;
@@ -119,6 +122,9 @@ struct State {
     epoch: u64,
     authority: Option<Arc<AudioBatch>>,
     needs_blocked: Arc<AtomicBool>,
+    spectrum: Option<spectrum::Published>,
+    spectrum_mailbox: Arc<spectrum::Mailbox>,
+    spectrum_identity: (String, String, String),
 }
 impl State {
     fn refresh_needs(&mut self) {
@@ -135,6 +141,8 @@ impl State {
     fn reset(&mut self, phase: &str, reason: &str) {
         self.epoch = self.epoch.wrapping_add(1);
         self.authority = None;
+        self.spectrum = None;
+        self.spectrum_mailbox.clear();
         self.view.route = None;
         self.view.rows.clear();
         self.view.phase = phase.into();
@@ -200,6 +208,8 @@ pub struct Worker {
     cancel: Arc<AtomicBool>,
     needs_wake: Option<mpsc::SyncSender<()>>,
     needs_observation: Arc<Observation>,
+    spectrum_wake: mpsc::SyncSender<()>,
+    spectrum_thread: Mutex<Option<std::thread::JoinHandle<()>>>,
 }
 struct Job {
     epoch: u64,
@@ -268,6 +278,7 @@ impl Worker {
         .map_err(|_| "Receive worker clock identity exhausted")?;
         // At most 43 ASCII bytes even at the integer bounds; descriptor text is never in an ID.
         let worker_instance = format!("w{:x}_{:x}_{:x}", std::process::id(), stamp, counter);
+        let spectrum_mailbox = Arc::new(spectrum::Mailbox::default());
         let state = Arc::new(Mutex::new(State {
             view: View {
                 enabled: true,
@@ -279,6 +290,9 @@ impl Worker {
             epoch: 1,
             authority: None,
             needs_blocked,
+            spectrum: None,
+            spectrum_mailbox: spectrum_mailbox.clone(),
+            spectrum_identity: (worker_instance.clone(), server.clone(), workspace.clone()),
         }));
         let cancel = Arc::new(AtomicBool::new(false));
         let (tx, rx) = mpsc::sync_channel::<Job>(1);
@@ -328,6 +342,7 @@ impl Worker {
         let decode_lease = lease.clone();
         let decode_server = server.clone();
         let decode_workspace = workspace.clone();
+        let spectrum_worker_instance = worker_instance.clone();
         let decode_started = std::thread::Builder::new().name("xlog-rx-decode".into()).spawn(move || {
             let _lease = decode_lease;
             let mut decoder = Decoder::default();
@@ -374,17 +389,33 @@ impl Worker {
             cancel.store(true, Ordering::Release);
             return Err("Cannot start receive decoder worker".into());
         }
+        let (spectrum_wake, spectrum_rx) = mpsc::sync_channel(1);
+        let spectrum_thread = match spectrum::spawn(
+            state.clone(),
+            cancel.clone(),
+            lease.clone(),
+            spectrum_mailbox.clone(),
+            spectrum_rx,
+        ) {
+            Ok(thread) => thread,
+            Err(_) => {
+                cancel.store(true, Ordering::Release);
+                return Err("Cannot start receive spectrum worker".into());
+            }
+        };
+        let poll_spectrum_wake = spectrum_wake.clone();
         let poll_state = state.clone();
         let poll_cancel = cancel.clone();
         let started = std::thread::Builder::new().name("xlog-rx-read".into()).spawn(move || {
             let _lease = lease;
             let mut assembler = RxAssembler::default();
+            let mut spectrum = spectrum::Producer::new(spectrum_mailbox, poll_spectrum_wake);
             let mut epoch = 1;
             while !poll_cancel.load(Ordering::Acquire) {
                 {
                     let Ok(mut state) = poll_state.lock() else { break; };
                     state.expire();
-                    if state.epoch != epoch { assembler.reset(); epoch = state.epoch; }
+                    if state.epoch != epoch { assembler.reset(); spectrum.reset(); epoch = state.epoch; }
                 }
                 let batch = match audio.poll() {
                     Ok(batch) => Arc::new(batch),
@@ -399,6 +430,7 @@ impl Worker {
                     let Ok(mut state) = poll_state.lock() else { break; };
                     if batch.reset || !running || state.epoch != epoch {
                         assembler.reset();
+                        spectrum.reset();
                         state.reset("waiting", batch.reason.as_deref().unwrap_or("Audio route changed; waiting for a complete period."));
                     }
                     epoch = state.epoch;
@@ -406,13 +438,18 @@ impl Worker {
                 }
                 if let Some(route) = batch.descriptor.as_ref().filter(|_| running) {
                     let context = context(route, &server, &workspace, mode);
+                    let spectrum_context = NeedsContext { worker_instance:spectrum_worker_instance.clone(), worker_epoch:epoch,
+                        server_instance:server.clone(), workspace_id:workspace.clone(), route:route.clone(), decoder_mode:mode };
                     for chunk in &batch.chunks {
                         if poll_cancel.load(Ordering::Acquire) || !batch.is_fresh() { break; }
-                        match assembler.push(&context, PcmChunk { sequence:chunk.sequence, first_frame:chunk.first_frame, sample0_unix_us:chunk.sample0_unix_us, calibration_uncertainty_us:chunk.calibration_uncertainty_us, samples:&chunk.samples }) {
+                        if let Some(end) = chunk.first_frame.checked_add(chunk.samples.len() as u64) { spectrum.input(batch.clone(), end); }
+                        match assembler.push_observed(&context, PcmChunk { sequence:chunk.sequence, first_frame:chunk.first_frame, sample0_unix_us:chunk.sample0_unix_us, calibration_uncertainty_us:chunk.calibration_uncertainty_us, samples:&chunk.samples },
+                            |span| spectrum.push(spectrum_context.clone(), span)) {
                             Ok(Some(period)) => match tx.try_send(Job { epoch, period }) {
                                 Ok(()) => {},
                                 Err(mpsc::TrySendError::Full(_)) => {
                                     assembler.reset();
+                                    spectrum.reset();
                                     if let Ok(mut state) = poll_state.lock() { state.reset("waiting", "Decoder backlog discarded; waiting for a complete period."); epoch = state.epoch; }
                                     break;
                                 },
@@ -424,6 +461,7 @@ impl Worker {
                             },
                             Ok(None) => {},
                             Err(error) => {
+                                spectrum.reset();
                                 if let Ok(mut state) = poll_state.lock() { state.reset("waiting", &format!("Audio continuity lost: {error:?}. Waiting for a complete period.")); epoch = state.epoch; }
                                 break;
                             }
@@ -434,6 +472,7 @@ impl Worker {
                 std::thread::sleep(Duration::from_millis(if batch.chunks.len() == 32 { 5 } else { 40 }));
             }
             audio.disconnect();
+            poll_cancel.store(true, Ordering::Release);
         });
         if started.is_err() {
             cancel.store(true, Ordering::Release);
@@ -444,6 +483,8 @@ impl Worker {
             cancel,
             needs_wake: Some(observation_wake),
             needs_observation,
+            spectrum_wake,
+            spectrum_thread: Mutex::new(Some(spectrum_thread)),
         })
     }
     /// A main-client snapshot observation wakes the independent lane; it neither
@@ -460,11 +501,39 @@ impl Worker {
         state.refresh_needs();
         Ok(state.view.clone())
     }
+    /// No HTTP, DSP, device or Engine access. An absent/newless/stale spectrum
+    /// is None, never an invented row of zero measurements.
+    pub fn spectrum(
+        &self,
+        after: Option<&SpectrumCursor>,
+    ) -> Result<Option<SpectrumFrame>, String> {
+        let mut state = self.state.lock().map_err(|_| "Receive state unavailable")?;
+        state.expire();
+        let epoch = state.epoch;
+        if !state.accepts(epoch) {
+            return Ok(None);
+        }
+        Ok(state
+            .spectrum
+            .as_ref()
+            .filter(|frame| frame.matches(&state))
+            .and_then(|frame| frame.read(after)))
+    }
     pub fn stop(&self) {
         self.cancel.store(true, Ordering::Release);
+        let _ = self.spectrum_wake.try_send(());
         if let Ok(mut state) = self.state.lock() {
             state.reset("off", "Receive decoding is off.");
             state.view.enabled = false;
+        }
+        // Never wait for FFT on the Stop lane. Finished threads are joined; an
+        // unfinished thread retains ACTIVE's lease until it actually retires.
+        if let Ok(mut thread) = self.spectrum_thread.lock() {
+            if thread.as_ref().is_some_and(|thread| thread.is_finished()) {
+                if let Some(thread) = thread.take() {
+                    let _ = thread.join();
+                }
+            }
         }
     }
 }
@@ -704,16 +773,29 @@ mod tests {
     use super::decoded_needs::Scheduler;
     use super::*;
     pub(super) static ACTIVE_TEST_LOCK: Mutex<()> = Mutex::new(());
-    fn live_authority() -> (
+    pub(super) fn live_authority() -> (
         xnexus_xlog_client::BridgeClient,
         AudioClient,
         Arc<AudioBatch>,
     ) {
+        let (bridge, audio, mut batches) = authority_batches(48000, &[1000]);
+        (bridge, audio, batches.remove(0))
+    }
+    pub(super) fn authority_batches(
+        rate: u32,
+        lifetimes: &[u64],
+    ) -> (
+        xnexus_xlog_client::BridgeClient,
+        AudioClient,
+        Vec<Arc<AudioBatch>>,
+    ) {
         use std::io::{Read, Write};
+        let lifetimes = lifetimes.to_vec();
+        let count = lifetimes.len();
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let endpoint = format!("http://{}", listener.local_addr().unwrap());
         let server = std::thread::spawn(move || {
-            for hello in [true, false] {
+            for index in 0..=count {
                 let (mut stream, _) = listener.accept().unwrap();
                 stream
                     .set_read_timeout(Some(Duration::from_secs(2)))
@@ -729,10 +811,10 @@ mod tests {
                     .duration_since(std::time::UNIX_EPOCH)
                     .unwrap()
                     .as_millis() as u64;
-                let value = if hello {
+                let value = if index == 0 {
                     serde_json::json!({"application":"OM0RX-xLog","protocol_version":1,"server_instance":"worker-fixture","workspace_id":"worker-workspace","capabilities":["snapshot.read","audio.rx"]})
                 } else {
-                    serde_json::json!({"protocol_version":1,"server_instance":"worker-fixture","workspace_id":"worker-workspace","generated_at_unix_ms":now,"max_age_ms":1000,"state":"running","reason":null,"descriptor":{"capture_id":"00000000-0000-4000-8000-000000000001","epoch":"00000000-0000-4000-8000-000000000002","radio_id":"radio1","receiver_id":"fixture/slice-a","mapping_generation":1,"device_id":"fixture-dax","slice":"A","dax_channel":2,"frequency_hz":14074000,"mode":"DIGU","source_channels":2,"selected_channel":0,"sample_rate":48000,"sample_format":"s16le","timestamp_basis":"windows_endpoint_capture","remote_rf_latency_us":null,"utc_sync_accuracy_us":null},"oldest_sequence":1,"next_sequence":2,"gap":false,"chunks":[{"sequence":1,"first_frame":0,"frame_count":1,"sample0_unix_us":now*1000,"calibration_uncertainty_us":10,"pcm_base64":"AAA="}]})
+                    serde_json::json!({"protocol_version":1,"server_instance":"worker-fixture","workspace_id":"worker-workspace","generated_at_unix_ms":now,"max_age_ms":lifetimes[index - 1],"state":"running","reason":null,"descriptor":{"capture_id":"00000000-0000-4000-8000-000000000001","epoch":"00000000-0000-4000-8000-000000000002","radio_id":"radio1","receiver_id":"fixture/slice-a","mapping_generation":1,"device_id":"fixture-dax","slice":"A","dax_channel":2,"frequency_hz":14074000,"mode":"DIGU","source_channels":2,"selected_channel":0,"sample_rate":rate,"sample_format":"s16le","timestamp_basis":"windows_endpoint_capture","remote_rf_latency_us":null,"utc_sync_accuracy_us":null},"oldest_sequence":1,"next_sequence":index as u64 + 1,"gap":false,"chunks":[{"sequence":index as u64,"first_frame":index as u64 - 1,"frame_count":1,"sample0_unix_us":now*1000 + (index as u64 - 1)*1_000_000/u64::from(rate),"calibration_uncertainty_us":10,"pcm_base64":"AAA="}]})
                 };
                 let body = value.to_string();
                 write!(stream,"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",body.len()).unwrap();
@@ -746,12 +828,12 @@ mod tests {
         bridge.connect().unwrap();
         let mut audio = bridge.audio_handle().unwrap();
         let began = Instant::now();
-        let batch = Arc::new(audio.poll().unwrap_or_else(|error| panic!(
-            "one-shot synthetic authority setup audio.poll failed: {error:?}; elapsed_ms={}; server_finished={}",
+        let batches = (0..count).map(|_| Arc::new(audio.poll().unwrap_or_else(|error| panic!(
+            "synthetic authority setup audio.poll failed: {error:?}; elapsed_ms={}; server_finished={}",
             began.elapsed().as_millis(), server.is_finished()
-        )));
+        )))).collect();
         server.join().unwrap();
-        (bridge, audio, batch)
+        (bridge, audio, batches)
     }
     #[test]
     fn changing_epoch_or_stopping_rejects_late_decoder_results() {
@@ -764,6 +846,13 @@ mod tests {
             epoch: 7,
             authority: Some(batch.clone()),
             needs_blocked: Arc::new(AtomicBool::new(false)),
+            spectrum: None,
+            spectrum_mailbox: Arc::new(spectrum::Mailbox::default()),
+            spectrum_identity: (
+                "fixture".into(),
+                "worker-fixture".into(),
+                "worker-workspace".into(),
+            ),
         };
         assert!(state.accepts(7));
         state.epoch = 8;
@@ -778,6 +867,8 @@ mod tests {
             cancel: Arc::new(AtomicBool::new(false)),
             needs_wake: None,
             needs_observation: Arc::new(Observation::default()),
+            spectrum_wake: mpsc::sync_channel(1).0,
+            spectrum_thread: Mutex::new(None),
         };
         worker.stop();
         assert!(worker.cancel.load(Ordering::Acquire));
@@ -795,6 +886,13 @@ mod tests {
             epoch: 3,
             authority: Some(batch),
             needs_blocked: Arc::new(AtomicBool::new(false)),
+            spectrum: None,
+            spectrum_mailbox: Arc::new(spectrum::Mailbox::default()),
+            spectrum_identity: (
+                "fixture".into(),
+                "worker-fixture".into(),
+                "worker-workspace".into(),
+            ),
         };
         assert!(state.accepts(3));
         state.view.rows.push(Row {
@@ -867,7 +965,7 @@ mod tests {
             },
         }
     }
-    fn state(batch: Arc<AudioBatch>) -> State {
+    pub(super) fn state(batch: Arc<AudioBatch>) -> State {
         State {
             view: View {
                 enabled: true,
@@ -878,6 +976,13 @@ mod tests {
             epoch: 1,
             authority: Some(batch),
             needs_blocked: Arc::new(AtomicBool::new(false)),
+            spectrum: None,
+            spectrum_mailbox: Arc::new(spectrum::Mailbox::default()),
+            spectrum_identity: (
+                "fixture".into(),
+                "worker-fixture".into(),
+                "worker-workspace".into(),
+            ),
         }
     }
     fn needs_batch(
@@ -1095,6 +1200,8 @@ mod tests {
             cancel: Arc::new(AtomicBool::new(false)),
             needs_wake: None,
             needs_observation: Arc::new(Observation::default()),
+            spectrum_wake: mpsc::sync_channel(1).0,
+            spectrum_thread: Mutex::new(None),
         };
         let (wake, rx) = mpsc::sync_channel(1);
         wake.try_send(()).unwrap();
@@ -1136,6 +1243,8 @@ mod tests {
             cancel: Arc::new(AtomicBool::new(false)),
             needs_wake: None,
             needs_observation: Arc::new(Observation::default()),
+            spectrum_wake: mpsc::sync_channel(1).0,
+            spectrum_thread: Mutex::new(None),
         };
         assert!(ACTIVE
             .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
@@ -1190,6 +1299,8 @@ mod tests {
             cancel: Arc::new(AtomicBool::new(false)),
             needs_wake: None,
             needs_observation: Arc::new(Observation::default()),
+            spectrum_wake: mpsc::sync_channel(1).0,
+            spectrum_thread: Mutex::new(None),
         };
         let (wake, rx) = mpsc::sync_channel(1);
         wake.try_send(()).unwrap();
@@ -1360,6 +1471,8 @@ mod tests {
             cancel: Arc::new(AtomicBool::new(false)),
             needs_wake: None,
             needs_observation: Arc::new(Observation::default()),
+            spectrum_wake: mpsc::sync_channel(1).0,
+            spectrum_thread: Mutex::new(None),
         };
         assert_eq!(worker.view().unwrap().rows[0].needs.remaining_valid_ms, 0);
         worker.stop();

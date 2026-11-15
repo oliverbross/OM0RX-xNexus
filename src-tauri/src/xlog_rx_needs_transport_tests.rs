@@ -11,6 +11,7 @@ struct Fixture {
     reads: Arc<AtomicU64>,
     entered: mpsc::Receiver<()>,
     query_ids: Arc<Mutex<Vec<Vec<String>>>>,
+    audio_phase: Arc<AtomicU64>,
     thread: Option<std::thread::JoinHandle<()>>,
 }
 impl Drop for Fixture {
@@ -36,6 +37,9 @@ fn fixture_with_miss(first_miss: bool) -> Fixture {
     let gate = release.clone();
     let reads = Arc::new(AtomicU64::new(0));
     let audio_reads = reads.clone();
+    let audio_sequence = Arc::new(AtomicU64::new(0));
+    let audio_phase = Arc::new(AtomicU64::new(0));
+    let phase_control = audio_phase.clone();
     let (notify, entered) = mpsc::channel();
     let query_ids = Arc::new(Mutex::new(Vec::new()));
     let recorded_queries = query_ids.clone();
@@ -58,7 +62,9 @@ fn fixture_with_miss(first_miss: bool) -> Fixture {
             let notify = notify.clone();
             let gate = gate.clone();
             let audio_reads = audio_reads.clone();
+            let audio_sequence = audio_sequence.clone();
             let recorded_queries = recorded_queries.clone();
+            let phase_control = phase_control.clone();
             handlers.push(std::thread::spawn(move || {
                 stream.set_nonblocking(false).unwrap();
                 stream.set_read_timeout(Some(Duration::from_secs(2))).unwrap();
@@ -75,8 +81,15 @@ fn fixture_with_miss(first_miss: bool) -> Fixture {
                 } else if path=="/xlog/v1/snapshot" {
                     json!({"protocol_version":1,"server_instance":"worker-fixture","workspace_id":"worker-workspace","revision":if first_miss {now} else {1},"generated_at_unix_ms":now,"max_age_ms":2000,"station":{"connected":false,"radio_id":null,"frequency_hz":null,"mode":null,"transmitting":null},"rotor":{"connected":true,"rotor_id":"fixture-rotor","azimuth_deg":0,"moving":false},"spots":[],"needs":{"generated_at_unix_ms":now,"max_age_ms":2000,"readiness":"ready","authority":authority}})
                 } else if path.starts_with("/xlog/v1/audio?") {
-                    let sequence=audio_reads.fetch_add(1,Ordering::AcqRel)+1;
-                    json!({"protocol_version":1,"server_instance":"worker-fixture","workspace_id":"worker-workspace","generated_at_unix_ms":now,"max_age_ms":1000,"state":"running","reason":null,"descriptor":{"capture_id":"00000000-0000-4000-8000-000000000001","epoch":"00000000-0000-4000-8000-000000000002","radio_id":"radio1","receiver_id":"fixture/slice-a","mapping_generation":1,"device_id":"fixture-dax","slice":"A","dax_channel":2,"frequency_hz":14074000,"mode":"DIGU","source_channels":2,"selected_channel":0,"sample_rate":48000,"sample_format":"s16le","timestamp_basis":"windows_endpoint_capture","remote_rf_latency_us":null,"utc_sync_accuracy_us":null},"oldest_sequence":sequence,"next_sequence":sequence+1,"gap":false,"chunks":[{"sequence":sequence,"first_frame":(sequence-1)*1920,"frame_count":1920,"sample0_unix_us":origin+(sequence-1)*40000,"calibration_uncertainty_us":10,"pcm_base64":"A".repeat(5120)}]})
+                    audio_reads.fetch_add(1,Ordering::AcqRel);
+                    let phase=phase_control.load(Ordering::Acquire);
+                    let after:u64=path.split("after=").nth(1).unwrap().parse().unwrap();
+                    if phase==1 {
+                        json!({"protocol_version":1,"server_instance":"worker-fixture","workspace_id":"worker-workspace","generated_at_unix_ms":now,"max_age_ms":1000,"state":"stopped","reason":"Synthetic capture gap; waiting for new qualified PCM","descriptor":null,"oldest_sequence":after+1,"next_sequence":after+1,"gap":false,"chunks":[]})
+                    } else {
+                    let sequence=audio_sequence.fetch_add(1,Ordering::AcqRel)+1;
+                    json!({"protocol_version":1,"server_instance":"worker-fixture","workspace_id":"worker-workspace","generated_at_unix_ms":now,"max_age_ms":1000,"state":"running","reason":null,"descriptor":{"capture_id":"00000000-0000-4000-8000-000000000001","epoch":if phase==0 {"00000000-0000-4000-8000-000000000002"} else {"00000000-0000-4000-8000-000000000004"},"radio_id":"radio1","receiver_id":"fixture/slice-a","mapping_generation":1,"device_id":"fixture-dax","slice":"A","dax_channel":2,"frequency_hz":14074000,"mode":"DIGU","source_channels":2,"selected_channel":0,"sample_rate":48000,"sample_format":"s16le","timestamp_basis":"windows_endpoint_capture","remote_rf_latency_us":null,"utc_sync_accuracy_us":null},"oldest_sequence":sequence,"next_sequence":sequence+1,"gap":phase==3,"chunks":[{"sequence":sequence,"first_frame":(sequence-1)*1920,"frame_count":1920,"sample0_unix_us":origin+(sequence-1)*40000,"calibration_uncertainty_us":10,"pcm_base64":"A".repeat(5120)}]})
+                    }
                 } else if path=="/xlog/v1/needs/query" {
                     let request:Value=serde_json::from_slice(&body).unwrap();
                     let attempt={let mut ids=recorded_queries.lock().unwrap();
@@ -111,6 +124,7 @@ fn fixture_with_miss(first_miss: bool) -> Fixture {
         reads,
         entered,
         query_ids,
+        audio_phase,
         thread: Some(thread),
     }
 }
@@ -284,5 +298,141 @@ fn actual_pending503_retry_preserves_query_identity_while_pcm_and_stop_progress(
     }
     assert!(!ACTIVE.load(Ordering::Acquire));
     assert!(worker.view().unwrap().rows.is_empty());
+    client.disconnect();
+}
+
+#[test]
+fn actual_worker_pcm_waterfall_flushes_gap_and_accepts_new_epoch_despite_old_cursor() {
+    let _serial = super::tests::ACTIVE_TEST_LOCK.lock().unwrap();
+    let fixture = fixture();
+    let mut client = xnexus_xlog_client::BridgeClient::new(
+        &fixture.endpoint,
+        "synthetic-native-spectrum-gap-test-marker",
+    )
+    .unwrap();
+    client.connect().unwrap();
+    let worker = Worker::start(
+        client.audio_handle().unwrap(),
+        "worker-fixture".into(),
+        "worker-workspace".into(),
+        Mode::FT8,
+    )
+    .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(2);
+    let first = loop {
+        if let Some(frame) = worker.spectrum(None).unwrap() {
+            break frame;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "actual Worker PCM never produced complete spectrum"
+        );
+        std::thread::sleep(Duration::from_millis(5));
+    };
+    assert_eq!(first.spectrum.row.len(), 640);
+    assert!(
+        first.spectrum.row.iter().all(|v| *v == 0.0),
+        "actual synthetic silence, not fabricated warming-up bins"
+    );
+    let cursor = SpectrumCursor {
+        worker_instance: first.context.worker_instance.clone(),
+        worker_epoch: first.context.worker_epoch,
+        sequence: u64::MAX, // New epoch must beat context, never just sequence.
+    };
+    fixture.audio_phase.store(1, Ordering::Release);
+    let deadline = Instant::now() + Duration::from_secs(1);
+    while worker.view().unwrap().route.is_some() && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    assert!(worker.view().unwrap().route.is_none());
+    assert!(worker.spectrum(None).unwrap().is_none());
+    fixture.audio_phase.store(2, Ordering::Release);
+    let deadline = Instant::now() + Duration::from_secs(2);
+    let resumed = loop {
+        if let Some(frame) = worker.spectrum(Some(&cursor)).unwrap() {
+            break frame;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "new epoch never produced fresh spectrum"
+        );
+        std::thread::sleep(Duration::from_millis(5));
+    };
+    assert!(resumed.context.worker_epoch > first.context.worker_epoch);
+    assert_ne!(resumed.context.route.epoch, first.context.route.epoch);
+    assert!(resumed.sequence > first.sequence);
+    assert!(resumed.source_origin_frame > first.source_origin_frame);
+    // A genuine running gap=true response reaches AudioClient.reset and the
+    // production Worker gap path while the descriptor remains unchanged.
+    let gap_cursor = SpectrumCursor {
+        worker_instance: resumed.context.worker_instance.clone(),
+        worker_epoch: resumed.context.worker_epoch,
+        sequence: u64::MAX,
+    };
+    fixture.audio_phase.store(3, Ordering::Release);
+    let deadline = Instant::now() + Duration::from_secs(1);
+    while worker.state.lock().unwrap().epoch <= resumed.context.worker_epoch
+        && Instant::now() < deadline
+    {
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    assert!(worker.state.lock().unwrap().epoch > resumed.context.worker_epoch);
+    assert!(worker.view().unwrap().route.is_some());
+    assert!(worker.spectrum(None).unwrap().is_none());
+    fixture.audio_phase.store(4, Ordering::Release);
+    let deadline = Instant::now() + Duration::from_secs(2);
+    let after_gap = loop {
+        if let Some(frame) = worker.spectrum(Some(&gap_cursor)).unwrap() {
+            break frame;
+        }
+        assert!(Instant::now() < deadline, "running gap did not re-prime");
+        std::thread::sleep(Duration::from_millis(5));
+    };
+    assert_eq!(after_gap.context.route, resumed.context.route);
+    assert!(after_gap.context.worker_epoch > resumed.context.worker_epoch);
+    assert!(after_gap.source_origin_frame > resumed.source_origin_frame);
+    worker.stop();
+    assert!(worker.spectrum(None).unwrap().is_none());
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while ACTIVE.load(Ordering::Acquire) && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    assert!(
+        !ACTIVE.load(Ordering::Acquire),
+        "all actual Worker lanes must retire"
+    );
+    let restarted = Worker::start(
+        client.audio_handle().unwrap(),
+        "worker-fixture".into(),
+        "worker-workspace".into(),
+        Mode::FT8,
+    )
+    .unwrap();
+    let old_worker_cursor = SpectrumCursor {
+        worker_instance: after_gap.context.worker_instance.clone(),
+        worker_epoch: after_gap.context.worker_epoch,
+        sequence: u64::MAX,
+    };
+    let deadline = Instant::now() + Duration::from_secs(2);
+    let replacement = loop {
+        if let Some(frame) = restarted.spectrum(Some(&old_worker_cursor)).unwrap() {
+            break frame;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "new worker cursor failed to retire previous worker"
+        );
+        std::thread::sleep(Duration::from_millis(5));
+    };
+    assert_ne!(
+        replacement.context.worker_instance,
+        after_gap.context.worker_instance
+    );
+    restarted.stop();
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while ACTIVE.load(Ordering::Acquire) && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    assert!(!ACTIVE.load(Ordering::Acquire));
     client.disconnect();
 }
