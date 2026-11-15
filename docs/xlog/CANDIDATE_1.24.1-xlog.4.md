@@ -1,9 +1,12 @@
 # Candidate 1.24.1-xlog.4 — xLog-owned decoded station needs
 
-This reserves a private development candidate, not a release or installed build.
+This private development candidate has a completed Windows build, static artifact
+audit and independent retention at exact source
+`ae35fc6435f861e38029049299833afe57de4885`. It is unsigned, uninstalled and
+not a published release. See [the durable build evidence](WINDOWS_BUILD_1.24.1-xlog.4.md).
 Exact pre-version source is
 `7f08478c564382f4cc9eed775846faa9a088ba1e`.
-Its production application bytes match tested integrated source
+Its production implementation matches tested integrated source
 `0d01248b0504ae77f6f122fdada1b21e4a61806b`; later changes are documentation,
 Linux validation tooling and the generated FT4 integration test. This version
 commit changes only the five version manifests and candidate documentation.
@@ -12,9 +15,10 @@ The separate upstream merge/serial-alias review is not included.
 
 The paired owner is canonical xLog 1.6.27 source
 `16cac86739274073ab2f8000a3916b4e37bc57a5`, whose pre-version implementation is
-`8bd486abd2e62aa079e8b4248126e1e186561452`. It is also source-prepared only.
-Installed xLog 1.6.26 remains unchanged. Neither source preparation establishes
-that the new owner endpoint is installed or that live pairing works.
+`8bd486abd2e62aa079e8b4248126e1e186561452`. The xLog owner reports portable and
+installer packages built and an offline marked launch passed; quiet soak and
+installation remain pending. Installed xLog 1.6.26 remains unchanged. These
+results do not establish installed endpoint or live pairing acceptance.
 
 ## Changes and qualification
 
@@ -33,41 +37,45 @@ The last test uses a synthetic classifier; it is separate from the actual Swift
 wire replay and does not exercise a live logbook or DAX hardware.
 
 Updated Linux tooling fixtures and cache seeding passed, but contract/desktop
-checks were held for host memory. Updated Mac checking was held before any
-frontend/compiler child. Earlier `.3` platform evidence does not qualify this
-new source. Windows native lifecycle, installer and paired acceptance remain
+checks were held for host memory. Updated Mac checking remains held; the latest
+32% resource probe was below its 35% admission threshold, with no new frontend
+or compiler child. Earlier `.3` evidence does not qualify this new source.
+Windows native lifecycle, installer and paired acceptance remain
 open. FLEX slice A is confirmed; its actual DAX RX channel must still be selected
 and physically qualified. Digital transmit is not implemented or enabled.
 
 ## Exact build provenance
 
-After this commit is pushed and fast-forwarded into canonical `main`, record
-its full SHA as `C`. Only clean `C`, equal to freshly fetched `origin/main`, may
-be packaged. Do not substitute the pre-version SHA. A build receipt must bind
-`C`, version `1.24.1-xlog.4`, upstream pin, actual tool paths/versions/hashes,
-lockfiles, configuration, native/model/license inputs and artifact hashes.
-Do not reuse this version for a different packaged source.
+The packaged canonical source is `ae35fc6435f861e38029049299833afe57de4885`,
+verified clean and equal to the fetched fork `origin/main`. The build receipt
+binds that exact source, version, upstream pin, actual tools, lockfile,
+configuration, native/model/license inputs and artifact hashes. Canonical source
+remains frozen during acceptance. Do not reuse this version for different source.
 
-Windows command from canonical `C:\Projects\OM0RX-xNexus`:
+Historical invocation for the one completed Windows attempt (not a retry request):
 
 ```powershell
-pwsh -NoProfile -File scripts/xnexus/run-windows-guarded.ps1 `
-  -ExpectedCommit <C> -EvidenceRoot <fresh-private-evidence-directory>
+pwsh -NoProfile -File C:\Projects\OM0RX-xLog\.build\xnexus-supervisor-12g-drain-ae35-review\run-package.ps1 `
+  -Execute -ExpectedCommit ae35fc6435f861e38029049299833afe57de4885 `
+  -MsysRoot C:\msys64 -EvidenceRoot C:\Projects\OM0RX-xLog\.build\xnexus-windows-guard-evidence
 ```
 
 The helper invokes pinned GNU Rust 1.93.1 and Tauri CLI 2.11.5 with one
 Cargo/CMake job, a 2,560 MiB Node heap, unchanged optimized release profile and
-unsigned NSIS packaging. The outer private Job has a 4 GiB aggregate limit,
-8 GiB physical/6 GiB commit admission and 2 GiB runtime floors. Failure or
-insufficient admission preserves evidence; no automatic retry or cap increase.
-Successful compilation does not prove final optimization fits the memory cap.
+unsigned NSIS packaging from canonical `C:\Projects\OM0RX-xNexus`. The reviewed
+external Job had a 12 GiB cap, 20 GiB physical/commit admission and 6 GiB runtime
+floors, plus a separately tested five-second natural descendant drain. The
+canonical guard/application sources were unchanged. Actual peak was 9.38 GiB;
+root exit 0, zero active descendants and no forced live cleanup were confirmed.
+No automatic retry or cap increase was permitted.
 
-Record the actual loaded official CLI module during the build. After clean
-completion, run `scripts/xnexus/audit-windows.ps1` with this exact version,
-commit and CLI process receipt. Preserve standalone and installer-embedded
-executable hashes separately, including the reviewed NSIS marker transformation.
-Independently retain the artifacts before any later build can replace them.
+Actual CLI process/loaded-module evidence was captured. Static auditing passed
+against this version/source and process receipt; standalone and NSIS-embedded
+hashes remain separate, with only the supported three-byte bundle-marker change.
+All 60 retained files passed copy/hash checks and older `.2` evidence stayed
+unchanged. The two NSIS `WixMode` warnings passed exact-toolchain inert branch
+equivalence checks; obsolete source wrappers remain a cleanup follow-up.
 Follow [installer acceptance](WINDOWS_INSTALLER_ACCEPTANCE_PLAN.md) and
 [private profile acceptance](PRIVATE_PROFILE_ACCEPTANCE.md) as separate gates.
-No app launch, installation, signing, release tag or public upload is implied
-by this reservation or build command.
+No real application launch, installation, signing, release tag or public upload
+is implied by the completed build or audit.

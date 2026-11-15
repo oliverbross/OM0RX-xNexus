@@ -1,10 +1,13 @@
 # OM0RX-xNexus release readiness
 
-The next Windows candidate is reserved as
-[1.24.1-xlog.4](CANDIDATE_1.24.1-xlog.4.md), source-prepared only.
-It includes the reviewed profile repair, installer hardening and completed
-SDK/native/UI integration. Packaging still requires its exact clean canonical
-source, reviewed runner and fresh resource admission; no artifact is claimed.
+Windows [1.24.1-xlog.4](CANDIDATE_1.24.1-xlog.4.md) is built, statically
+audited and independently retained at clean canonical source
+`ae35fc6435f861e38029049299833afe57de4885`. It includes the reviewed profile
+repair, installer hardening and completed SDK/native/UI integration.
+[The exact build evidence](WINDOWS_BUILD_1.24.1-xlog.4.md) records artifacts,
+actual tools, resource limits, natural process cleanup and the NSIS warning
+qualification. The candidate is unsigned, uninstalled and unlaunched; canonical
+source remains frozen during acceptance.
 Source tests, an artifact audit, native lifecycle checks and physical station
 qualification remain separate gates; see the maintained [execution ledger](STATUS.md).
 
@@ -33,17 +36,24 @@ Do not reuse `.1` for changed source.
 
 The current Windows recipe uses Rust 1.93.1 GNU, Tauri CLI 2.11.5, pinned native
 and model assets, **one Cargo/CMake build job**, the unchanged release profile and
-unsigned NSIS packaging. The reviewed outer supervisor applies a 4 GiB aggregate
-Job Object limit and records admission, telemetry and confirmed process cleanup.
+unsigned NSIS packaging. The completed `.4` attempt used a separately reviewed
+external supervisor with a 12 GiB aggregate Job cap, 20 GiB physical/commit
+admission, 6 GiB runtime reserves and a five-second natural descendant drain.
+Canonical supervisor sources remain unchanged; their earlier 4 GiB default is
+not a qualified fat-LTO allowance. The measured `.4` peak was 9.38 GiB, with
+natural root exit, zero active descendants and no forced live cleanup.
 The Windows helper pins and records a 2,560 MiB V8 heap allowance. The complete
 decoded-needs frontend checks passed with this setting under a 4 GiB job
 (2,585,292,800-byte peak); smaller 1,280/1,536 MiB heaps exhausted before useful
 type diagnostics. This measures the frontend, not the final native optimizer.
-This is a bounded build attempt, not evidence that final fat LTO fits that limit.
+The frontend result does not imply final fat LTO fits 4 GiB; the completed
+optimized build's separate memory record is authoritative for `.4`.
 Only clean canonical `main` may be packaged. Build receipts bind the exact source,
 upstream pin, configuration, tools, dependencies and artifacts. xLog packaging and
 installed acceptance remain owned by the “xlog work” chat; an SDK/owner source
-test does not establish that those changes are installed. Changing packaged
+test does not establish that those changes are installed. The owner reports
+1.6.27 portable/installer packages and an offline marked launch passed, with
+quiet soak and installation pending. Changing packaged
 source requires a new visible version, including failed qualification candidates.
 
 The fork retains KD9TAW attribution, COPYING, NOTICE, and third-party notices.
@@ -76,6 +86,10 @@ uses the existing verified cache. Schedule compilation separately from the
 xLog owner's acceptance/resource window.
 
 ### Verified retained artifacts and inputs
+
+The `.4` retention record binds all 60 independently copied files and verifies
+older `.2` evidence unchanged; see [the current artifact table](WINDOWS_BUILD_1.24.1-xlog.4.md#artifacts-audit-and-retention).
+The following earlier preflight and rejected-candidate evidence remain historical.
 
 Read-only verification on 14 November 2026 used clean canonical source
 `1b4ddbcbdcf763e791e2062e3092d650d65f0c15`. No compiler, Node process, application,
@@ -113,8 +127,9 @@ The cached 215116512-byte Microsoft offline WebView2 installer has SHA-256
 and a valid Microsoft Corporation Authenticode signature. Recheck the actual
 inputs selected for the next package; a cache entry is not proof it was used.
 The release dependency cache remains available, but new source/version require
-a new optimized application build. No reliable `.2` peak-memory measurement
-justifies a higher limit. `npm ci` and pinned CLI installation still require
+a new optimized application build. `.2` has no reliable peak-memory series;
+the separate `.4` supervisor measured 9.38 GiB. Neither permits unreviewed
+resource widening or automatic retry. `npm ci` and pinned CLI installation require
 registry availability; this is not an offline reproducibility claim.
 
 ### Candidate preparation and qualification sequence
@@ -141,20 +156,18 @@ registry availability; this is not an offline reproducibility claim.
    add only the installer license. Inherited `TAURI_CONFIG`,
    `NEXUS_ALLOW_MISSING_AICW` and unreviewed platform config files are rejected.
    Never delete cache/source/receipt evidence to make a preflight pass.
-5. After explicit package clearance, invoke the canonical outer supervisor:
-
-   ```powershell
-   pwsh -NoProfile -File scripts/xnexus/run-windows-guarded.ps1 -ExpectedCommit <C-full-sha> -MsysRoot C:\msys64 -EvidenceRoot C:\Projects\OM0RX-xLog\.build\xnexus-windows-packages
-   ```
-
-   Fresh admission requires at least 8 GiB physical and 6 GiB available Windows
-   commit. The private 4 GiB aggregate Job is assigned before child resume,
-   uses BelowNormal priority and one Cargo/CMake job, and stops at either 2 GiB
-   host floor, an owned memory-limit notification or the 12-hour deadline. No
-   retry or widening is automatic. Preserve failure/cleanup evidence and obtain
-   a new reviewed decision before another attempt; unconfirmed termination is
-   not resource release. Release optimization remains fat LTO, one codegen unit
-   and `strip = "debuginfo"`.
+5. After explicit package clearance, use the supervisor reviewed for exact `C`.
+   The canonical default wrapper retains its historical 4 GiB Job, 8/6 GiB
+   admission and 2 GiB floors; the actual `.4` optimizer exceeded that cap.
+   The [completed `.4` invocation](CANDIDATE_1.24.1-xlog.4.md#exact-build-provenance)
+   used a hash-pinned external wrapper/copy of the tested drain guard with a
+   12 GiB Job, 20/20 GiB admission and 6/6 GiB runtime reserves. It still called
+   the unchanged canonical build helper with one Cargo/CMake job, BelowNormal
+   priority, assignment before resume and a 12-hour timeout. Do not repurpose
+   that exact-source proposal or rerun the completed candidate automatically.
+   Preserve failed attempts and require a reviewed decision before retry or
+   widening; unconfirmed termination is not resource release. Release
+   optimization remains fat LTO, one codegen unit and `strip = "debuginfo"`.
 6. Capture actual owned CLI process/module path and hash during the build.
    Require root termination and zero active descendants. The supervisor preserves
    before/after copies of `V.json`, `V.distribution.json` and
@@ -174,8 +187,11 @@ registry availability; this is not an offline reproducibility claim.
 The [installer hardening record](WINDOWS_DISTRIBUTION_HARDENING.md) describes
 tested ownership, payload-completion, ordinary-close and data-retention guards.
 Its inert executable NSIS tests do not qualify a real install, upgrade or uninstall.
-Actual merged-config bundling, static audit and isolated installer/application
-acceptance remain required for the new candidate.
+Actual merged-config bundling and static audit passed for `.4`; isolated
+installer/application acceptance remains required. The obsolete `WixMode`
+shortcut wrappers emitted warnings, but exact-toolchain inert tests proved all
+four update/no-shortcut combinations equivalent to the intended branch.
+Source cleanup remains a later-version follow-up, not an artifact alteration.
 The [silent installer acceptance plan](WINDOWS_INSTALLER_ACCEPTANCE_PLAN.md)
 defines fresh current-user namespace checks, reviewed flags, process evidence
 and synthetic file/profile retention checks without launching the application.

@@ -1,11 +1,16 @@
-# Execution ledger — 14 November 2026
+# Execution ledger — 15 November 2026
 
 The integration remains in qualification. Source, synthetic tests, packaged
 binaries and physical station acceptance are separate evidence levels.
 
-[Candidate 1.24.1-xlog.4](CANDIDATE_1.24.1-xlog.4.md) is version-reserved with
-exact pre-version source and build provenance requirements. It has not been
-packaged, installed or accepted. Canonical xLog 1.6.27 is likewise source-prepared.
+[Candidate 1.24.1-xlog.4](CANDIDATE_1.24.1-xlog.4.md) has a completed Windows
+build, static artifact audit and independent retention from clean canonical
+`ae35fc6435f861e38029049299833afe57de4885`. It remains unsigned, uninstalled
+and unlaunched. [The build record](WINDOWS_BUILD_1.24.1-xlog.4.md) binds the
+actual tools, reviewed 12 GiB supervisor, artifacts and warning qualification.
+Canonical source remains frozen during acceptance. The xLog owner reports
+1.6.27 portable/installer packages and an offline marked launch passed; quiet
+soak and installation remain pending. Installed 1.6.26 is unchanged.
 
 **Preserved isolation failure:** the fresh Mac `.2` profile displayed a draft from
 the prior `.1` test before pairing. Both processes exited normally and no station
@@ -32,12 +37,12 @@ new implementation still requires its own source tests and candidate qualificati
 | M0 | Complete: full upstream history, private fork, fetch-only upstream, nine tracked milestones | Maintain upstream review and patch inventory |
 | M1 | 80 client tests plus exact replay of 40 Swift needs replies; actual owner HTTP and SQLite restart/receipt tests; base bridge merged into canonical xLog | Paired installed-application acceptance |
 | M2 | Separate companion startup, native pairing and private profile; no local station services | Final candidate native GUI and lifecycle acceptance |
-| M3 | xLog-authoritative call/DXCC needs, band/world maps, selected-call history; actual owner mutation/projector matrix; decoded-call owner/SDK/native/UI tests and integrated Windows all-targets check passed | New package and paired UI; installed classification propagation; richer confirmation/award policy evidence |
-| M4 | Owner-mediated tune/point and independent Stop; connection-bound Stop fix merged after 95 focused and 1,164 full native tests | Accepted xLog package containing the fix; paired UI and physical control qualification |
+| M3 | xLog-authoritative call/DXCC needs, band/world maps, selected-call history; owner/SDK/native/UI tests and integrated Windows all-targets check passed; `.4` Windows artifact audited | Paired UI; installed classification propagation; richer confirmation/award policy evidence |
+| M4 | Owner-mediated tune/point and independent Stop; connection-bound Stop fix merged after 95 focused and 1,164 full native tests; xLog 1.6.27 packages built | Installed owner acceptance, paired UI and physical control qualification |
 | M5 | Durable outbox and atomic owner write/receipt; restart, replay and edit-conflict tests | Paired native GUI acceptance; queue archive/export design |
 | M6 | FLEX slice A selected; bounded owner PCM, client, FIR/period assembler, threaded native FT8/FT4 decoder and receive UI; generated FT4 to needs chain passed | Select actual DAX input channel; active reception and clock/route qualification; TX implementation and supervised qualification |
-| M7 | Distinct identity, repaired profile construction, reviewed installer ownership/payload guards and bounded build supervisor | New unique Windows candidate; isolated application and installer acceptance |
-| M8 | Mac .3 artifact and A→B→A isolation passed; exact .3 Linux contract and desktop all-targets check passed | Complete paired UI, Linux native lifecycle, signing and distribution qualification |
+| M7 | Distinct identity, repaired profile construction, reviewed installer guards; `.4` Windows build, artifact audit and independent retention passed | Isolated application and real installer acceptance |
+| M8 | `.4` Windows artifact audited; Mac .3 A→B→A isolation and exact .3 Linux contract/desktop checks passed | Updated Linux/Mac checks and packages, paired UI, native lifecycle, signing and distribution qualification |
 
 RX runtime integration source is `e3ae1534ade5c34dd4e2d3a81bfbe3a72be15d5c`.
 Windows candidate `1.24.1-xlog.2` adds candidate manifests and these records;
@@ -58,8 +63,9 @@ classification exports through the actual Rust projector. They include row
 absence, stale classification becoming Unknown, band/mode differences and
 paper/LoTW/eQSL confirmation cases. This is worker-to-projector evidence, not
 installed HTTP/UI propagation. Canonical xLog is now at
-`16cac86739274073ab2f8000a3916b4e37bc57a5`, with version 1.6.27 reserved and
-source provenance recorded. It has not yet been packaged or installed.
+`16cac86739274073ab2f8000a3916b4e37bc57a5`, version 1.6.27. Its owner reports
+portable/installer packages and an offline marked launch passed, with earlier
+failed guard receipts preserved. Quiet soak and installation remain pending.
 RX evidence includes 58 SDK tests, 40 distinct companion UI tests, TypeScript
 and Vite builds, 14 browser viewport/theme cases, 14 pure DSP/assembler tests,
 five native adapter tests including both modes at five rates, two actual owner
@@ -86,8 +92,10 @@ threshold before TypeScript started. No frontend/compiler child launched;
 source, cache and earlier archive preservation passed, with no remaining owned
 processes. Held receipt SHA-256:
 `4019b0fda7a90e1db07d57500b42ae8fad3dd4f9eb3d08151d231de8bb459405`.
-These resource holds do not qualify the updated source on either platform.
-Neither a new Windows package nor physical DAX reception is claimed.
+The latest Mac resource probe was 32%, below the 35% admission threshold, with
+no new frontend/compiler child. These holds do not qualify the updated source
+on either platform. Windows `.4` subsequently passed the separate optimized
+build and artifact audit; physical DAX reception is still unqualified.
 
 Earlier canonical xLog integrated the bridge and receive owner at
 `5efffc1a23af68157e3c564eb2aa345256bea90a`. Validation includes 1,154 native
@@ -160,13 +168,14 @@ probe found ten active inputs and none DAX. No DAX utility or stream was started
 Receive timing reports host endpoint clock calibration, not a measured global
 UTC accuracy or endpoint-to-RF delay. Both latter values remain explicitly
 unknown. Generated-message tests do not establish physical reception.
-Decoded-row classification is implemented in isolated owner, SDK and native
-branches under [the agreed contract](NEEDS_QUERY_CONTRACT.md). One bounded
+Decoded-row classification is integrated under
+[the agreed contract](NEEDS_QUERY_CONTRACT.md). One bounded
 read mailbox attaches only to an existing ordinary xLog cluster poll; it creates
 no query writer, poller or station connection. Owner tests, 80 SDK checks, replay
 of 40 actual Swift replies and 19 native checks passed. The full 55-test companion
 UI set, TypeScript, production bundle and 14 private-browser cases also passed.
-Full integrated native desktop checking remains pending; new facts are not shipped yet. See
+Full integrated Windows all-targets checking and the `.4` optimized build/artifact
+audit passed. Installed/native paired acceptance remains pending. See
 [the verification record](DECODED_NEEDS_VERIFICATION.md).
 The needed-station board continues to use xLog's classified cluster observations.
 Transmission is unavailable in companion mode.
