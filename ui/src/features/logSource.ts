@@ -41,10 +41,11 @@
 //   refresh()  This window just wrote to the log, or the operator pressed Retry: ask every shown
 //              question again now, without waiting for the tick.
 //
-// The source is chosen once, before anything renders (`setLogSource`): the hooks below read it at
-// render, and a source swapped under mounted views would leave them subscribed to the old one.
+// The native window's default is chosen before rendering (`setLogSource`). An external-owner
+// cockpit uses LogSourceProvider instead: its source belongs to one owner session/workspace.
+// Replacing that source re-subscribes every hook and drops cross-source retained answers.
 
-import { useCallback, useEffect, useRef, useSyncExternalStore } from 'react'
+import { createContext, createElement, useCallback, useContext, useEffect, useRef, useSyncExternalStore, type ReactNode } from 'react'
 import { askLog } from '../api'
 import { createAskingLogSource } from './askingLogSource'
 import { questionKey, type AnswerTo, type LogPage, type LogQuestion } from './logAnswers'
@@ -74,7 +75,22 @@ const askingTheEngine = (): LogSource => createAskingLogSource(async (q) => askA
 
 let current: LogSource = askingTheEngine()
 
-/** The window's source of log answers. */
+const ScopedLogSource = createContext<{ source: LogSource } | null>(null)
+
+/** Bind original Nexus log views to one external owner. Supply a fresh source when the
+ * session/workspace changes. No unavailable answer is replaced by the native source.
+ * Descendant imperative actions must capture useLogSource(), not call the global logSource(). */
+export function LogSourceProvider({ source, children }: { source: LogSource; children: ReactNode }) {
+  return createElement(ScopedLogSource.Provider, { value: { source } }, children)
+}
+
+/** The source for this mounted surface, including imperative callbacks made by that surface. */
+export function useLogSource(): LogSource {
+  const scope = useContext(ScopedLogSource)
+  return scope === null ? current : scope.source
+}
+
+/** The native window's global source. React views use useLogSource() to honor a scoped owner. */
 export function logSource(): LogSource {
   return current
 }
@@ -99,7 +115,7 @@ export function __resetLogSourceForTests(): void {
  * reports no tick.
  */
 export function useLogAnswer<Q extends LogQuestion>(q: Q | null, logTick: number | undefined): AnswerTo<Q> | undefined {
-  const source = current
+  const source = useLogSource()
   const key = q === null ? null : questionKey(q)
   const reading = key !== null
   // The question as of this render. `key` names it, so an unchanged question keeps the callbacks
@@ -137,7 +153,7 @@ export interface LogStatus {
  * view asks through `useLogAnswer`. `undefined` for `q = null`, a view that is not reading.
  */
 export function useLogStatus(q: LogQuestion | null): LogStatus | undefined {
-  const source = current
+  const source = useLogSource()
   const key = q === null ? null : questionKey(q)
   const question = useRef(q)
   question.current = q
@@ -179,11 +195,15 @@ export function useLatestLogAnswer<Q extends LogQuestion>(
   q: Q | null,
   logTick: number | undefined,
 ): { question: Q; answer: AnswerTo<Q> } | undefined {
+  const source = useLogSource()
   const answer = useLogAnswer(q, logTick)
   // A ref, read in the same render: a state update would draw one frame without it, the blink.
-  const latest = useRef<{ question: Q; answer: AnswerTo<Q> } | undefined>(undefined)
-  if (q !== null && answer !== undefined && latest.current?.answer !== answer) latest.current = { question: q, answer }
-  return q === null ? undefined : latest.current
+  const latest = useRef<{ source: LogSource; value: { question: Q; answer: AnswerTo<Q> } } | undefined>(undefined)
+  if (latest.current?.source !== source) latest.current = undefined
+  if (q !== null && answer !== undefined && latest.current?.value.answer !== answer) {
+    latest.current = { source, value: { question: q, answer } }
+  }
+  return q === null ? undefined : latest.current?.value
 }
 
 /**
@@ -197,7 +217,7 @@ export function useLogAnswers(
   logTick: number | undefined,
   reading = questions.length > 0,
 ): readonly unknown[] {
-  const source = current
+  const source = useLogSource()
   const key = questions.map(questionKey).join('\n')
   const asked = useRef(questions)
   asked.current = questions
