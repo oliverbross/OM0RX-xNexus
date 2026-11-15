@@ -31,6 +31,8 @@ import { useOwnerSpectrum } from './useOwnerSpectrum'
 import { spectrumApi, spectrumContextKey } from './spectrumApi'
 import { ownerOperatingModel } from './ownerOperatingModel'
 import { createOwnerRotor } from './ownerRotor'
+import { bearingReads } from './bearingApi'
+import { useOwnerBearing } from './useOwnerBearing'
 import { ownerCockpitPresentation } from './ownerCockpitPresentation'
 import { ownerDecodeEntries, ownerRoster } from './ownerDecodeEntries'
 import { installOwnerLogBoundary, unavailableOwnerLog } from './ownerLogBoundary'
@@ -42,7 +44,7 @@ const FT_MODES = new Set<Tier>(['FT8', 'FT4'])
 
 /** Exported for the actual original-component browser fixture. Production entry
  * switches only after this host and its owner data boundaries are qualified. */
-export function OriginalHost({ api = bridge, receiver = rxApi, spectrumTransport = spectrumApi.read, historyTransport = historyReads, contactTransport = contactReads }: { api?: Bridge; receiver?: RxApi; spectrumTransport?: typeof spectrumApi.read; historyTransport?: typeof historyReads; contactTransport?: typeof contactReads }) {
+export function OriginalHost({ api = bridge, receiver = rxApi, spectrumTransport = spectrumApi.read, historyTransport = historyReads, contactTransport = contactReads, bearingTransport = bearingReads }: { api?: Bridge; receiver?: RxApi; spectrumTransport?: typeof spectrumApi.read; historyTransport?: typeof historyReads; contactTransport?: typeof contactReads; bearingTransport?: typeof bearingReads }) {
   installOwnerLogBoundary()
   const connection = useOwnerConnection(api)
   const manualCreate = useOwnerManualCreate(connection, api)
@@ -58,7 +60,9 @@ export function OriginalHost({ api = bridge, receiver = rxApi, spectrumTransport
   const receive = (start: boolean) => { spectrum.suspend(); void rx.receiving(start) }
   const decodeContext = `${session}:${spectrumContextKey(rx.view.current_context) ?? 'unavailable'}`
   const [markerHz, setMarkerHz] = useState(1500)
-  const [selectedCall, selectCall] = useState<string | null>(null)
+  const [selectedCall, setSelectedCall] = useState<string | null>(null)
+  const selectionRetire = useRef<() => void>(() => {})
+  const selectCall = (call: string | null) => { if(call !== selectedCall) selectionRetire.current(); setSelectedCall(call) }
   const [layout, setLayout] = useState<'classic' | 'roster'>('classic')
   const [page, setPage] = useState<'operate' | 'spots'>('operate')
   const [theme, setTheme] = useState<'dark' | 'light'>('dark')
@@ -97,6 +101,10 @@ export function OriginalHost({ api = bridge, receiver = rxApi, spectrumTransport
   currentRotorInput.current = rotorInput
   const rotor = rotorOwner.current.present(rotorInput, () => currentRotorInput.current,
     connection.isCurrentConnection, connection.command, now)
+  const bearing = useOwnerBearing({ binding:{ view,session,lease:connection.lease,current:connection.isCurrentBearingIdentity },
+    callsign:selectedCall,poll:connection.poll,pointEvidence:connection.pointEvidence,
+    observedPoint:connection.observedPoint,retirePointObservation:connection.retirePointObservation },bearingTransport)
+  selectionRetire.current = bearing.retire
   const services = useMemo<OperateServiceAdapter>(() => {
     const actions = new Set<OperateAction>(['decoder', 'rxMarker'])
     if (canTune) actions.add('radio')
@@ -134,7 +142,7 @@ export function OriginalHost({ api = bridge, receiver = rxApi, spectrumTransport
     <button className="op-btn" disabled={rx.pending || rx.view.enabled || !fresh || !capabilities.includes('audio.rx')}
       onClick={() => receive(true)}>Start receiving</button>
     <button className="op-btn" disabled={!rx.view.enabled && !rx.pending} onClick={() => receive(false)}>Stop receiving</button>
-    <RotorStrip external={rotor} />
+    <RotorStrip external={{ ...rotor, bearing: bearing.presentation }} />
     <span role="status">{rx.pollError || rx.actionError || connection.actionError || connection.pollError || notice ||
       (connection.receipt ? `xLog control: ${connection.receipt.status}${connection.receipt.message ? ` — ${connection.receipt.message}` : ''}` : rx.view.reason)}</span>
   </div>

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 import { useEffect, useRef, useState } from 'react'
-import { bridge, disconnected, type Bridge, type Command, type Receipt, type View } from './api'
+import { bridge, disconnected, type Bridge, type Command, type Receipt, type View, type StationIdentityBinding } from './api'
+import { bearingIdentityKey } from './ownerBearingReader'
 import { leaseSnapshot, type SnapshotLease } from './ownerOperatingModel'
 import type { ControlPoll, ControlScope } from './controlObservation'
 import { createPointEvidence, type PointEvidenceView } from './pointEvidence'
@@ -56,6 +57,15 @@ export function useOwnerConnection(api: Bridge = bridge) {
   const isCurrentReadConnection = (scope: OwnerConnectionScope, requiredCapabilities: readonly string[] = []) =>
     heldView.api === api && isCurrentConnection(scope) && acceptedView.current.connected
       && requiredCapabilities.every(capability => acceptedView.current.hello?.capabilities.includes(capability))
+  const isCurrentBearingIdentity = (scope: OwnerConnectionScope, binding: StationIdentityBinding, grid: string) => {
+    const current = acceptedView.current.snapshot?.station_identity, currentLease = admittedLease.current
+    const at = performance.now()
+    return isCurrentReadConnection(scope, ['bearing.read']) && currentLease !== null && Number.isFinite(at) && at >= 0
+      && currentLease.deadline > at && currentLease.snapshot === acceptedView.current.snapshot
+      && current?.transmit_authority === false && current.source === 'saved_station_settings'
+      && (current.state === 'current' || current.state === 'incomplete') && current.mygrid === grid
+      && bearingIdentityKey(current.binding) !== null && bearingIdentityKey(current.binding) === bearingIdentityKey(binding)
+  }
   const accept = (next: View, started: number, control = controlGeneration.current, pendingAtStart = ordinaryPending.current) => {
     acceptedView.current = next
     setView(next)
@@ -197,8 +207,7 @@ export function useOwnerConnection(api: Bridge = bridge) {
     retireEvidence()
     await dispatch(value)
   }
-  /** Unwired preparation seam; only an explicit caller can request a Point.
-   * No bearing resolver, automatic retry, UI action or native fallback. */
+  /** Only an explicit caller can request a Point. No resolver or retry. */
   async function observedPoint(value: Extract<Command, { kind: 'rotor.point' }>, expectedScope: ControlScope,
     requestId = crypto.randomUUID()): Promise<PointEvidenceView> {
     // The eventual bearing/action caller supplies its captured scope. Resolving
@@ -220,5 +229,8 @@ export function useOwnerConnection(api: Bridge = bridge) {
   return { view, lease, session, busy: heldView.api === api && busy,
     pollError: heldView.api === api ? pollError : '', actionError: heldView.api === api ? actionError : '',
     receipt: heldView.api === api ? receipt : null, now, connection, command, isCurrentConnection, isCurrentReadConnection,
-    poll, observedPoint, pointEvidence: point.current?.inspect(currentControlScope()) ?? null }
+    poll, observedPoint, isCurrentBearingIdentity,
+    // Current observation only: historical dispatch settlement and Stop identity survive.
+    retirePointObservation: () => { point.current?.retire() },
+    pointEvidence: point.current?.inspect(currentControlScope()) ?? null }
 }

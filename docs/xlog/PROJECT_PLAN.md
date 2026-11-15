@@ -123,14 +123,29 @@ The production bundle graph proves the original host is included. The subsequent
 and limits are in the [execution ledger](STATUS.md). These passes qualify frontend
 source and isolated browser behavior; native packaging and paired station
 acceptance remain required.
-Checkpoint `b84610861` additionally includes the qualified original Spots view,
+Checkpoint `3487e4e2e` additionally includes the qualified original Spots view,
 original contact-card surface and supported six-field editor, actual owner DTO
 replay, strict contact-detail codec and bounded SDK/native/frontend by-ID reads.
-The card is not yet host-mounted from the original Recent/Recall gestures.
+The original Recent/Recall gestures now open the actual card by exact contact
+UUID. The stable editor preserves dirty drafts through refresh/expiry, supports
+explicit saved-correction recovery outside Recent, and exposes the existing xLog
+connection dialog above the retained card. Its focused, catalog, strict
+TypeScript/production bundle and three-viewport/six-layout browser gates passed;
+see [the host qualification](ORIGINAL_CONTACT_HOST_SOURCE.md).
 xLog's producer, authenticated endpoint and passive-read lifecycle fixes are
-committed; original-host editing/recovery and actual-owner native acceptance
-remain active implementation. Point poll/settlement tracking is committed at
-`5b9429500`, with UI dispatch and independent bearing transport still pending.
+committed; actual-owner native editing/restart acceptance remains open.
+Point poll/settlement tracking is committed at `5b9429500`. The strict passive
+bearing body codec, independent SDK client and selection-fenced native lane are
+now committed and separately qualified. The native lane passed 32 focused tests;
+full Tauri integration and original Point UI dispatch remain separate gates.
+The original FT8/FT4 Station adapter and maintained paired replay retain the
+exact prepared body/manifest/PCM through the actual xLog owner modules. All 18
+paired cases passed, with explicit fake actual-start and negative controls;
+neither a scheduler, output device, PTT nor a TX endpoint is provided by that gate.
+The native decoder now retains its actual records and full receive provenance
+until the existing worker acceptance boundary; all eight decoder and 36 worker
+tests passed. This preserves the seam for a future native Station feed while
+keeping the presentation DTO unchanged. Runtime sequencing remains unwired.
 Updated notice generation is qualified separately from
 the incomplete corresponding-source/model delivery inventory. These source
 changes leave the installed applications and next candidate version unchanged.
@@ -140,10 +155,10 @@ without operating the station; `.5` will not be installed as the final UI.
 | Priority / milestone | Concrete software work | Source seam and exit evidence |
 |---|---|---|
 | Immediate / M2 | Qualify the restored original production entry in a native candidate and the paired xLog workflow | Frontend and complete-host browser checks passed; preserve their exact source identity in a new version/build receipt. Native history/connection tests and private candidate lifecycle, then paired RX/needs/history acceptance, remain open. Desktop-control automation stays off after cursor recovery. |
-| 1 / M4 | Mount explicit Point dispatch using the owner bearing read, then qualify later observations and retained Stop | The original global RotorStrip now retains the exact token/owner/workspace/target through telemetry expiry and remains available from Spots. Point tracking uses actual poll provenance and preserves dispatch receipts separately from later telemetry. Qualify the independent bearing transport and its station-identity binding before adding the original Point controls; no resolver or second rotor owner. |
-| 2 / M5 | Mount the original supported contact editor and durable recovery, then qualify native create/edit/receipt/restart against disposable actual-owner SQLite | Authenticated full-detail producer, endpoint and SDK/native/frontend readers are qualified source. Mount current exact-ID Recent/Recall opens, synchronous read/write guards, stable draft lifetime and explicit saved-correction recovery. Preserve nullable fields and confirmation provenance; Queue is not Applied. Terminal archive work must preserve uncertain requests, auditability and duplicate protection. No production-log mutation is part of this software gate. |
+| 1 / M4 | Mount explicit Point dispatch using the qualified owner bearing transport, then qualify later observations and retained Stop | The original global RotorStrip retains the exact token/owner/workspace/target through telemetry expiry and remains available from Spots. Point tracking preserves dispatch receipts separately from later telemetry. The independent bearing SDK/native lane is qualified separately from the pending frontend and full-shell integration. Reuse exact station binding and explicit original SP/LP controls; no resolver or second rotor owner. |
+| 2 / M5 | Qualify native create/edit/receipt/restart against disposable actual-owner SQLite, then expand original Logbook/create and terminal archive workflows | Full-detail reads, exact-ID Recent/Recall opens, the original supported editor, stable draft lifetime, explicit reconnect and saved-correction recovery passed their stated source/browser gates. Preserve nullable fields and confirmation provenance; Queue is not Applied. Full Logbook browsing, contact creation and archive work must preserve immutable requests, uncertain outcomes, auditability and duplicate protection. No production-log mutation is part of this software gate. |
 | 3 / M3 | Expand owner confirmation/award provenance and its presentation, then reuse propagation views without starting independent station services | `HistoryPanel.tsx`/history DTO currently expose worked/confirmed booleans; companion views reuse band/offline world maps, not the propagation engine. Add actual-producer fixtures for source-specific eligibility, corrections and revision changes; keep propagation evidence distinct from authoritative owner needs. |
-| 4 / M6 | Qualify the original sequence adapter and exact prepared-period owner transfer, then implement scheduler, bounded protocol and independent hardware release | [TX_DESIGN_DRAFT.md](TX_DESIGN_DRAFT.md) and [the original sequence plan](TX_SEQUENCE_ADAPTER_PLAN.md). Reuse actual Nexus Station transitions only after an actual-start event, never after Permit/ACK. Preserve exact manifest/PCM/body identity through the existing owner journal and fake transport. Test lost replies, blocked acquisition, stale release, restart without replay and timing bounds. Wire limits and ownership contracts require owner agreement; no TX capability or RF qualification follows from offline tests. |
+| 4 / M6 | Preserve accepted native decode periods, wire the original sequence adapter, then implement scheduler, bounded protocol and independent hardware release | [TX_DESIGN_DRAFT.md](TX_DESIGN_DRAFT.md) and [the original sequence plan](TX_SEQUENCE_ADAPTER_PLAN.md). The offline adapter and maintained [actual-owner replay](../../integrations/xlog-tx-paired/VALIDATION.md) passed their stated gates: actual Station transitions occur only after fake actual-start, and exact body/manifest/PCM identity survives owner validation and immutable fake-sink retention. Runtime native-period delivery, live context/clock construction, bounded endpoint, calibrated output, first-frame validation and release remain software work. No TX capability or RF qualification follows from offline tests. |
 | 5 / M7–M8 | Run updated integrated frontend/native gates and prepare same-source platform artifacts, corresponding source/licenses and maintenance evidence | `scripts/xnexus`, platform build receipts and `PATCH_INVENTORY.md`. Resume resource-held Mac/Linux checks without lowering guards; audit produced artifacts, and rehearse any upstream promotion against the final integrated source. Signing/notarization and native platform lifecycle remain explicit release gates. |
 
 Physical Tune/Point/Stop, live log-change propagation, sustained DAX reception and

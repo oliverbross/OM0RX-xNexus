@@ -179,6 +179,7 @@ const MIGRATED = [
   'xlog/manualCreateMessages.ts',
   'components/LogbookForm.tsx',
   'components/OwnerManualCreate.tsx',
+  'xlog/ownerBearingMessages.ts',
   'components/QsoHistory.tsx',
   'components/RecentlyDeleted.tsx',
   // The import preview and its no-loss report's words — born migrated.
