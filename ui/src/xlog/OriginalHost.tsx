@@ -9,14 +9,19 @@ import { RotorStrip } from '../components/RotorStrip'
 import { StationList } from '../components/StationList'
 import { SpotsPanel } from '../components/SpotsPanel'
 import { Dialog } from '../components/ui/Dialog'
+import { ContactCard } from '../components/ContactCard'
+import { ConfirmHost } from '../confirm'
+import { ownerEditorResumeLabel } from '../features/ownerEditorMessages'
+import { t } from '../i18n'
 import { OperateServices, type OperateAction, type OperateServiceAdapter } from '../components/operateServices'
 import { OPERATE_PANELS, usePanelLayout } from '../features/panelState'
 import { allFeatureIds } from '../features/registry'
 import { LogSourceProvider } from '../features/logSource'
 import { useViewport } from '../useViewport'
 import type { BandChannel, NeedTag, Tier } from '../types'
-import { bridge, historyReads, type Bridge } from './api'
+import { bridge, historyReads, contactReads, type Bridge } from './api'
 import { useOwnerHistory } from './useOwnerHistory'
+import { useOwnerContact } from './useOwnerContact'
 import { rxApi, type RxApi } from './rxApi'
 import { useOwnerConnection } from './useOwnerConnection'
 import { useOwnerReceiver } from './useOwnerReceiver'
@@ -35,7 +40,7 @@ const FT_MODES = new Set<Tier>(['FT8', 'FT4'])
 
 /** Exported for the actual original-component browser fixture. Production entry
  * switches only after this host and its owner data boundaries are qualified. */
-export function OriginalHost({ api = bridge, receiver = rxApi, spectrumTransport = spectrumApi.read, historyTransport = historyReads }: { api?: Bridge; receiver?: RxApi; spectrumTransport?: typeof spectrumApi.read; historyTransport?: typeof historyReads }) {
+export function OriginalHost({ api = bridge, receiver = rxApi, spectrumTransport = spectrumApi.read, historyTransport = historyReads, contactTransport = contactReads }: { api?: Bridge; receiver?: RxApi; spectrumTransport?: typeof spectrumApi.read; historyTransport?: typeof historyReads; contactTransport?: typeof contactReads }) {
   installOwnerLogBoundary()
   const connection = useOwnerConnection(api)
   const { view, session, now } = connection
@@ -74,6 +79,7 @@ export function OriginalHost({ api = bridge, receiver = rxApi, spectrumTransport
   snap.stations = ownerRoster(entries)
   const history = useOwnerHistory(view, session, selectedCall ? { callsign: selectedCall,
     ...(snap.radio.band ? { band: snap.radio.band, exactMode: rx.mode } : {}) } : null, historyTransport)
+  const contact = useOwnerContact(connection, api, history.canOpenContact, contactTransport)
   const current = useRef({ model, connection, capabilities })
   current.current = { model, connection, capabilities }
   const spotInput = { view, lease: connection.lease, session }
@@ -120,6 +126,7 @@ export function OriginalHost({ api = bridge, receiver = rxApi, spectrumTransport
     dropAfterCycles={3} grip="stations" />
   const status = <div className="now-bar now-bar-inbar" aria-label="xLog connection and receiver">
     <button className="op-btn" onClick={() => setConnectionOpen(true)}>{fresh ? 'xLog connected' : 'Connect xLog'}</button>
+    {contact.savedAvailable && <button className="op-btn" disabled={!contact.resumeEnabled} onClick={() => void contact.resume()}>{ownerEditorResumeLabel()}</button>}
     <button className="op-btn" disabled={rx.pending || rx.view.enabled || !fresh || !capabilities.includes('audio.rx')}
       onClick={() => receive(true)}>Start receiving</button>
     <button className="op-btn" disabled={!rx.view.enabled && !rx.pending} onClick={() => receive(false)}>Stop receiving</button>
@@ -153,10 +160,17 @@ export function OriginalHost({ api = bridge, receiver = rxApi, spectrumTransport
             onFreetext={denied} onLog={denied} onOverrideTx={denied} onHaltTx={denied}
             onSetTxEnabled={denied} onSetTune={denied} onSetHoldTxFreq={denied}
             roster={roster} needByCall={NO_NATIVE_NEEDS} selectedCall={selectedCall} onSelect={selectCall}
-            onClearSelection={() => selectCall(null)} layoutMode={layout} onLayoutMode={setLayout} panels={panels} active={page === 'operate'} />
+            onClearSelection={() => selectCall(null)} onOpenLogbook={(call, id) => {
+              void contact.open(call, id).then(opened => { if (!opened) setNotice(t('contactCard.owner.unavailable')) })
+            }}
+            layoutMode={layout} onLayoutMode={setLayout} panels={panels} active={page === 'operate'} />
         </div>
         {page === 'spots' && <SpotsPanel external={spotSource} selectedCall={selectedCall} />}
       </div>
+      {contact.card && <ContactCard {...contact.card} onClose={() => void contact.close()}
+        connection={() => setConnectionOpen(true)}
+        refresh={{ run: contact.refresh, disabled: !contact.refreshEnabled }} />}
+      <ConfirmHost />
       <Dialog open={connectionOpen} onOpenChange={setConnectionOpen} title="xLog connection"
         description="Enable companion sharing in xLog, then open its pairing file here. Radio and logbook ownership stays in xLog.">
         <p role="status">{fresh ? 'Current station observations received.' : 'No current station observation.'}</p>

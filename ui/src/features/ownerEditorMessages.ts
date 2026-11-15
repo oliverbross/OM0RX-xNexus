@@ -1,4 +1,5 @@
 import { t } from '../i18n'
+export const ownerEditorResumeLabel = () => t('contactCard.editor.resume')
 import type { OwnerEditorView } from './ownerContactEditor'
 
 export function ownerEditorMessage(view:OwnerEditorView):string{

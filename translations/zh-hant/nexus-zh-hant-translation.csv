@@ -11212,3 +11212,6 @@ Click for internet feed controls.","{{detail}}
 "1","contactCard.owner.rawConfirmations","Retained confirmation fields; upload receipts and award authority are separate.","保留的確認欄位；上傳回執與獎狀認定是獨立資訊。","xLog","Read-only original contact card; preserve unknown versus empty."
 "1","contactCard.owner.awardAuthority","Award authority","獎狀認定","xLog","Read-only original contact card; preserve unknown versus empty."
 "1","contactCard.owner.uploadReceipt","{{service}} upload receipt","{{service}}上傳回執","xLog; {{service}}","Read-only original contact card; preserve unknown versus empty."
+"1","contactCard.editor.refresh","Refresh contact","重新整理通聯","xLog","Explicit selected-contact read refresh."
+"1","contactCard.editor.resume","Resume saved correction","繼續已儲存的更正","xLog","Explicit same-key retained correction recovery."
+"1","contactCard.editor.connection","xLog connection","xLog 連線","xLog","Explicit connection controls above a retained owner contact card."

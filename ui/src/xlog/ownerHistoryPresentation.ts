@@ -6,10 +6,14 @@ import type { OwnerReadState } from './ownerHistoryReader'
 
 const canOpen = (contact: History['contacts'][number]) => contact.details_complete === true
   && contact.contact_revision !== null && Number.isSafeInteger(contact.contact_revision) && contact.contact_revision >= 0
+export const canonicalContactId = (id: unknown): id is string => typeof id === 'string'
+  && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(id)
+const rowCanOpen = (contact: History['contacts'][number], contactRead?: boolean) =>
+  contactRead === undefined ? canOpen(contact) : contactRead && canonicalContactId(contact.contact_id)
 
 /** Call only with the shared host reader's currently inspected state. These
  * projections do not renew or own a read lease, nor manufacture LoggedQso. */
-export function ownerRecallRead(read: OwnerReadState<History>, matchMode: boolean): ExternalRecallRead {
+export function ownerRecallRead(read: OwnerReadState<History>, matchMode: boolean, contactRead?: boolean): ExternalRecallRead {
   if (read.state === 'loading') return { state: 'loading', message: 'Reading xLog history…' }
   if (read.state !== 'current') return { state: 'unavailable', message: read.reason }
   const payload = read.payload, summary = payload.history_summary
@@ -28,17 +32,17 @@ export function ownerRecallRead(read: OwnerReadState<History>, matchMode: boolea
         id: contact.contact_id, whenUnix: contact.started_at_unix_ms / 1000,
         band: contact.band, mode: contact.exact_mode ?? contact.mode,
         rstSent: contact.rst_sent, rstRcvd: contact.rst_received, comment: contact.comment,
-        canOpen: canOpen(contact),
+        canOpen: rowCanOpen(contact, contactRead),
       })),
     },
   }
 }
 
-export function ownerRecentRead(read: OwnerReadState<RecentContacts>): ExternalRecentRead {
+export function ownerRecentRead(read: OwnerReadState<RecentContacts>, contactRead?: boolean): ExternalRecentRead {
   if (read.state === 'loading') return { state: 'loading', message: 'Reading recent xLog contacts…' }
   if (read.state !== 'current') return { state: 'unavailable', message: read.reason }
   return { state: 'current', total: read.payload.total, rows: read.payload.contacts.map(contact => ({
     id: contact.contact_id, call: contact.callsign, band: contact.band, mode: contact.exact_mode ?? contact.mode,
-    whenUnix: contact.started_at_unix_ms / 1000, canOpen: canOpen(contact),
+    whenUnix: contact.started_at_unix_ms / 1000, canOpen: rowCanOpen(contact, contactRead),
   })) }
 }

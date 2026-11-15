@@ -22,13 +22,13 @@ const view: View = {
 const lease = { snapshot: view.snapshot!, deadline: 1000 }
 vi.mock('./useOwnerConnection', () => ({ useOwnerConnection: () => ({ view, lease, session: 1, now: 100,
   busy: false, pollError: '', actionError: '', receipt: null, command: control.command, connection: control.connection,
-  isCurrentConnection: () => true }) }))
+  isCurrentConnection: () => true, isCurrentReadConnection: () => false }) }))
 vi.mock('./useOwnerReceiver', () => ({ useOwnerReceiver: () => ({ view: { ...rxOff, enabled: true }, pending: false,
   observation: 1, leases: new Map(), mode: 'FT8', now: 100, receiving: control.receive,
   selectMode: vi.fn(), pollError: '', actionError: '' }) }))
 vi.mock('./useOwnerSpectrum', () => ({ useOwnerSpectrum: () => ({ getSpectrumRow: async () => null,
   resetKey: 'spectrum-1', suspend: control.suspend }) }))
-vi.mock('./useOwnerHistory', () => ({ useOwnerHistory: () => ({ recent: null, recall: null, refresh: vi.fn() }) }))
+vi.mock('./useOwnerHistory', () => ({ useOwnerHistory: () => ({ recent: null, recall: null, refresh: vi.fn(), canOpenContact: () => false }) }))
 vi.mock('../components/TopBar', () => ({ TopBar: ({ nowBar }: { nowBar: ReactNode }) => <header>{nowBar}</header> }))
 vi.mock('../components/StationList', () => ({ StationList: () => null }))
 vi.mock('../components/OperateCockpit', () => ({ OperateCockpit: ({ active, external }: { active: boolean; external: { spectrumResetKey: string; rotorInGlobalHeader?: boolean } }) => {

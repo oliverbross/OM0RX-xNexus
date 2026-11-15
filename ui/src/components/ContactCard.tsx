@@ -170,6 +170,9 @@ export interface OwnerContactCardProps {
   external: { contactId: string; scopeKey: string; read: OwnerContactRead }
   /** Caller-owned outside the read-key remount; omitted means read-only. */
   editor?: OwnerContactEditor
+  refresh?: { run: () => void; disabled: boolean }
+  /** Explicit owner connection controls above this retained card, never an automatic reconnect. */
+  connection?: () => void
   onClose: () => void
 }
 

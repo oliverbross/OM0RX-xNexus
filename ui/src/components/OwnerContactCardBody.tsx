@@ -20,7 +20,7 @@ const QRZ_PAGE = 'QRZ ↗'
 
 /** No native service imports, subscription or write callbacks. A current input
  * is already admitted by its caller; this body cannot fetch or renew it. */
-export function OwnerContactCardBody({ external, onClose, editor: suppliedEditor }: OwnerContactCardProps) {
+export function OwnerContactCardBody({ external, onClose, editor: suppliedEditor, refresh, connection }: OwnerContactCardProps) {
   const editor=suppliedEditor?.contactId===external.contactId?suppliedEditor:undefined
   useSyncExternalStore(editor?.subscribe??noSubscribe,editor?.version??zero)
   const [,tick]=useReducer((n:number)=>n+1,0)
@@ -30,7 +30,8 @@ export function OwnerContactCardBody({ external, onClose, editor: suppliedEditor
   const returnFocus = useFocusReturn(true)
   const unavailable = t('contactCard.owner.unavailable')
   const read = external.read
-  const detail = editing ? editing.detail : read.state === 'current' ? read.detail : null
+  const detail = editing ? editing.detail ?? (read.state === 'current' && read.detail.status !== 'found' ? read.detail : null)
+    : read.state === 'current' ? read.detail : null
   const matched = detail?.schema_version === 1 && detail.contact_id === external.contactId
   const f = detail && matched && detail.status === 'found' ? detail.fields : null
   function value<T>(field: DetailField<T> | undefined, format?: (v: T) => string): string {
@@ -86,10 +87,10 @@ export function OwnerContactCardBody({ external, onClose, editor: suppliedEditor
         aria-description={mapping[key].state === 'unavailable' ? unavailable : undefined} />
     </label>
   )
-  const message = editing ? ownerEditorMessage(editing) : read.state !== 'current' ? read.message
-    : !matched ? t('contactCard.owner.mismatch')
-    : detail?.status === 'deleted' ? t('contactCard.owner.deleted')
+  const message = detail?.status === 'deleted' ? t('contactCard.owner.deleted')
     : detail?.status === 'not_found' ? t('contactCard.owner.notFound')
+    : editing ? ownerEditorMessage(editing) : read.state !== 'current' ? read.message
+    : !matched ? t('contactCard.owner.mismatch')
     : !f ? unavailable : t('contactCard.owner.readOnly')
   const facts = f ? ownerFacts(f, unavailable) : []
   const head = (
@@ -134,13 +135,14 @@ export function OwnerContactCardBody({ external, onClose, editor: suppliedEditor
       body:t('contactCard.editor.reloadBody'),confirmLabel:t('contactCard.discard.confirm'),cancelLabel:t('contactCard.discard.keep')}))return
     editor.reload()
   }
-  const actions=editing&&editor?<>
+  const actions=<>{editing&&editor&&<>
     {editing.canInspectQueue&&<button type="button" className="log-rowbtn" onClick={()=>void editor.inspectQueue()}>{t('contactCard.editor.queueCheck')}</button>}
     {editing.canRetryQueue&&<button type="button" className="log-rowbtn" onClick={()=>void editor.retryQueue()}>{t('contactCard.editor.queueRetry')}</button>}
     {editing.canSubmit&&<button type="button" className="settings-save" onClick={()=>void editor.submit()}>{t('contactCard.editor.submit')}</button>}
     {editing.canReconcile&&<button type="button" className="log-rowbtn" onClick={()=>void editor.reconcile()}>{t('contactCard.editor.receiptCheck')}</button>}
     {editing.canReload&&<button type="button" className="log-rowbtn" onClick={()=>void reload()}>{t('contactCard.editor.reload')}</button>}
-  </>:undefined
+  </>}{connection&&<button type="button" className="log-rowbtn" disabled={editing?.busy} onClick={connection}>{t('contactCard.editor.connection')}</button>}
+  {refresh&&<button type="button" className="log-rowbtn" disabled={refresh.disabled||editing?.busy} onClick={refresh.run}>{t('contactCard.editor.refresh')}</button>}</>
   return <ContactCardSurface
     commentPolicy={editing?'owner-multiline':'readonly-multiline'} commentEditable={editing?.editable??false} extendedEditing={false}
     call={draft.call} draft={draft} fields={[]} err={editing?.error?t('contactCard.editor.failure'):null} busy={editing?.busy??false} dirty={editing?.dirty??false}

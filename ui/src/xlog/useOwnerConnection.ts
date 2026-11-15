@@ -53,6 +53,9 @@ export function useOwnerConnection(api: Bridge = bridge) {
       && accepted.connection_token === scope.connectionToken && accepted.hello?.server_instance === scope.serverInstance
       && accepted.hello.workspace_id === scope.workspaceId
   }
+  const isCurrentReadConnection = (scope: OwnerConnectionScope, requiredCapabilities: readonly string[] = []) =>
+    heldView.api === api && isCurrentConnection(scope) && acceptedView.current.connected
+      && requiredCapabilities.every(capability => acceptedView.current.hello?.capabilities.includes(capability))
   const accept = (next: View, started: number, control = controlGeneration.current, pendingAtStart = ordinaryPending.current) => {
     acceptedView.current = next
     setView(next)
@@ -108,6 +111,9 @@ export function useOwnerConnection(api: Bridge = bridge) {
         setPollError('')
       } catch (error) {
         if (!active || currentApi.current !== api || generation !== epoch.current) return
+        // Retire passive-read admission synchronously, before React commits.
+        // Keep paired/token identity for the existing independent Stop lane.
+        acceptedView.current = { ...acceptedView.current, connected: false, snapshot: null }
         setLease(null); setPollError(message(error))
         lastPoll.current = null
         setView(old => ({ ...old, connected: false, snapshot: null }))
@@ -213,6 +219,6 @@ export function useOwnerConnection(api: Bridge = bridge) {
     && currentControlScope() ? lastPoll.current : null
   return { view, lease, session, busy: heldView.api === api && busy,
     pollError: heldView.api === api ? pollError : '', actionError: heldView.api === api ? actionError : '',
-    receipt: heldView.api === api ? receipt : null, now, connection, command, isCurrentConnection,
+    receipt: heldView.api === api ? receipt : null, now, connection, command, isCurrentConnection, isCurrentReadConnection,
     poll, observedPoint, pointEvidence: point.current?.inspect(currentControlScope()) ?? null }
 }
