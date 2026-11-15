@@ -24,6 +24,9 @@ import { viaOf } from '../features/logIntake'
 import { useId, useMemo, useState, useSyncExternalStore } from 'react'
 import type { FieldEdit, QsoEdit, RowAnswer, RowRef } from '../api'
 import { qrzLookup } from '../api'
+import type { OwnerContactRead } from '../features/ownerContactDetail'
+import { OwnerContactCardBody } from './OwnerContactCardBody'
+import type { ReactNode } from 'react'
 import type { LoggedQso } from '../types'
 import { Dialog } from './ui/Dialog'
 import { QsoHistory } from './QsoHistory'
@@ -162,7 +165,18 @@ function errorText(e: CardError): string {
   }
 }
 
-export function ContactCard({ open, onClose, onSwitch, save, onChanged, onReload, logTick }: ContactCardProps) {
+export interface OwnerContactCardProps {
+  external: { contactId: string; scopeKey: string; read: OwnerContactRead }
+  onClose: () => void
+}
+
+export function ContactCard(props: ContactCardProps | OwnerContactCardProps) {
+  return 'external' in props
+    ? <OwnerContactCardBody key={`${props.external.scopeKey}|${props.external.contactId}`} {...props} />
+    : <NativeContactCard {...props} />
+}
+
+function NativeContactCard({ open, onClose, onSwitch, save, onChanged, onReload, logTick }: ContactCardProps) {
   const returnFocus = useFocusReturn(!!open)
   if (!open) return null
   return (
@@ -402,19 +416,8 @@ function CardBody({
   const marks = (r: LoggedQso) =>
     [r.qslRcvd?.lotw && 'L', r.qslRcvd?.eqsl && 'E', r.qslRcvd?.qrz && 'Q', r.qslRcvd?.card && 'C'].filter(Boolean).join('')
 
-  return (
-    <Dialog
-      open
-      onOpenChange={(o) => {
-        if (!o) void leave(onClose)
-      }}
-      title={t('contactCard.title', { call: q.call })}
-      hideTitle
-      className="contact-card-dialog"
-      onCloseAutoFocus={returnFocus}
-    >
-      <form className="contact-card" onSubmit={onSave}>
-        <div className="callcard-head contact-card-head">
+  const header = (
+<div className="callcard-head contact-card-head">
           <CallbookPhoto call={q.call} book={book} />
           <div className="callcard-id">
             <div className="callcard-title">
@@ -434,34 +437,9 @@ function CardBody({
             </div>
           </div>
         </div>
-
-        <section className="qso-detail-section">
-          <h3 className="qso-detail-heading">{t('qso.detail.section.contact.radio')}</h3>
-          <div className="logbook-form-grid">
-            {box('call', t('logbook.field.call.label'))}
-            {box('date', t('logbook.field.date.label'), { placeholder: UTC_DATE_FORMAT, maxLength: 10, className: 'settings-input mono' })}
-            {box('timeOn', t('logbook.field.time.label'), { placeholder: UTC_TIME_FORMATS.short, maxLength: 8, className: 'settings-input mono', title: q.timeKnown === false ? t('contactCard.dateOnly') : undefined })}
-            {box('timeOff', t('logbook.field.end.label'), { placeholder: UTC_TIME_FORMATS.short, maxLength: 8, className: 'settings-input mono' })}
-            {box('band', t('logbook.field.band.label'))}
-            {box('freq', t('logbook.field.freq.label'), { inputMode: 'decimal', className: 'settings-input mono' })}
-            {box('mode', t('logbook.field.mode.label'))}
-            {box('rstSent', t('logbook.field.rstSent.label'))}
-            {box('rstRcvd', t('logbook.field.rstRcvd.label'))}
-            {box('txPower', t('logbook.field.txPower.label'), { inputMode: 'decimal' })}
-          </div>
-        </section>
-
-        <section className="qso-detail-section">
-          <h3 className="qso-detail-heading">{t('qso.detail.section.contact')}</h3>
-          <div className="logbook-form-grid">
-            {box('name', t('logbook.field.name.label'))}
-            {box('qth', t('logbook.field.qth.label'))}
-            {box('grid', t('logbook.field.grid.label'))}
-            {box('state', t('logbook.field.state.label'), { maxLength: 2 })}
-            {program('theirProgram', t('contactCard.program.theirs'))}
-            {box('theirRef', t('logbook.field.parkTheirs.label'))}
-            {box('iota', t('logbook.field.iota.label'), { maxLength: 6 })}
-            {(draft.iota.trim() !== '' || filled) && (
+  )
+  const iota = (
+(draft.iota.trim() !== '' || filled) && (
               <div className="logbook-field logbook-field-wide iota-card-note">
                 <IotaReferenceNote reference={draft.iota.trim().toUpperCase()} />
                 <IotaIslandPick
@@ -482,12 +460,10 @@ function CardBody({
                   </span>
                 )}
               </div>
-            )}
-            {program('myProgram', t('contactCard.program.mine'))}
-            {box('myRef', t('logbook.field.parkMine.label'))}
-            {box('myGrid', t('logbook.field.myGrid.label'))}
-            {box('myRig', t('logbook.field.myRig.label'))}
-            <div className="logbook-field">
+            )
+  )
+  const confirmation = (
+<><div className="logbook-field">
               <label htmlFor={`${id}-qsl`}>{t('logbook.field.qslSent.label')}</label>
               <select id={`${id}-qsl`} className="settings-input" value={draft.qslSentVia} onChange={(e) => set('qslSentVia', e.target.value)} disabled={!canSave}>
                 <option value="">{t('logbook.field.qslSent.none')}</option>
@@ -500,22 +476,180 @@ function CardBody({
             <label className="logbook-field">
               <span>{t('logbook.field.qslCard.label')}</span>
               <input type="checkbox" checked={draft.qslCard === '1'} onChange={(e) => set('qslCard', e.target.checked ? '1' : '')} disabled={!canSave} />
-            </label>
-            {/* The shared comment: full width, directly above Notes. It wraps over lines but holds
+            </label></>
+  )
+  const path = (
+<ContactPath
+          q={q}
+          canPick={canSave}
+          picked={fields.find((f) => f.tag === 'ANT_PATH' && !f.removed)?.value ?? null}
+          onPick={(path) => setFields((fs) => [...fs, { tag: 'ANT_PATH', orig: null, value: path, removed: false }])}
+        />
+  )
+  const awards = (
+<CardAwardStatus
+          q={q}
+          canSave={canSave && !dirty}
+          onChanged={() => {
+            onChanged()
+            if (q.id) onReload(q.id)
+          }}
+        />
+  )
+  const recentPane = (
+<section className="qso-detail-section">
+          <h3 className="qso-detail-heading">{t('contactCard.recent')}</h3>
+          <table className="contact-card-recent mono">
+            <thead>
+              <tr>
+                <th>{t('logbook.column.time')}</th>
+                <th>{t('logbook.column.band')}</th>
+                <th>{t('logbook.column.freq')}</th>
+                <th>{t('logbook.column.mode')}</th>
+                <th>{t('logbook.column.sent')}</th>
+                <th>{t('logbook.column.rcvd')}</th>
+                <th>{t('contactCard.recent.qsl')}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {recent.map((r) => {
+                const here = !!r.id && r.id === q.id
+                return (
+                  <tr
+                    key={r.id ?? `${r.whenUnix}`}
+                    className={here ? 'current' : undefined}
+                    aria-current={here || undefined}
+                    tabIndex={here || !r.id ? -1 : 0}
+                    title={here ? undefined : t('contactCard.recent.open')}
+                    onClick={() => !here && r.id && void leave(() => onSwitch(r.id as string))}
+                    onKeyDown={(e) => {
+                      if (e.key !== 'Enter' || here || !r.id) return
+                      e.preventDefault()
+                      void leave(() => onSwitch(r.id as string))
+                    }}
+                  >
+                    <td>{fmtUtc(r.whenUnix)}</td>
+                    <td>{r.band}</td>
+                    <td>{r.freqMhz.toFixed(3)}</td>
+                    <td>{r.mode}</td>
+                    <td>{r.rstSent ?? ''}</td>
+                    <td>{r.rstRcvd ?? ''}</td>
+                    <td>{marks(r)}</td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </section>
+  )
+  const history = (
+q.id && (
+          <QsoHistory
+            id={q.id}
+            onChanged={() => {
+              onChanged()
+              if (q.id) onReload(q.id)
+            }}
+          />
+        )
+  )
+  return <ContactCardSurface
+    call={q.call} timeKnown={q.timeKnown} draft={draft} fields={fields}
+    err={err} busy={busy} dirty={dirty} canSave={canSave} notResent={notResent} facts={facts}
+    box={box} program={program} set={set} setField={setField} setFields={setFields}
+    leave={leave} onClose={onClose} onSave={onSave} returnFocus={returnFocus}
+    header={header} iota={iota} confirmation={confirmation} path={path}
+    awards={awards} recent={recentPane} history={history}
+  />
+}
+
+/** The original card markup. Services stay in the native or explicit owner body;
+ * this surface has no read/write APIs, subscriptions or authority inference. */
+export interface ContactCardSurfaceProps {
+  /** Native entry keeps its established one-line/Enter-submit behavior. Owner
+   * details are inert multiline presentation, even if edit controls evolve. */
+  commentPolicy?: 'native' | 'readonly-multiline'
+  call: string; timeKnown?: boolean; draft: CardDraft; fields: CardField[]
+  err: string | null; busy: boolean; dirty: boolean; canSave: boolean
+  notResent: string[]; facts: [string, string][]
+  box: (key: keyof CardDraft, label: string, extra?: React.InputHTMLAttributes<HTMLInputElement>) => ReactNode
+  program: (key: 'theirProgram' | 'myProgram', label: string) => ReactNode
+  set: (key: keyof CardDraft, value: string) => void
+  setField: (index: number, patch: Partial<CardField>) => void
+  setFields: React.Dispatch<React.SetStateAction<CardField[]>>
+  leave: (then: () => void) => Promise<void>
+  onClose: () => void; onSave: (event?: React.FormEvent) => void | Promise<void>
+  returnFocus: (event: Event) => void
+  header: ReactNode; iota: ReactNode; confirmation: ReactNode; path: ReactNode
+  awards: ReactNode; recent: ReactNode; history: ReactNode
+}
+
+export function ContactCardSurface({call, timeKnown, draft, fields, err, busy, dirty, canSave, notResent, facts,
+  box, program, set, setField, setFields, leave, onClose, onSave, returnFocus,
+  header, iota, confirmation, path, awards, recent, history, commentPolicy = 'native'}: ContactCardSurfaceProps) {
+  return (
+    <Dialog
+      open
+      onOpenChange={(o) => {
+        if (!o) void leave(onClose)
+      }}
+      title={t('contactCard.title', { call: call })}
+      hideTitle
+      className="contact-card-dialog"
+      onCloseAutoFocus={returnFocus}
+    >
+      <form className="contact-card" onSubmit={onSave}>
+        {header}
+
+        <section className="qso-detail-section">
+          <h3 className="qso-detail-heading">{t('qso.detail.section.contact.radio')}</h3>
+          <div className="logbook-form-grid">
+            {box('call', t('logbook.field.call.label'))}
+            {box('date', t('logbook.field.date.label'), { placeholder: UTC_DATE_FORMAT, maxLength: 10, className: 'settings-input mono' })}
+            {box('timeOn', t('logbook.field.time.label'), { placeholder: UTC_TIME_FORMATS.short, maxLength: 8, className: 'settings-input mono', title: timeKnown === false ? t('contactCard.dateOnly') : undefined })}
+            {box('timeOff', t('logbook.field.end.label'), { placeholder: UTC_TIME_FORMATS.short, maxLength: 8, className: 'settings-input mono' })}
+            {box('band', t('logbook.field.band.label'))}
+            {box('freq', t('logbook.field.freq.label'), { inputMode: 'decimal', className: 'settings-input mono' })}
+            {box('mode', t('logbook.field.mode.label'))}
+            {box('rstSent', t('logbook.field.rstSent.label'))}
+            {box('rstRcvd', t('logbook.field.rstRcvd.label'))}
+            {box('txPower', t('logbook.field.txPower.label'), { inputMode: 'decimal' })}
+          </div>
+        </section>
+
+        <section className="qso-detail-section">
+          <h3 className="qso-detail-heading">{t('qso.detail.section.contact')}</h3>
+          <div className="logbook-form-grid">
+            {box('name', t('logbook.field.name.label'))}
+            {box('qth', t('logbook.field.qth.label'))}
+            {box('grid', t('logbook.field.grid.label'))}
+            {box('state', t('logbook.field.state.label'), { maxLength: 2 })}
+            {program('theirProgram', t('contactCard.program.theirs'))}
+            {box('theirRef', t('logbook.field.parkTheirs.label'))}
+            {box('iota', t('logbook.field.iota.label'), { maxLength: 6 })}
+            {iota}
+
+        {program('myProgram', t('contactCard.program.mine'))}
+            {box('myRef', t('logbook.field.parkMine.label'))}
+            {box('myGrid', t('logbook.field.myGrid.label'))}
+            {box('myRig', t('logbook.field.myRig.label'))}
+            {confirmation}
+
+        {/* The shared comment: full width, directly above Notes. It wraps over lines but holds
                 ONE, as ADIF's COMMENT does — the log strip's and the edit form's rule. */}
             <label className="logbook-field logbook-field-wide">
               <span>{t('logbook.field.comment.label')}</span>
               <textarea
                 className="settings-input logbook-comment"
                 value={draft.comment}
-                onChange={(e) => set('comment', oneLineTyped(e.target))}
-                onKeyDown={(e) => {
+                onChange={commentPolicy === 'native' ? (e) => set('comment', oneLineTyped(e.target)) : undefined}
+                onKeyDown={commentPolicy === 'native' ? (e) => {
                   if (e.key !== 'Enter') return
                   e.preventDefault()
                   e.currentTarget.form?.requestSubmit()
-                }}
+                } : undefined}
                 rows={2}
-                readOnly={!canSave}
+                readOnly={commentPolicy === 'readonly-multiline' || !canSave}
               />
             </label>
             <label className="logbook-field logbook-field-wide">
@@ -525,12 +659,7 @@ function CardBody({
           </div>
         </section>
 
-        <ContactPath
-          q={q}
-          canPick={canSave}
-          picked={fields.find((f) => f.tag === 'ANT_PATH' && !f.removed)?.value ?? null}
-          onPick={(path) => setFields((fs) => [...fs, { tag: 'ANT_PATH', orig: null, value: path, removed: false }])}
-        />
+        {path}
 
         <details className="qso-detail-section contact-card-more">
           <summary className="qso-detail-heading">{t('contactCard.more')}</summary>
@@ -615,72 +744,11 @@ function CardBody({
           )}
         </details>
 
-        {/* Each award's status, set at once (it asks first) and undone from the History below. Not
-            while the card holds unsaved typing: reading the contact again would drop it. */}
-        <CardAwardStatus
-          q={q}
-          canSave={canSave && !dirty}
-          onChanged={() => {
-            onChanged()
-            if (q.id) onReload(q.id)
-          }}
-        />
+        {awards}
 
-        <section className="qso-detail-section">
-          <h3 className="qso-detail-heading">{t('contactCard.recent')}</h3>
-          <table className="contact-card-recent mono">
-            <thead>
-              <tr>
-                <th>{t('logbook.column.time')}</th>
-                <th>{t('logbook.column.band')}</th>
-                <th>{t('logbook.column.freq')}</th>
-                <th>{t('logbook.column.mode')}</th>
-                <th>{t('logbook.column.sent')}</th>
-                <th>{t('logbook.column.rcvd')}</th>
-                <th>{t('contactCard.recent.qsl')}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {recent.map((r) => {
-                const here = !!r.id && r.id === q.id
-                return (
-                  <tr
-                    key={r.id ?? `${r.whenUnix}`}
-                    className={here ? 'current' : undefined}
-                    aria-current={here || undefined}
-                    tabIndex={here || !r.id ? -1 : 0}
-                    title={here ? undefined : t('contactCard.recent.open')}
-                    onClick={() => !here && r.id && void leave(() => onSwitch(r.id as string))}
-                    onKeyDown={(e) => {
-                      if (e.key !== 'Enter' || here || !r.id) return
-                      e.preventDefault()
-                      void leave(() => onSwitch(r.id as string))
-                    }}
-                  >
-                    <td>{fmtUtc(r.whenUnix)}</td>
-                    <td>{r.band}</td>
-                    <td>{r.freqMhz.toFixed(3)}</td>
-                    <td>{r.mode}</td>
-                    <td>{r.rstSent ?? ''}</td>
-                    <td>{r.rstRcvd ?? ''}</td>
-                    <td>{marks(r)}</td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-        </section>
+        {recent}
 
-        {/* An Undo here changes the contact the card shows: the card reads it again. */}
-        {q.id && (
-          <QsoHistory
-            id={q.id}
-            onChanged={() => {
-              onChanged()
-              if (q.id) onReload(q.id)
-            }}
-          />
-        )}
+        {history}
 
         <div className="contact-card-actions">
           {err && (

@@ -174,6 +174,7 @@ const MIGRATED = [
   // The Logbook contact card (it took over #313's detail view) — born migrated: every string in it
   // is a catalog key.
   'components/ContactCard.tsx',
+  'components/OwnerContactCardBody.tsx',
   'components/QsoHistory.tsx',
   'components/RecentlyDeleted.tsx',
   // The import preview and its no-loss report's words — born migrated.

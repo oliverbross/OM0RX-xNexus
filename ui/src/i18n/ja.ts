@@ -10549,4 +10549,13 @@ export const JA: PartialCatalog = {
   "phone.tune.usbAudioNote": "TuneはトーンをUSBオーディオで送ります。無線機が送信状態になっても出力が出ない場合は、無線機のSSB MOD SOURCEメニューをREAR（USB）にしてください。",
   "phone.tune.usbAudioNote.aria": "この無線機でのTuneについて",
   "meters.tx.enlarge.close": "閉じる",
+  "contactCard.owner.unavailable": "利用不可",
+  "contactCard.owner.readOnly": "xLogの交信記録は読み取り専用です。ここでの編集はまだ接続されていません。",
+  "contactCard.owner.notFound": "この交信記録はxLogに見つかりませんでした。",
+  "contactCard.owner.deleted": "この交信記録はxLogで削除されました。",
+  "contactCard.owner.mismatch": "交信記録の詳細が選択内容と一致しません。",
+  "contactCard.owner.dependentUnavailable": "この交信記録の詳細には含まれていません。",
+  "contactCard.owner.rawConfirmations": "保存された確認項目です。アップロード受領記録とアワード認定は別の情報です。",
+  "contactCard.owner.awardAuthority": "アワード認定",
+  "contactCard.owner.uploadReceipt": "{{service}}アップロード受領記録",
 }

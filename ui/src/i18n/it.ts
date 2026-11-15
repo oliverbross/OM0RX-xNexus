@@ -10528,4 +10528,13 @@ export const IT: PartialCatalog = {
   "callStats.was.unknown": "WAS: nessuno stato registrato per {{call}}.",
   "callStats.was.none": "WAS: {{call}} non è una stazione degli Stati Uniti.",
   "callStats.waz.unknown": "WAZ: nessuna zona CQ per {{call}}.",
+  "contactCard.owner.unavailable": "Non disponibile",
+  "contactCard.owner.readOnly": "Contatto xLog in sola lettura. La modifica non è ancora collegata qui.",
+  "contactCard.owner.notFound": "Questo contatto non è stato trovato in xLog.",
+  "contactCard.owner.deleted": "Questo contatto è stato eliminato da xLog.",
+  "contactCard.owner.mismatch": "I dettagli del contatto non corrispondono a questa selezione.",
+  "contactCard.owner.dependentUnavailable": "Queste informazioni non sono incluse nei dettagli del contatto.",
+  "contactCard.owner.rawConfirmations": "Campi di conferma conservati; le ricevute di caricamento e la convalida per i diplomi sono separate.",
+  "contactCard.owner.awardAuthority": "Convalida per i diplomi",
+  "contactCard.owner.uploadReceipt": "Ricevuta di caricamento {{service}}",
 }

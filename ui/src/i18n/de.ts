@@ -10556,4 +10556,13 @@ export const DE: PartialCatalog = {
   "phone.tune.usbAudioNote": "Tune sendet seinen Ton über USB-Audio. Wenn das Funkgerät ohne Leistung sendet, stellen Sie sein Menü SSB MOD SOURCE auf REAR (USB).",
   "phone.tune.usbAudioNote.aria": "Zu Tune an diesem Funkgerät",
   "meters.tx.enlarge.close": "Schließen",
+  "contactCard.owner.unavailable": "Nicht verfügbar",
+  "contactCard.owner.readOnly": "Schreibgeschützter xLog-Kontakt. Bearbeitung ist hier noch nicht angebunden.",
+  "contactCard.owner.notFound": "Dieser Kontakt wurde in xLog nicht gefunden.",
+  "contactCard.owner.deleted": "Dieser Kontakt wurde in xLog gelöscht.",
+  "contactCard.owner.mismatch": "Die Kontaktdetails passen nicht zu dieser Auswahl.",
+  "contactCard.owner.dependentUnavailable": "Diese Kontaktdetails enthalten diese Angaben nicht.",
+  "contactCard.owner.rawConfirmations": "Gespeicherte Bestätigungsfelder; Upload-Belege und die Anerkennung für Diplome sind davon getrennt.",
+  "contactCard.owner.awardAuthority": "Diplomanerkennung",
+  "contactCard.owner.uploadReceipt": "Upload-Beleg von {{service}}",
 }

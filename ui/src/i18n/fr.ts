@@ -10566,4 +10566,13 @@ export const FR: PartialCatalog = {
   "phone.tune.usbAudioNote": "Tune envoie sa tonalité par l’audio USB. Si la radio passe en émission sans puissance, réglez son menu SSB MOD SOURCE sur REAR (USB).",
   "phone.tune.usbAudioNote.aria": "À propos de Tune sur cette radio",
   "meters.tx.enlarge.close": "Fermer",
+  "contactCard.owner.unavailable": "Indisponible",
+  "contactCard.owner.readOnly": "Contact xLog en lecture seule. La modification n’est pas encore reliée ici.",
+  "contactCard.owner.notFound": "Ce contact est introuvable dans xLog.",
+  "contactCard.owner.deleted": "Ce contact a été supprimé dans xLog.",
+  "contactCard.owner.mismatch": "Les détails du contact ne correspondent pas à cette sélection.",
+  "contactCard.owner.dependentUnavailable": "Ces informations ne figurent pas dans les détails du contact.",
+  "contactCard.owner.rawConfirmations": "Champs de confirmation conservés ; les reçus d’envoi et la validation pour les diplômes sont distincts.",
+  "contactCard.owner.awardAuthority": "Validation pour les diplômes",
+  "contactCard.owner.uploadReceipt": "Reçu d’envoi {{service}}",
 }
