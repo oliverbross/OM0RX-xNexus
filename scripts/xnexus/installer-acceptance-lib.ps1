@@ -166,6 +166,50 @@ function Get-XnRegistrySnapshot {
     }
 }
 
+function Get-XnShortcutManifest([string]$Path) {
+    $null=Assert-XnLocalPath $Path -AllowMissing
+    if (!(Test-Path -LiteralPath $Path)) { return [pscustomobject]@{path=$Path;exists=$false;files=@()} }
+    $pending=[Collections.Generic.Stack[string]]::new();$pending.Push($Path)
+    $files=[Collections.Generic.List[object]]::new();$directories=0
+    while ($pending.Count) {
+        $directory=$pending.Pop();$directories++
+        if ($directories -gt 4096) { throw 'Shortcut directory inventory bound exceeded.' }
+        foreach ($item in Get-ChildItem -LiteralPath $directory -Force -ErrorAction Stop) {
+            # Reserved names collide even when occupied by a directory or a
+            # non-shortcut. Unrelated documents are neither opened nor hashed.
+            if ($item.Name -match '(?i)xnexus') { throw 'A matching shortcut namespace exists.' }
+            if (!$item.PSIsContainer -and $item.Extension -notin '.lnk','.url') { continue }
+            if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'Shortcut traversal contains a reparse point.' }
+            $null=Assert-XnLocalPath $item.FullName
+            if ($item.PSIsContainer) { $pending.Push($item.FullName) }
+            else {
+                if ($files.Count -ge 20000) { throw 'Shortcut inventory bound exceeded.' }
+                $files.Add([pscustomobject]@{path=$item.FullName;bytes=$item.Length;sha256=(Get-XnHash $item.FullName)})
+            }
+        }
+    }
+    return [pscustomobject]@{path=$Path;exists=$true;files=@($files.ToArray() | Sort-Object path)}
+}
+
+function Assert-XnShortcutTargets($Trees) {
+    $shell=New-Object -ComObject WScript.Shell
+    try {
+        foreach ($tree in $Trees) { foreach ($file in $tree.files) {
+            if ([IO.Path]::GetExtension($file.path) -ieq '.lnk') {
+                $link=$shell.CreateShortcut($file.path)
+                try { if ($link.TargetPath -match '(?i)xnexus') { throw 'An existing shortcut targets xNexus.' } }
+                finally { [Runtime.InteropServices.Marshal]::FinalReleaseComObject($link) | Out-Null }
+            } elseif ([IO.Path]::GetExtension($file.path) -ieq '.url') {
+                if ($file.bytes -gt 64KB) { throw 'Internet shortcut exceeds inspection bound.' }
+                $content=Get-Content -LiteralPath $file.path -Raw
+                $urls=[regex]::Matches($content,'(?im)^\s*URL\s*=\s*(.*?)\s*$')
+                if ($urls.Count -ne 1) { throw 'Internet shortcut target is ambiguous.' }
+                if ($urls[0].Groups[1].Value -match '(?i)xnexus') { throw 'An existing internet shortcut targets xNexus.' }
+            } else { throw 'Unreviewed shortcut manifest entry.' }
+        } }
+    } finally { [Runtime.InteropServices.Marshal]::FinalReleaseComObject($shell) | Out-Null }
+}
+
 function Get-XnTreeManifest([string]$Path, [int]$MaximumFiles=20000) {
     $null = Assert-XnLocalPath $Path -AllowMissing
     if (!(Test-Path -LiteralPath $Path)) { return [pscustomobject]@{path=$Path;exists=$false;files=@()} }

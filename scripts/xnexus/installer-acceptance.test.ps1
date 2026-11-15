@@ -21,6 +21,30 @@ if ($ActualConfig) {
     Pass 'actual candidate distribution config admitted' { Assert-XnNoAssociations (Get-Content -LiteralPath $ActualConfig -Raw | ConvertFrom-Json) }
 }
 Pass 'canonical local existing path' { $null=Assert-XnLocalPath $fixture -NoSpaces }
+$shortcutRoot=Join-Path $fixture 'shortcuts';[IO.Directory]::CreateDirectory($shortcutRoot) | Out-Null
+[IO.File]::WriteAllText((Join-Path $shortcutRoot '~$document.docx'),'unrelated operator lock')
+Pass 'ordinary Word lock excluded from shortcut evidence' { $m=Get-XnShortcutManifest $shortcutRoot;if (@($m.files).Count) { throw 'Unrelated document inventoried' } }
+[IO.File]::WriteAllText((Join-Path $shortcutRoot 'example.url'),"[InternetShortcut]`r`nURL=https://example.invalid/`r`n")
+$testShell=New-Object -ComObject WScript.Shell
+try {
+    $testLink=$testShell.CreateShortcut((Join-Path $shortcutRoot 'ordinary.lnk'))
+    try { $testLink.TargetPath=Join-Path $env:WINDIR 'notepad.exe';$testLink.Save() } finally { [Runtime.InteropServices.Marshal]::FinalReleaseComObject($testLink) | Out-Null }
+    Pass 'lnk and url targets inspected without execution' { $m=Get-XnShortcutManifest $shortcutRoot;if (@($m.files).Count -ne 2) { throw 'Shortcut coverage lost' };Assert-XnShortcutTargets @($m) }
+    $testLink=$testShell.CreateShortcut((Join-Path $shortcutRoot 'ordinary.lnk'))
+    try { $testLink.TargetPath=Join-Path $fixture 'OM0RX-xNexus.exe';$testLink.Save() } finally { [Runtime.InteropServices.Marshal]::FinalReleaseComObject($testLink) | Out-Null }
+    Reject 'arbitrary-named lnk targeting product refused' { Assert-XnShortcutTargets @((Get-XnShortcutManifest $shortcutRoot)) } 'targets xNexus'
+} finally { [Runtime.InteropServices.Marshal]::FinalReleaseComObject($testShell) | Out-Null }
+$urlRoot=Join-Path $fixture 'internet-shortcuts';[IO.Directory]::CreateDirectory($urlRoot) | Out-Null
+[IO.File]::WriteAllText((Join-Path $urlRoot 'ordinary.url'),"[InternetShortcut]`r`nURL=file:///C:/inert/OM0RX-xNexus.exe`r`n")
+Reject 'arbitrary-named url targeting product refused' { Assert-XnShortcutTargets @((Get-XnShortcutManifest $urlRoot)) } 'targets xNexus'
+$collisionRoot=Join-Path $fixture 'shortcut-collision';[IO.Directory]::CreateDirectory((Join-Path $collisionRoot 'OM0RX-xNexus.lnk')) | Out-Null
+Reject 'directory occupying exact shortcut name refused' { Get-XnShortcutManifest $collisionRoot } 'namespace'
+$aliasRoot=Join-Path $fixture 'shortcut-alias';[IO.Directory]::CreateDirectory($aliasRoot) | Out-Null
+[IO.File]::WriteAllText((Join-Path $aliasRoot 'SHORT~1.url'),'inert')
+Reject 'relevant shortcut alias remains refused' { Get-XnShortcutManifest $aliasRoot } 'canonical'
+$junctionRoot=Join-Path $fixture 'shortcut-junction';[IO.Directory]::CreateDirectory($junctionRoot) | Out-Null
+New-Item -ItemType Junction -Path (Join-Path $junctionRoot 'nested') -Target $shortcutRoot | Out-Null
+Reject 'shortcut directory junction remains refused' { Get-XnShortcutManifest $junctionRoot } 'reparse'
 Pass 'absent child admitted without creation' { Assert-XnFreshTarget (Join-Path $fixture 'app'); if (Test-Path (Join-Path $fixture 'app')) { throw 'Created target' } }
 foreach ($path in @('C:\a\..\b','C:\a\x.','C:\a\x ','C:\a\\b','C:\a\x:stream','\\server\share\x','C:\a\PROGRA~1','C:/a/b')) {
     Reject "noncanonical $path" { Assert-XnLocalPath $path -AllowMissing }

@@ -72,20 +72,10 @@ try {
     if (Test-Path -LiteralPath $default) { throw 'Default installation namespace exists; preserve it.' }
     $report.defaultInstallAbsent=$default
     $shortcutRoots=@([Environment]::GetFolderPath('DesktopDirectory'),[Environment]::GetFolderPath('CommonDesktopDirectory'),[Environment]::GetFolderPath('StartMenu'),[Environment]::GetFolderPath('CommonStartMenu')) | Select-Object -Unique
-    $shortcuts=@(foreach ($root in $shortcutRoots) { Get-XnTreeManifest $root })
+    $shortcuts=@(foreach ($root in $shortcutRoots) { Get-XnShortcutManifest $root })
     $report.shortcuts=$shortcuts
     # Inspect existing link targets without executing them; filenames alone are insufficient.
-    $shell=New-Object -ComObject WScript.Shell
-    try {
-        foreach ($tree in $shortcuts) { foreach ($file in $tree.files) {
-            if ([IO.Path]::GetFileName($file.path) -match '(?i)xnexus') { throw 'A matching shortcut namespace exists.' }
-            if ([IO.Path]::GetExtension($file.path) -ieq '.lnk') {
-                $link=$shell.CreateShortcut($file.path)
-                try { if ($link.TargetPath -match '(?i)xnexus') { throw 'An existing shortcut targets xNexus.' } }
-                finally { [Runtime.InteropServices.Marshal]::FinalReleaseComObject($link) | Out-Null }
-            }
-        } }
-    } finally { [Runtime.InteropServices.Marshal]::FinalReleaseComObject($shell) | Out-Null }
+    Assert-XnShortcutTargets $shortcuts
     $profiles=@(foreach ($base in @($env:APPDATA,$env:LOCALAPPDATA) | Select-Object -Unique) {
         $null=Assert-XnLocalPath $base
         foreach ($item in Get-ChildItem -LiteralPath $base -Force -ErrorAction Stop | Where-Object { $_.Name -like 'om0rx-xnexus*' -or $_.Name -eq 'sk.om0rx.xnexus' }) { Get-XnTreeManifest $item.FullName }

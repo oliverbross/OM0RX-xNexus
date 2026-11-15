@@ -17,8 +17,12 @@ The default invocation creates only a nonce evidence directory. Its proposed
 `app` child remains absent. It rehashes audited inputs, expands the actual
 generated NSIS `File` instructions into exact destination/hash pairs, rejects
 unknown extraction forms, inspects all twelve product/uninstall/Run registry
-coordinates, checks process absence, hashes known profiles and shortcut roots,
-and reads shortcut targets. Missing access, collisions and ambiguous data stop
+coordinates, checks process absence, hashes known profiles and `.lnk`/`.url`
+entries under shortcut roots, and reads shortcut targets. Fork-named collisions
+are refused even when a non-shortcut or directory occupies the name. Unrelated
+Desktop documents and Word lock files are neither opened nor hashed; directory
+traversal and relevant shortcut paths still reject reparse points and aliases.
+Missing access, collisions and ambiguous data stop
 preparation; they do not authorize cleanup. WebView2 must already meet the actual
 generated minimum through the installer's first-choice machine registration.
 This limited lane refuses fallback/provisioning rather than changing shared state.

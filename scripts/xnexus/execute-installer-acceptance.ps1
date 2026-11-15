@@ -80,7 +80,7 @@ try {
             foreach ($item in Get-ChildItem -LiteralPath $base -Force -ErrorAction Stop | Where-Object { $_.Name -like 'om0rx-xnexus*' -or $_.Name -eq 'sk.om0rx.xnexus' }) { Get-XnTreeManifest $item.FullName }
         })
         if ($env:XNEXUS_DATA_DIR) { $profiles+=Get-XnTreeManifest $env:XNEXUS_DATA_DIR }
-        $shortcuts=@(foreach ($tree in $plan.shortcuts) { Get-XnTreeManifest $tree.path })
+        $shortcuts=@(foreach ($tree in $plan.shortcuts) { Get-XnShortcutManifest $tree.path })
         if (Test-Path -LiteralPath $plan.defaultInstallAbsent) { throw 'Default installation namespace appeared.' }
         $other=@(foreach ($hive in 'CurrentUser','LocalMachine') { foreach ($view in 'Registry32','Registry64') {
             Get-RegistryFingerprint $hive $view 'Software\Microsoft\Windows\CurrentVersion\Run' 'OM0RX-xNexus'
