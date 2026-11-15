@@ -5,8 +5,19 @@ binaries and physical station acceptance are separate evidence levels.
 
 ## Current source checkpoint
 
-Installed applications remain xNexus `.4` at `ae35fc643` and xLog `1.6.30`
-at `8795606b`; no subsequent source fix below is installed or live-qualified.
+Windows [`.5` built, passed static audit and was independently retained](WINDOWS_BUILD_1.24.1-xlog.5.md)
+from exact clean `75a59f786ee1f437e7ab14a147bb3ca0ceed1c49`. It is **internal
+testing only**, not native-qualified or installed. The user requires the original
+Nexus operating interface; the diagnostic companion dashboard is not the final
+product and `.5` will not be installed over it. M2 must preserve the original
+operating UI with xLog services underneath. M6 TX is required and remains
+unimplemented, not merely waiting for a hardware test.
+
+Installed xNexus remains `.4` at `ae35fc643`. The xLog owner reports `1.6.31`
+at `a00697f5458c64cf806e4c9647fcd133fc30391b` packaged, installed and privately
+checked; its subsequent normal handoff also passed. Both applications were
+closed for the serial package build. No current live RX/needs pass is claimed.
+The following diagnostic history preceded that owner installation.
 The native metadata diagnostic reproduced an oversized UTC/QPC correlation
 bracket. Owner correction `fa312941188991c6cf5a1a7e7c6bf8241c450647`
 adds bounded correlation retries without widening the 1 ms limit and fixes
@@ -41,7 +52,8 @@ A separately reviewed Normal-priority replay used identical compiled bytes after
 the initial BelowNormal attempt failed its unchanged synthetic pacing guard.
 Both attempts are preserved; the passing Job exited 0 with zero descendants.
 Classification was synthetic, not a Swift logbook; neither this chain nor owner
-tests qualify live decoded-needs operation. Installed `.4`/`1.6.30` are unchanged.
+tests qualify live decoded-needs operation. They did not change installed `.4`;
+the subsequent owner `.31` installation is a separate evidence boundary.
 
 Two independent UI fixes are now on canonical main: exact band-map row-to-owner
 identity (`30ee3e98a9aab1889835186146ff093ce4a290eb`) and separate polling/action
@@ -49,8 +61,9 @@ error state (`4f4d431c88f0f1481084a20c71aad09721a9b9aa`). Both had failing-first
 regressions; 26 focused tests then passed (five band-map, six receive-panel,
 15 needs-lease tests), with no remaining test processes. The receipt SHA-256 is
 `FE901636C2E26F98656FFEA5B0C630CD402A16700F90D286F691D8FD345BC947`.
-These fixes still require the integrated candidate frontend/browser gates and
-a new packaged version; the running `.4` has not changed.
+The integrated `.5` frontend/browser gates and Windows package now passed;
+installed `.4` has not changed. Package success does not qualify the diagnostic
+dashboard as the requested original Nexus interface.
 
 [Candidate 1.24.1-xlog.4](CANDIDATE_1.24.1-xlog.4.md) has a completed Windows
 build, static artifact audit and independent retention from clean canonical
@@ -161,13 +174,13 @@ new implementation still requires its own source tests and candidate qualificati
 |---|---|---|
 | M0 | Complete: full upstream history, private fork, fetch-only upstream, nine tracked milestones | Maintain upstream review and patch inventory |
 | M1 | 80 client tests plus exact replay of 40 Swift needs replies; actual owner HTTP and SQLite restart/receipt tests; base bridge merged into canonical xLog | Paired installed-application acceptance |
-| M2 | Separate companion startup; no local station services; `.4` Windows A→B→A private profiles and ordinary lifecycle passed | Final candidate native pairing and installed station lifecycle |
-| M3 | xLog-authoritative call/DXCC needs, band/world maps, selected-call history; owner/SDK/native/UI tests and integrated Windows all-targets check passed; `.4` Windows artifact audited | Paired UI; installed classification propagation; richer confirmation/award policy evidence |
-| M4 | Owner-mediated tune/point and independent Stop; connection-bound Stop fix merged after 95 focused and 1,164 full native tests; current xLog 1.6.30 installation/handoff passed | Paired UI and physical control qualification |
+| M2 | Separate companion startup; no local station services; `.4` Windows A→B→A private profiles and ordinary lifecycle passed | Restore the original Nexus operating interface over xLog services; diagnostic dashboard is not the final product; qualify native pairing/lifecycle |
+| M3 | xLog-authoritative call/DXCC needs, band/world maps, selected-call history; owner/SDK/native/UI tests and generated cache/FT4 chain passed; `.5` internal Windows artifact audited | Original operating UI integration; installed classification propagation; richer confirmation/award policy evidence |
+| M4 | Owner-mediated tune/point and independent Stop; connection-bound Stop fix merged after 95 focused and 1,164 full native tests; owner reports 1.6.31 installation/private checks and normal handoff passed | Paired UI and physical control qualification |
 | M5 | Durable outbox and atomic owner write/receipt; restart, replay and edit-conflict tests | Paired native GUI acceptance; queue archive/export design |
 | M6 | FLEX slice A → DAX Audio RX 1 selected; bounded owner PCM, client, FIR/period assembler, threaded native FT8/FT4 decoder and receive UI; generated FT4 to needs chain passed | Confirm live mapping/endpoint; active reception and clock/route qualification; TX implementation and supervised qualification |
-| M7 | Distinct identity, repaired profile construction, reviewed installer guards; `.4` Windows build, audit, retention, A→B→A, disposable install/uninstall and permanent installation passed | Paired installed station acceptance |
-| M8 | `.4` Windows artifact audited; Mac .3 A→B→A isolation and exact .3 Linux contract/desktop checks passed | Updated Linux/Mac checks and packages, paired UI, native lifecycle, signing and distribution qualification |
+| M7 | Distinct identity, repaired profile construction, reviewed installer guards; `.4` installed acceptance and `.5` internal-only build/audit/retention passed | New original-interface candidate and paired installed station acceptance; no `.5` upgrade |
+| M8 | `.4`/`.5` Windows artifacts audited; Mac .3 A→B→A isolation and exact .3 Linux contract/desktop checks passed | Current notices/resource coverage, updated Linux/Mac packages, paired UI, native lifecycle, signing and distribution qualification |
 
 RX runtime integration source is `e3ae1534ade5c34dd4e2d3a81bfbe3a72be15d5c`.
 Windows candidate `1.24.1-xlog.2` adds candidate manifests and these records;

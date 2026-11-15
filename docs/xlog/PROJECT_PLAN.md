@@ -9,8 +9,13 @@ not a claim that future milestones are implemented.
 Keep Nexus as a separate desktop application, with its own installer, settings,
 window layouts and process. In xLog-connected mode, xLog owns the logbook,
 station connections, rotator, cluster, credentials and authoritative need status.
-xNexus supplies Nexus's operating views, propagation analysis and eventually
-decoding/modem functions. No direct database sharing or second hardware owner.
+xNexus must preserve the **original Nexus operating interface** with xLog services
+underneath, including its operating views and decoding/modem workflow. The user
+reaffirmed this requirement on 15 November 2026: the separate companion dashboard
+is diagnostic scaffolding, not the intended product UI. Receive/needs candidate
+`.5` is retained for internal testing only and will not be installed as the
+user-facing replacement. TX is required and remains unfinished implementation.
+No direct database sharing or second hardware owner is permitted.
 
 An xLog outage leaves xNexus open with explicitly stale observations and disabled
 actions. It must never fall back to native hardware, its own logbook, or a fresh
@@ -84,7 +89,7 @@ digital TX/audio and platform release work add 15–30 days, depending on findin
 | M0 | Repository, upstream pin, ownership map, backlog / xNexus | none | 1–2d | Full history, private origin, fetch-only upstream, source/license inventory |
 | M1a | Versioned read-only contract and tested native client / xNexus | M0 | 2–3d | Synthetic loopback tests: auth, identity, malformed data, stale/gap/reconnect, limits |
 | M1b | Opt-in paired bridge in canonical xLog / xlog work | M1a + startup fix | 3–5d | Existing owners only; token revocation; same workspace; no station reconnect; no worker timeout regression |
-| M2 | xLog-connected Nexus launch and observation views / xNexus | M1b | 4–6d | No local Engine/device/log/cluster/upload starts; visible connection age; real paired snapshots |
+| M2 | Original Nexus operating UI over xLog-connected services / xNexus | M1b | 4–6d | Preserve original cockpit/workflow rather than substitute the diagnostic dashboard; no competing Engine/device/log/cluster/upload owner; visible connection age; real paired snapshots |
 | M3 | Needed board, awards/history and cluster / both | M2 | 4–7d | Edited/deleted/imported/confirmed QSOs update badges; exact mode vs award family; source evidence retained |
 | M4 | Tune/select/rotator through xLog / both | M3 | 4–7d | Explicit action; correct radio; frequency/mode/split validation; limits; stop priority; observed receipt |
 | M5 | QSO create/update outbox / both | M3 | 4–7d | Durable idempotency; crash after accept; duplicate replay; edit conflict; workspace switch; only xLog uploads |
@@ -102,14 +107,17 @@ separate requirements.
 
 ### Next independent software slices
 
-Checkpoint: 15 November 2026, after the source-only band-map identity and
-polling-alert fixes at `4f4d431c`. Installed `.4`/xLog `1.6.30` remain unchanged.
-The immediate receive/decoded-needs corrections still need integrated tests,
-new source/version receipts and live qualification. The work below can be
-prepared independently in isolated branches without operating the station.
+Checkpoint: 15 November 2026, after the integrated receive/needs source checks
+and [internal-only `.5` Windows build/audit/retention](WINDOWS_BUILD_1.24.1-xlog.5.md).
+Installed xNexus remains `.4`; xLog owner `.31` installation is a separate
+checkpoint, not paired live qualification. The highest product priority is M2:
+preserve the original Nexus interface and route its services through xLog.
+The work below remains necessary and can be prepared in isolated branches
+without operating the station; `.5` will not be installed as the final UI.
 
 | Priority / milestone | Concrete software work | Source seam and exit evidence |
 |---|---|---|
+| Immediate / M2 | Restore the original Nexus operating interface with an xLog service adapter underneath; retain diagnostic views only as supporting tools | Original `ui/` cockpits and API/state boundaries. Preserve operating layout/workflow while replacing local hardware/log/cluster authority; actual integrated original-UI browser and native tests are required. A diagnostic-dashboard pass cannot satisfy this gate. |
 | 1 / M4 | Reconcile accepted control requests with later owner observations; retain uncertain outcomes without automatic resubmission | `ui/src/xlog/App.tsx`, `api.ts`, `src-tauri/src/xlog_mode.rs` and owner command receipts. Current UI reports Accepted/awaiting observation but exposes no follow-up control status. Test delayed confirmation, rejection, replacement and disconnect through actual owner handlers. |
 | 2 / M5 | Complete Windows native create/edit/receipt/restart coverage against a disposable actual-owner SQLite workspace; design terminal receipt archive/export | `integrations/xlog/src/outbox.rs`, native queue endpoints and `QsoPanel.tsx`. Current outbox retains terminal operations and refuses new entries at 10,000. Archive must preserve uncertain work, immutable request IDs, auditability and duplicate protection across crashes. No production-log mutation is part of this software gate. |
 | 3 / M3 | Expand owner confirmation/award provenance and its presentation, then reuse propagation views without starting independent station services | `HistoryPanel.tsx`/history DTO currently expose worked/confirmed booleans; companion views reuse band/offline world maps, not the propagation engine. Add actual-producer fixtures for source-specific eligibility, corrections and revision changes; keep propagation evidence distinct from authoritative owner needs. |

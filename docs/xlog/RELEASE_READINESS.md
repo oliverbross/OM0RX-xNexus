@@ -1,5 +1,13 @@
 # OM0RX-xNexus release readiness
 
+Windows [`.5` is built, statically audited and independently retained](WINDOWS_BUILD_1.24.1-xlog.5.md)
+from exact `75a59f786ee1f437e7ab14a147bb3ca0ceed1c49`, **for internal testing
+only**. It has not been launched, installed or live-qualified. The user requires
+the original Nexus interface, so this diagnostic-dashboard candidate will not
+be upgraded into the installed application. Original-UI integration and TX
+implementation remain required. Current dependency notices and full notice
+resource coverage also require follow-up before any public distribution claim.
+
 Windows [1.24.1-xlog.4](CANDIDATE_1.24.1-xlog.4.md) is built, statically
 audited and independently retained at clean canonical source
 `ae35fc6435f861e38029049299833afe57de4885`. It includes the reviewed profile
@@ -8,9 +16,11 @@ repair, installer hardening and completed SDK/native/UI integration.
 actual tools, resource limits, natural process cleanup and the NSIS warning
 qualification. The [real disposable install/uninstall](WINDOWS_INSTALLER_1.24.1-xlog.4.md)
 passed, followed by native A→B→A profile/lifecycle checks and permanent current-user
-installation. Subsequent normal installed launch passed and left xNexus open,
-still unpaired. Paired UI and physical
-station acceptance remain open. The candidate is unsigned; package/runtime
+installation. Subsequent normal installed launch and live pairing occurred;
+receive/decoded-needs qualification failed as recorded in the
+[clock incident](RX_CLOCK_INCIDENT_2026-11-15.md). Both applications were later
+ordinarily closed for the `.5` package. Physical station acceptance remains
+open. The candidate is unsigned; package/runtime
 source remains exact `ae35`, regardless of later documentation/tooling commits.
 Source tests, an artifact audit, native lifecycle checks and physical station
 qualification remain separate gates; see the maintained [execution ledger](STATUS.md).
@@ -46,6 +56,11 @@ admission, 6 GiB runtime reserves and a five-second natural descendant drain.
 Canonical supervisor sources remain unchanged; their earlier 4 GiB default is
 not a qualified fat-LTO allowance. The measured `.4` peak was 9.38 GiB, with
 natural root exit, zero active descendants and no forced live cleanup.
+The completed `.5` serial attempt used the separately reviewed 11 GiB cap,
+18/18 GiB admission and unchanged 6/6 GiB runtime reserves. Its peak was
+10,202,296,320 bytes; root/effective exit 0, natural drain 36 ms, zero remaining
+processes and no forced cleanup. The prior proposals and receipts were preserved;
+there was no automatic retry or resource-policy enlargement.
 The Windows helper pins and records a 2,560 MiB V8 heap allowance. The complete
 decoded-needs frontend checks passed with this setting under a 4 GiB job
 (2,585,292,800-byte peak); smaller 1,280/1,536 MiB heaps exhausted before useful
@@ -56,10 +71,10 @@ Only clean canonical `main` may be packaged. Build receipts bind the exact sourc
 upstream pin, configuration, tools, dependencies and artifacts. xLog packaging and
 installed acceptance remain owned by the “xlog work” chat; an SDK/owner source
 test does not establish that those changes are installed. The owner reports
-1.6.28 packages, installation and normal installed handoff passed. Current owner
-documentation is `92d6547` over application `eb3cf702`. It contains the correction
-for the [1.6.27 live clock failure](RX_CLOCK_INCIDENT_2026-11-15.md); a new manual
-pairing/receive outcome remains pending. Exact `0d01248b` Mac TypeScript also
+1.6.31 packages, installation, private acceptance and normal handoff passed at
+application `a00697f5458c64cf806e4c9647fcd133fc30391b`.
+Historical installed clock/receive failures remain preserved, and
+no current live paired RX/needs pass is claimed. Exact `0d01248b` Mac TypeScript also
 passed, but Vite/native checking was held before launch by the next resource
 admission gate. Live RX/needs and the remaining platform gates stay open. Changing packaged
 source requires a new visible version, including failed qualification candidates.
