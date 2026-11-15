@@ -35,7 +35,7 @@ are not retroactively reclassified as actual retained-owner wiring proof.
 It remains unsigned. [The build record](WINDOWS_BUILD_1.24.1-xlog.4.md) binds the
 actual tools, reviewed 12 GiB supervisor, artifacts and warning qualification.
 The packaging freeze is released for reviewed documentation/tooling integration;
-canonical `main` now includes that evidence at `78e1c288`, with application/runtime
+canonical `main` first integrated that evidence at `78e1c288`, with application/runtime
 and packaged provenance still exact `ae35`. The earlier xLog 1.6.28 handoff passed
 37.715 seconds/12 samples with diagnostics off; this historical result does not
 replace the separately passed 1.6.30 installed handoff. Its [installation and handoff evidence](RETAINED_CLUSTER_INCIDENT_2026-11-15.md)
@@ -106,7 +106,7 @@ new implementation still requires its own source tests and candidate qualificati
 | M1 | 80 client tests plus exact replay of 40 Swift needs replies; actual owner HTTP and SQLite restart/receipt tests; base bridge merged into canonical xLog | Paired installed-application acceptance |
 | M2 | Separate companion startup; no local station services; `.4` Windows A→B→A private profiles and ordinary lifecycle passed | Final candidate native pairing and installed station lifecycle |
 | M3 | xLog-authoritative call/DXCC needs, band/world maps, selected-call history; owner/SDK/native/UI tests and integrated Windows all-targets check passed; `.4` Windows artifact audited | Paired UI; installed classification propagation; richer confirmation/award policy evidence |
-| M4 | Owner-mediated tune/point and independent Stop; connection-bound Stop fix merged after 95 focused and 1,164 full native tests; current xLog 1.6.28 installation/handoff passed | Paired UI and physical control qualification |
+| M4 | Owner-mediated tune/point and independent Stop; connection-bound Stop fix merged after 95 focused and 1,164 full native tests; current xLog 1.6.30 installation/handoff passed | Paired UI and physical control qualification |
 | M5 | Durable outbox and atomic owner write/receipt; restart, replay and edit-conflict tests | Paired native GUI acceptance; queue archive/export design |
 | M6 | FLEX slice A → DAX Audio RX 1 selected; bounded owner PCM, client, FIR/period assembler, threaded native FT8/FT4 decoder and receive UI; generated FT4 to needs chain passed | Confirm live mapping/endpoint; active reception and clock/route qualification; TX implementation and supervised qualification |
 | M7 | Distinct identity, repaired profile construction, reviewed installer guards; `.4` Windows build, audit, retention, A→B→A, disposable install/uninstall and permanent installation passed | Paired installed station acceptance |
@@ -131,10 +131,10 @@ classification exports through the actual Rust projector. They include row
 absence, stale classification becoming Unknown, band/mode differences and
 paper/LoTW/eQSL confirmation cases. This is worker-to-projector evidence, not
 installed HTTP/UI propagation. Installed xLog is now at
-`eb3cf7024f7355c16346282646c7d2d62fb6bb7c`, version 1.6.28. Its owner reports
+`8795606bdbb5ac029287518a826f189d8873d117`, version 1.6.30. Its owner reports
 portable/installer packages, installation and installed qualification passed,
 with earlier failed guard receipts preserved. Current owner documentation is
-`92d6547`; repeat live RX/needs and station acceptance remain separate.
+`a0be04b450e198e0e0c41d6299b004e9e88cfc30`; repeat live RX/needs and station acceptance remain separate.
 RX evidence includes 58 SDK tests, 40 distinct companion UI tests, TypeScript
 and Vite builds, 14 browser viewport/theme cases, 14 pure DSP/assembler tests,
 five native adapter tests including both modes at five rates, two actual owner
