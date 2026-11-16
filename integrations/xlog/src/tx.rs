@@ -394,7 +394,11 @@ impl TxClient {
     pub fn build_tune(&self, c: &ContextLease, d: wire::Tune) -> Result<PreparedOperation, Error> {
         self.admission(c, true)?;
         let hz = f32::from_bits(d.tone_hz_f32_bits);
-        if d.binding != c.context.binding
+        let gain = f32::from_bits(d.gain_f32_bits);
+        if !gain.is_finite()
+            || gain <= 0.0
+            || gain > 0.8
+            || d.binding != c.context.binding
             || d.client_id != self.client_id
             || !validate::uuid(&d.operation_id)
             || !validate::uuid(&d.event_id)

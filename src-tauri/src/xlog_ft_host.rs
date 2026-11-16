@@ -154,6 +154,7 @@ fn lock<T>(m: &Mutex<T>) -> Result<std::sync::MutexGuard<'_, T>, String> {
 fn error(e: impl std::fmt::Debug) -> String {
     format!("{e:?}")
 }
+#[derive(Clone)]
 struct Receive {
     period: Arc<NativeDecodedPeriod>,
     ids: Vec<Option<String>>,
@@ -194,7 +195,12 @@ impl Feed {
     pub(crate) fn retire(&self) {
         if let Some(i) = self.0.upgrade() {
             i.request_stop();
-            i.rx_epoch.fetch_add(1, Ordering::AcqRel);
+            if i.rx_epoch
+                .fetch_update(Ordering::AcqRel, Ordering::Acquire, |n| n.checked_add(1))
+                .is_err()
+            {
+                i.connected.store(false, Ordering::Release);
+            }
         }
     }
 }
@@ -233,6 +239,8 @@ struct Runtime {
     coordinator: Option<kernel::Coordinator>,
     key: Option<kernel::Context>,
     receive: Option<Receive>,
+    // Selection-only original records; never replayed into the sequencer.
+    retained: std::collections::VecDeque<(String, Arc<NativeDecodedPeriod>, usize)>,
     context: Option<Arc<ContextLease>>,
     config: Config,
     reason: String,
@@ -249,6 +257,20 @@ struct Runtime {
     last_terminal: Option<xnexus_xlog_client::tx::OperationKey>,
 }
 impl Runtime {
+    fn retain_receive(&mut self, r: &Receive) {
+        for (index, id) in r.ids.iter().enumerate() {
+            if let Some(id) = id {
+                if index < r.period.rows.len() && !self.retained.iter().any(|(old, _, _)| old == id)
+                {
+                    self.retained
+                        .push_back((id.clone(), r.period.clone(), index));
+                    while self.retained.len() > 200 {
+                        self.retained.pop_front();
+                    }
+                }
+            }
+        }
+    }
     fn retain_log(&mut self) {
         if let (Some(facts), Some(key)) = (
             self.coordinator.as_ref().and_then(|c| c.log_facts()),
@@ -305,13 +327,33 @@ impl Drop for Host {
 }
 impl Inner {
     fn request_stop(&self) {
-        self.epoch.fetch_add(1, Ordering::AcqRel);
+        // Admission and Stop share only this short cell, never HTTP or state.
+        // A late action must not overwrite a newer urgent Stop latch.
+        let guard = self.stop.lock();
+        if self
+            .epoch
+            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |n| n.checked_add(1))
+            .is_err()
+        {
+            self.connected.store(false, Ordering::Release);
+        }
         self.stop_requested.store(true, Ordering::Release);
-        if let Ok(s) = self.stop.lock() {
+        if let Ok(s) = guard {
             if let Some(s) = s.as_ref() {
                 let _ = s.stop();
             }
+        } else {
+            self.connected.store(false, Ordering::Release);
         }
+    }
+    fn admit(&self, epoch: u64) -> Result<(), String> {
+        let _guard = lock(&self.stop)?;
+        if epoch != self.epoch.load(Ordering::Acquire) || !self.connected.load(Ordering::Acquire) {
+            return Err("FT intent cancelled".into());
+        }
+        self.future_disarmed.store(false, Ordering::Release);
+        self.stop_requested.store(false, Ordering::Release);
+        Ok(())
     }
     fn fail(&self, reason: String) {
         self.request_stop();
@@ -385,8 +427,19 @@ impl Host {
         self.inner.request_stop();
     }
     pub(crate) fn disarm_future(&self) -> Result<(), String> {
-        self.inner.future_disarmed.store(true, Ordering::Release);
-        self.inner.epoch.fetch_add(1, Ordering::AcqRel);
+        {
+            let _guard = lock(&self.inner.stop)?;
+            if self
+                .inner
+                .epoch
+                .fetch_update(Ordering::AcqRel, Ordering::Acquire, |n| n.checked_add(1))
+                .is_err()
+            {
+                self.inner.connected.store(false, Ordering::Release);
+                return Err("FT intent epoch exhausted".into());
+            }
+            self.inner.future_disarmed.store(true, Ordering::Release);
+        }
         if let Some(c) = lock(&self.inner.state)?.coordinator.as_mut() {
             c.apply(kernel::Intent::Enable(false), Instant::now())
                 .map_err(error)?;
@@ -413,8 +466,7 @@ impl Host {
             && remain > 0
             && s.context
                 .as_ref()
-                .is_some_and(|c| c.context().ready && c.context().local_enabled)
-            && s.coordinator.is_some();
+                .is_some_and(|c| c.context().ready && c.context().local_enabled);
         Ok(FtView {
             connection_token: self.inner.token.clone(),
             available,
@@ -457,6 +509,47 @@ impl Host {
             remaining_valid_ms: if available { remain } else { 0 },
         })
     }
+    fn retune(&self, gain: f32) -> Result<FtView, String> {
+        let binding = self.inner.current()?.context().binding.clone();
+        lock(&self.inner.state)?.config.gain = gain;
+        self.inner.future_disarmed.store(true, Ordering::Release);
+        self.inner.request_stop();
+        let epoch = self.inner.epoch.load(Ordering::Acquire);
+        let deadline = Instant::now() + Duration::from_secs(2);
+        loop {
+            if epoch != self.inner.epoch.load(Ordering::Acquire)
+                || !self.inner.connected.load(Ordering::Acquire)
+            {
+                return Err("Tune drive restart cancelled; exact release retained".into());
+            }
+            if lock(&self.inner.active)?.is_none() {
+                break;
+            }
+            if Instant::now() >= deadline {
+                return Err("Tune release not observed; no replacement started".into());
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        {
+            let _lane = lock(&self.inner.context_lane)?;
+            let c = self.inner.current()?;
+            if c.context().binding != binding {
+                return Err("Tune context changed".into());
+            }
+            let c = self
+                .inner
+                .client
+                .enable(&c, &uuid()?, true)
+                .map_err(error)?;
+            if !c.is_fresh() || !c.context().client_enabled || c.context().binding != binding {
+                return Err("Tune re-enable refused".into());
+            }
+            lock(&self.inner.state)?.context = Some(Arc::new(c));
+            self.inner.admit(epoch)?;
+        }
+        start_tune(&self.inner, epoch)?;
+        self.view()
+    }
     pub(crate) fn action(&self, action: Action) -> Result<FtView, String> {
         if matches!(action, Action::Enable { enabled: false }) {
             self.disarm_future()?;
@@ -491,6 +584,17 @@ impl Host {
             }
         }
         let _acting = Acting(&self.inner.acting);
+        if let Action::Drive { gain } = action {
+            if !gain.is_finite() || gain <= 0.0 || gain > 0.8 {
+                return Err("Invalid Tune drive".into());
+            }
+            if lock(&self.inner.active)?
+                .as_ref()
+                .is_some_and(|a| a.native.is_none())
+            {
+                return self.retune(gain);
+            }
+        }
         let epoch = self.inner.epoch.load(Ordering::Acquire);
         let lease = self.inner.current()?;
         let arms = matches!(
@@ -596,17 +700,24 @@ impl Host {
                 if !current_rx(&self.inner, r) {
                     return Err("Selected decode authority expired".into());
                 }
-                let n = r
-                    .ids
+                if s.rx_epoch != self.inner.rx_epoch.load(Ordering::Acquire) {
+                    return Err("Selected receive context retired".into());
+                }
+                let (_, period, n) = s
+                    .retained
                     .iter()
-                    .position(|id| id.as_ref() == Some(&decode_id))
-                    .ok_or("Selected decode is no longer current")?;
-                let row = r.period.rows.get(n).ok_or("Selected decode unavailable")?;
+                    .find(|(id, _, _)| id == &decode_id)
+                    .ok_or("Selected decode is no longer retained")?;
+                let period = period.clone();
+                if period.context != r.period.context || period.owner != r.period.owner {
+                    return Err("Selected decode context changed".into());
+                }
+                let row = period.rows.get(*n).ok_or("Selected decode unavailable")?;
                 let msg = Msg::parse(&row.message);
                 let snr = row.snr;
                 let freq = row.freq;
-                let period = r.period.host_period_start_unix_us;
-                let period_us = r.period.context.mode.period_ms() * 1000;
+                let period_us = period.context.mode.period_ms() * 1000;
+                let period = period.host_period_start_unix_us;
                 let call = msg
                     .sender()
                     .ok_or("Selected decode has no explicit sender")?
@@ -649,6 +760,9 @@ impl Host {
                     s.request_id = Some(uuid()?);
                     s.dx_started_ms = wall_us()? / 1000;
                     s.sent = None;
+                    s.sent_epoch = None;
+                    s.saved_log = None;
+                    s.completed = None;
                 }
                 Some(kernel::Intent::Override(message))
             }
@@ -685,11 +799,12 @@ impl Host {
                 s.dx_started_ms = wall_us()? / 1000;
                 s.sent = None;
                 s.completed = None;
+                s.saved_log = None;
+                s.sent_epoch = None;
             }
         }
         if arms {
-            self.inner.future_disarmed.store(false, Ordering::Release);
-            self.inner.stop_requested.store(false, Ordering::Release);
+            self.inner.admit(epoch)?;
             s.reason.clear();
             s.phase = "armed".into();
         }
@@ -718,6 +833,7 @@ fn allocate(client: TxClient, client_id: String, token: String) -> Arc<Inner> {
             coordinator: None,
             key: None,
             receive: None,
+            retained: std::collections::VecDeque::new(),
             context: None,
             config: Config::default(),
             reason: "Waiting for xLog TX context and a complete receive period".into(),
@@ -785,6 +901,7 @@ fn heartbeat_loop(i: Arc<Inner>) {
                         s.coordinator = None;
                         s.key = None;
                         s.receive = None;
+                        s.retained.clear();
                         s.reason = "Owner TX context changed; explicit intent required".into();
                     }
                     if !changed {
@@ -847,6 +964,7 @@ fn consume(i: &Arc<Inner>) -> Result<(), String> {
         s.coordinator = None;
         s.key = None;
         s.receive = None;
+        s.retained.clear();
     }
     let epoch = i.rx_epoch.load(Ordering::Acquire);
     if epoch != s.rx_epoch {
@@ -854,6 +972,7 @@ fn consume(i: &Arc<Inner>) -> Result<(), String> {
         s.coordinator = None;
         s.key = None;
         s.receive = None;
+        s.retained.clear();
         s.rx_epoch = epoch;
     }
     let Some(c) = s.context.clone().filter(|c| c.is_fresh()) else {
@@ -895,6 +1014,7 @@ fn consume(i: &Arc<Inner>) -> Result<(), String> {
             *lock(&i.stop)? = Some(coordinator.stop_handle());
             s.coordinator = Some(coordinator);
             s.key = Some(key);
+            s.retained.clear();
         }
         if let Some(coordinator) = s.coordinator.as_mut() {
             match coordinator.observe(&r.period, now) {
@@ -902,6 +1022,7 @@ fn consume(i: &Arc<Inner>) -> Result<(), String> {
                 Err(e) => return Err(error(e)),
             }
         }
+        s.retain_receive(&r);
         s.receive = Some(r);
         s.retain_log();
     }
@@ -1027,8 +1148,11 @@ fn apply_proof(i: &Inner, proof: ValidatedReceipt) -> Result<(), String> {
         *active = None;
         OPERATION_HELD.store(false, Ordering::Release);
     } else if terminal {
-        i.stop_requested.store(true, Ordering::Release);
         s.reason = "Owner release is uncertain; exact Stop remains pending".into();
+        drop(active);
+        drop(s);
+        // Unknown release cancels a user drive-change restart as well as scheduling.
+        i.request_stop();
     }
     Ok(())
 }
@@ -1092,7 +1216,10 @@ fn release_loop(i: Arc<Inner>) {
     }
 }
 fn maybe_prepare(i: &Arc<Inner>) -> Result<(), String> {
-    if OPERATION_HELD.load(Ordering::Acquire) || i.future_disarmed.load(Ordering::Acquire) {
+    if OPERATION_HELD.load(Ordering::Acquire)
+        || i.future_disarmed.load(Ordering::Acquire)
+        || i.acting.load(Ordering::Acquire)
+    {
         return Ok(());
     }
     let now = Instant::now();
@@ -1174,7 +1301,9 @@ fn prepare_operation(
     if epoch != i.epoch.load(Ordering::Acquire) {
         return Err("Preparation cancelled".into());
     }
-    let c = i.current()?;
+    let c = i
+        .current()
+        .map_err(|e| format!("Fresh owner context: {e}"))?;
     if c.context().binding.context_id != plan.key().context.transmit_context
         || c.context().binding.clock_epoch != plan.key().context.clock_epoch
     {
@@ -1190,10 +1319,11 @@ fn prepare_operation(
         latest_start_unix_us: plan.key().latest_start_us,
         manifest: serde_json::from_slice(output.manifest()).map_err(error)?,
     };
+    let before_build_ms = c.remaining_valid_ms();
     let prepared = Arc::new(
         i.client
             .build_prepared(&c, descriptor, output.pcm())
-            .map_err(error)?,
+            .map_err(|e| format!("SDK body validation: {e:?}; admission {before_build_ms}ms"))?,
     );
     let stop_client = Arc::new(i.client.stop_handle(&prepared).map_err(error)?);
     let stop_event = uuid()?;
@@ -1228,11 +1358,12 @@ fn prepare_operation(
         });
     }
     reservation.published();
+    let before_dispatch_ms = c.remaining_valid_ms();
     let result = i.client.prepare(&prepared);
     if let Some(a) = lock(&i.active)?.as_mut() {
         a.query_ready = true;
     }
-    let receipt = result.map_err(error)?;
+    let receipt = result.map_err(|e| format!("SDK prepare dispatch: {e:?}; body admission {before_build_ms}ms, dispatch {before_dispatch_ms}ms"))?;
     apply_proof(i, receipt)?;
     if epoch != i.epoch.load(Ordering::Acquire) {
         return Err("Prepared operation cancelled; release pending".into());
@@ -1244,26 +1375,37 @@ fn prepare_operation(
         return Err("Prepared too late to commit safely".into());
     }
     let c = i.current()?;
-    let receipt = i.client.commit(&c, &prepared, &uuid()?).map_err(error)?;
+    let receipt = i
+        .client
+        .commit(&c, &prepared, &uuid()?)
+        .map_err(|e| format!("SDK commit: {e:?}; remaining {}ms", c.remaining_valid_ms()))?;
     apply_proof(i, receipt)
 }
 fn start_tune(i: &Arc<Inner>, epoch: u64) -> Result<(), String> {
     let c = i.current()?;
-    let hz = lock(&i.state)?.config.offset;
+    let (hz, gain) = {
+        let mut s = lock(&i.state)?;
+        if let Some(c) = s.coordinator.as_mut() {
+            c.apply(kernel::Intent::Enable(false), Instant::now())
+                .map_err(error)?;
+        }
+        (s.config.offset, s.config.gain)
+    };
     let tune = wire::Tune {
         binding: c.context().binding.clone(),
         client_id: i.client_id.clone(),
         operation_id: uuid()?,
         event_id: uuid()?,
         tone_hz_f32_bits: hz.to_bits(),
+        gain_f32_bits: gain.to_bits(),
         duration_ms: 30_000,
     };
     let op = Arc::new(i.client.build_tune(&c, tune).map_err(error)?);
     let stop_client = Arc::new(i.client.stop_handle(&op).map_err(error)?);
     let stop_event = uuid()?;
     let reservation = Reservation::acquire()?;
-    if epoch != i.epoch.load(Ordering::Acquire) {
-        OPERATION_HELD.store(false, Ordering::Release);
+    let admission = lock(&i.stop)?;
+    if epoch != i.epoch.load(Ordering::Acquire) || !i.connected.load(Ordering::Acquire) {
         return Err("Tune cancelled".into());
     }
     *lock(&i.active)? = Some(Active {
@@ -1278,6 +1420,10 @@ fn start_tune(i: &Arc<Inner>, epoch: u64) -> Result<(), String> {
     reservation.published();
     i.future_disarmed.store(false, Ordering::Release);
     i.stop_requested.store(false, Ordering::Release);
+    drop(admission);
+    if epoch != i.epoch.load(Ordering::Acquire) {
+        return Err("Tune cancelled before dispatch; exact release retained".into());
+    }
     let result = i.client.tune(&op);
     if let Some(a) = lock(&i.active)?.as_mut() {
         a.query_ready = true;
@@ -1321,7 +1467,7 @@ impl Host {
         let saved = s
             .saved_log
             .as_ref()
-            .ok_or("No actual transmitted QSO to log")?;
+            .ok_or("No current selected QSO to log")?;
         let scope = format!(
             "{}:{}:{}",
             saved.key.transmit_context, saved.key.receive.epoch, saved.facts.epoch

@@ -313,16 +313,14 @@ impl Coordinator {
         })
     }
     pub(crate) fn log_facts(&self) -> Option<QsoFacts> {
-        if self.station.keyed_on_air {
-            if let Some(call) = &self.station.dxcall {
-                return Some(QsoFacts {
-                    epoch: self.qso_epoch,
-                    call: call.clone(),
-                    grid: self.station.dxgrid.clone().unwrap_or_default(),
-                    received: self.station.rx_report,
-                    started_us: self.qso_started_us,
-                });
-            }
+        if let Some(call) = &self.station.dxcall {
+            return Some(QsoFacts {
+                epoch: self.qso_epoch,
+                call: call.clone(),
+                grid: self.station.dxgrid.clone().unwrap_or_default(),
+                received: self.station.rx_report,
+                started_us: self.qso_started_us,
+            });
         }
         self.finished.clone()
     }
@@ -470,6 +468,7 @@ impl Coordinator {
                 self.cq_run = true;
                 self.qso_epoch = next;
                 self.qso_started_us = 0;
+                self.finished = None;
             }
             Intent::Work {
                 call,
@@ -495,6 +494,7 @@ impl Coordinator {
                 self.cq_run = false;
                 self.qso_epoch = next;
                 self.qso_started_us = 0;
+                self.finished = None;
             }
             Intent::Parity(even) => {
                 self.settings.tx_even = even;

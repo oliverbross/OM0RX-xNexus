@@ -107,6 +107,7 @@ pub struct Tune {
     pub operation_id: String,
     pub event_id: String,
     pub tone_hz_f32_bits: u32,
+    pub gain_f32_bits: u32,
     pub duration_ms: u32,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]

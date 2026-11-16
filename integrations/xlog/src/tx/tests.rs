@@ -98,6 +98,7 @@ fn tune(c: &TxClient, l: &ContextLease) -> PreparedOperation {
             operation_id: OP.into(),
             event_id: EVENT.into(),
             tone_hz_f32_bits: 1500f32.to_bits(),
+            gain_f32_bits: 0.5f32.to_bits(),
             duration_ms: 100,
         },
     )
@@ -405,6 +406,7 @@ fn pcm_nonfinite_negative_zero_padding_digest_and_provenance_are_rejected() {
     for bits in [f32::NAN.to_bits(), (-0.0f32).to_bits(), 1.0f32.to_bits()] {
         let mut bytes = base.to_vec();
         bytes[..4].copy_from_slice(&bits.to_le_bytes());
+        let (_b, c, l) = local();
         assert!(matches!(
             c.build_prepared(&l, d.clone(), &bytes),
             Err(Error::Invalid)
@@ -412,12 +414,14 @@ fn pcm_nonfinite_negative_zero_padding_digest_and_provenance_are_rejected() {
     }
     let mut changed = d.clone();
     changed.manifest.group_delay_frames = 0;
+    let (_b, c, l) = local();
     assert!(matches!(
         c.build_prepared(&l, changed, base),
         Err(Error::Invalid)
     ));
     let mut changed = d;
     changed.manifest.pcm_sha256 = "0".repeat(64);
+    let (_b, c, l) = local();
     assert!(matches!(
         c.build_prepared(&l, changed, base),
         Err(Error::Invalid)
@@ -701,8 +705,15 @@ fn stop_is_independent_while_prepare_blocked_and_late_ack_cannot_downgrade() {
     });
     let b = bridge(&url);
     let c = Arc::new(b.tx_handle(CLIENT).unwrap());
+    // Render/hash before taking the real one-second network admission lease.
+    let (_producer_bridge, producer, producer_lease) = local();
+    let rendered = pcm(&producer, &producer_lease, wire::Mode::FT4);
+    let descriptor = rendered.descriptor().unwrap().clone();
+    let n = u32::from_le_bytes(rendered.body()[..4].try_into().unwrap()) as usize;
     let lease = c.context().unwrap();
-    let op = pcm(&c, &lease, wire::Mode::FT4);
+    let op = c
+        .build_prepared(&lease, descriptor, &rendered.body()[4 + n..])
+        .unwrap();
     let stop = c.stop_handle(&op).unwrap();
     let cc = c.clone();
     let oo = op.clone();
@@ -908,4 +919,25 @@ fn authenticated_tune_reply_seals_both_start_and_release_with_exact_body_identit
     assert!(matches!(c.tune(&op), Err(Error::OutcomeUnknown)));
     assert_eq!(op.cached_receipt().unwrap().receipt(), proof.receipt());
     j.join().unwrap();
+}
+
+#[test]
+fn tune_requires_explicit_finite_gain_and_binds_it_in_the_exact_body() {
+    let (_b, c, l) = local();
+    let op = tune(&c, &l);
+    let mut d: wire::Tune = serde_json::from_slice(op.body()).unwrap();
+    let mut missing: serde_json::Value = serde_json::from_slice(op.body()).unwrap();
+    missing.as_object_mut().unwrap().remove("gain_f32_bits");
+    assert!(serde_json::from_value::<wire::Tune>(missing).is_err());
+    for gain in [0.0, -0.0, -0.1, 0.81, f32::NAN, f32::INFINITY] {
+        d.gain_f32_bits = gain.to_bits();
+        assert!(matches!(c.build_tune(&l, d.clone()), Err(Error::Invalid)));
+    }
+    d.gain_f32_bits = 0.8f32.to_bits();
+    let changed = c.build_tune(&l, d).unwrap();
+    assert_ne!(changed.key().body_digest, op.key().body_digest);
+    assert_eq!(
+        changed.key().body_sha256,
+        validate::digest(changed.body()).1
+    );
 }

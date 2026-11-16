@@ -20,6 +20,10 @@ struct FakeState {
     slot: AtomicU64,
     prepare_blocked: AtomicBool,
     prepare_entered: AtomicBool,
+    tune_count: AtomicU64,
+    tune_gain: AtomicU64,
+    stop_blocked: AtomicBool,
+    stop_entered: AtomicBool,
 }
 struct Fake {
     url: String,
@@ -41,6 +45,10 @@ impl Fake {
             slot: AtomicU64::new(0),
             prepare_blocked: AtomicBool::new(false),
             prepare_entered: AtomicBool::new(false),
+            tune_count: AtomicU64::new(0),
+            tune_gain: AtomicU64::new(0),
+            stop_blocked: AtomicBool::new(false),
+            stop_entered: AtomicBool::new(false),
         });
         let cancel = Arc::new(AtomicBool::new(false));
         let a = state.clone();
@@ -75,6 +83,7 @@ impl Fake {
 impl Drop for Fake {
     fn drop(&mut self) {
         self.state.prepare_blocked.store(false, Ordering::Release);
+        self.state.stop_blocked.store(false, Ordering::Release);
         self.cancel.store(true, Ordering::Release);
         self.thread.take().unwrap().join().unwrap();
     }
@@ -162,6 +171,12 @@ fn serve(mut stream: TcpStream, state: &FakeState) {
         }
         let digest: String = digest.iter().map(|b| format!("{b:02x}")).collect();
         let tune = path.ends_with("/tune");
+        if tune {
+            state.tune_count.fetch_add(1, Ordering::AcqRel);
+            let gain = d["gain_f32_bits"].as_u64().unwrap();
+            assert!(f32::from_bits(gain as u32) > 0.0 && f32::from_bits(gain as u32) <= 0.8);
+            state.tune_gain.store(gain, Ordering::Release);
+        }
         let r = json!({"schema_version":1,"server_instance":S,"workspace_id":W,"operation_id":d["operation_id"],"body_sha256":digest,"context_id":C,"clock_epoch":K,"event_id":d["event_id"],"phase":if tune{"active"}else{"prepared"},"outcome":if tune{"uncertain"}else{"no_start"},"actual_start_unix_us":if tune{Some(wall_us().unwrap())}else{None},"release_observed_unix_us":null,"reason":null});
         *state.receipt.lock().unwrap() = Some(r.clone());
         state.prepare_entered.store(true, Ordering::Release);
@@ -194,6 +209,11 @@ fn serve(mut stream: TcpStream, state: &FakeState) {
         });
         r.clone()
     } else if path.ends_with("/stop") {
+        state.stop_entered.store(true, Ordering::Release);
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while state.stop_blocked.load(Ordering::Acquire) && Instant::now() < deadline {
+            thread::sleep(Duration::from_millis(5));
+        }
         let mut r = state.receipt.lock().unwrap();
         let r = r.as_mut().unwrap();
         r["phase"] = json!("terminal");
@@ -506,4 +526,160 @@ fn duplicate_terminal_proof_never_stops_or_releases_a_replacement() {
     host.stop();
     apply_proof(&host.inner, stop.stop(&event).unwrap()).unwrap();
     assert!(!OPERATION_HELD.load(Ordering::Acquire));
+}
+
+fn transport_threads(host: &Host) -> [thread::JoinHandle<()>; 2] {
+    let i = host.inner.clone();
+    let h = thread::spawn(move || heartbeat_loop(i));
+    let i = host.inner.clone();
+    let r = thread::spawn(move || release_loop(i));
+    [h, r]
+}
+fn wait_released(host: &Host) {
+    let until = Instant::now() + Duration::from_secs(3);
+    while host.has_release() && Instant::now() < until {
+        thread::sleep(Duration::from_millis(10));
+    }
+    assert!(!host.has_release());
+}
+#[test]
+fn tune_drive_releases_exact_old_operation_before_explicit_gain_replacement() {
+    let (fake, _bridge, host, _audio) = setup();
+    host.action(Action::Tune { enabled: true }).unwrap();
+    let first = host.view().unwrap().operation_id.unwrap();
+    let tasks = transport_threads(&host);
+    host.action(Action::Drive { gain: 0.25 }).unwrap();
+    assert_eq!(fake.state.tune_count.load(Ordering::Acquire), 2);
+    assert_eq!(
+        fake.state.tune_gain.load(Ordering::Acquire),
+        u64::from(0.25f32.to_bits())
+    );
+    assert_ne!(
+        host.view().unwrap().operation_id.as_deref(),
+        Some(first.as_str())
+    );
+    host.action(Action::Drive { gain: 0.0 }).unwrap();
+    wait_released(&host);
+    assert_eq!(fake.state.tune_count.load(Ordering::Acquire), 2);
+    host.revoke();
+    for t in tasks {
+        t.join().unwrap();
+    }
+}
+#[test]
+fn tune_drive_unknown_release_never_rekeys() {
+    let (fake, _bridge, host, _audio) = setup();
+    host.action(Action::Tune { enabled: true }).unwrap();
+    let tasks = transport_threads(&host);
+    fake.state.uncertain.store(true, Ordering::Release);
+    assert!(host.action(Action::Drive { gain: 0.3 }).is_err());
+    assert_eq!(fake.state.tune_count.load(Ordering::Acquire), 1);
+    assert!(host.has_release());
+    fake.state.uncertain.store(false, Ordering::Release);
+    wait_released(&host);
+    host.revoke();
+    for t in tasks {
+        t.join().unwrap();
+    }
+}
+#[test]
+fn urgent_stop_cancels_user_drive_restart_while_old_release_is_pending() {
+    let (fake, _bridge, host, _audio) = setup();
+    let host = Arc::new(host);
+    host.action(Action::Tune { enabled: true }).unwrap();
+    let tasks = transport_threads(&host);
+    fake.state.stop_blocked.store(true, Ordering::Release);
+    let h = host.clone();
+    let action = thread::spawn(move || h.action(Action::Drive { gain: 0.4 }));
+    let until = Instant::now() + Duration::from_secs(2);
+    while !fake.state.stop_entered.load(Ordering::Acquire) && Instant::now() < until {
+        thread::sleep(Duration::from_millis(5));
+    }
+    assert!(fake.state.stop_entered.load(Ordering::Acquire));
+    host.stop();
+    fake.state.stop_blocked.store(false, Ordering::Release);
+    assert!(action.join().unwrap().is_err());
+    wait_released(&host);
+    assert_eq!(fake.state.tune_count.load(Ordering::Acquire), 1);
+    host.revoke();
+    for t in tasks {
+        t.join().unwrap();
+    }
+}
+
+#[test]
+fn commissioned_tune_is_available_before_receive_but_cq_waits() {
+    let (_fake, _bridge, host, _audio) = setup();
+    let view = host.view().unwrap();
+    assert!(view.available);
+    assert_eq!(view.mode, None);
+    assert!(!view.keyed);
+    assert!(host.action(Action::Cq { direction: None }).is_err());
+    assert!(lock(&host.inner.state).unwrap().coordinator.is_none());
+}
+#[test]
+fn retained_original_ids_are_bounded_selectable_and_retired_without_replay() {
+    let (_fake, _bridge, host, mut audio) = setup();
+    let p = accepted(&host, &mut audio);
+    {
+        let mut s = lock(&host.inner.state).unwrap();
+        let r = s.receive.as_ref().unwrap().clone();
+        for n in 0..201 {
+            let mut selection = r.clone();
+            selection.ids = vec![Some(format!("retained-{n}"))];
+            s.retain_receive(&selection);
+        }
+        assert_eq!(s.retained.len(), 200);
+        assert!(s
+            .retained
+            .iter()
+            .all(|(_, period, _)| Arc::ptr_eq(period, &p)));
+        assert_eq!(s.coordinator.as_ref().unwrap().view().unwrap().tx_count, 0);
+    }
+    assert!(host
+        .action(Action::Work {
+            decode_id: "retained-0".into()
+        })
+        .is_err());
+    host.action(Action::Work {
+        decode_id: "retained-1".into(),
+    })
+    .unwrap();
+    assert_eq!(host.view().unwrap().dx_call.as_deref(), Some("W9XYZ"));
+    host.feed().retire();
+    // Immediate fence works even before the control loop consumes retirement.
+    assert!(host
+        .action(Action::Work {
+            decode_id: "retained-200".into()
+        })
+        .is_err());
+    consume(&host.inner).unwrap();
+    assert!(lock(&host.inner.state).unwrap().retained.is_empty());
+}
+#[test]
+fn manual_log_current_unkeyed_target_is_stable_and_never_previous_qso() {
+    let (_fake, _bridge, host, mut audio) = setup();
+    accepted(&host, &mut audio);
+    host.action(Action::Work {
+        decode_id: "native-row".into(),
+    })
+    .unwrap();
+    let first = host.log_draft().unwrap();
+    assert_eq!(first.1.callsign, "W9XYZ");
+    assert!(first.1.rst_sent.is_empty());
+    assert!(!host.view().unwrap().keyed);
+    assert_eq!(host.log_draft().unwrap(), first);
+    host.action(Action::Override {
+        message: "W1AW K1ABC FN42".into(),
+        call: Some("W1AW".into()),
+        grid: Some("FN31".into()),
+    })
+    .unwrap();
+    let second = host.log_draft().unwrap();
+    assert_eq!(second.1.callsign, "W1AW");
+    assert_eq!(second.1.grid, "FN31");
+    assert!(second.1.rst_sent.is_empty());
+    assert_ne!(second.0, first.0);
+    host.action(Action::Cq { direction: None }).unwrap();
+    assert!(host.log_draft().is_err());
 }
