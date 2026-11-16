@@ -1,6 +1,16 @@
 // SPDX-License-Identifier: GPL-3.0-only
 import type { OperatingSnapshot } from '../components/operatingView'
 import type { FtView } from './ftApi'
+export function ownerTxRefusal(reason: string): string {
+  const messages: Record<string, string> = {
+    local_tx_disabled: 'Enable digital TX in xLog companion settings (FLEX A / DAX TX).',
+    commissioned_tx_route_unavailable: 'Refresh and confirm FLEX A / DAX TX in xLog companion settings.',
+    confirmed_station_identity_unavailable: 'Confirm your saved callsign and locator in xLog TX settings.',
+    worker_tx_lease_unsupported: 'Update the xLog station worker before enabling digital TX.',
+    pairing_revoked: 'Reconnect xLog using its current pairing file.',
+  }
+  return messages[reason] ?? (reason || 'Waiting for current xLog transmit context.')
+}
 /** Original controls show native Station facts. Radio transmitting continues to
  * come from xLog's station observation, including another controller's TX. */
 export function ownerFtPresentation(base: OperatingSnapshot, view: FtView, fresh: boolean): OperatingSnapshot {
@@ -12,7 +22,7 @@ export function ownerFtPresentation(base: OperatingSnapshot, view: FtView, fresh
       txNow: view.pending_message, stalled: view.stalled, txCount: view.tx_count,
       watchdogStopped: view.watchdog_stopped } : null,
     radio: { ...base.radio, txEnabled: fresh && view.armed, txAllowed: fresh && view.available,
-      txRefusal: fresh && view.available ? undefined : view.reason || 'Waiting for current xLog transmit context.',
+      txRefusal: fresh && view.available ? undefined : ownerTxRefusal(view.reason),
       txEven: view.tx_even, txCycleAuto: view.tx_cycle_auto, holdTxFreq: view.hold,
       skipTx1: view.skip_tx1, txOffsetHz: view.offset_hz, txLevel: view.gain / .8,
       tuning: fresh ? view.tuning : null, txWatchdog: fresh ? view.watchdog_stopped : null },

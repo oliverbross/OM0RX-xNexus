@@ -474,7 +474,12 @@ impl Host {
             tx_cycle_auto: s.config.cycle_auto,
             armed: available && v.as_ref().is_some_and(|v| v.armed),
             phase: s.phase.clone(),
-            reason: s.reason.clone(),
+            reason: if available {
+                s.reason.clone()
+            } else {
+                s.context.as_ref().and_then(|c| c.context().reason.clone())
+                    .unwrap_or_else(|| s.reason.clone())
+            },
             mode: s.receive.as_ref().map(|r| match r.period.context.mode {
                 crate::xlog_decode::DecoderMode::Ft8 => Mode::FT8,
                 _ => Mode::FT4,

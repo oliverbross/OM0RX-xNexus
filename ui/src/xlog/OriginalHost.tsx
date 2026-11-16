@@ -39,7 +39,7 @@ import { installOwnerLogBoundary, unavailableOwnerLog } from './ownerLogBoundary
 import { ownerSpotsSource } from './ownerSpots'
 import { ftApi, type FtApi, type FtAction } from './ftApi'
 import { useOwnerTransmitter } from './useOwnerTransmitter'
-import { ownerFtPresentation } from './ownerFtPresentation'
+import { ownerFtPresentation, ownerTxRefusal } from './ownerFtPresentation'
 
 const NO_BAND_PLAN: BandChannel[] = []
 const NO_NATIVE_NEEDS = new Map<string, NeedTag>()
@@ -217,7 +217,7 @@ export function OriginalHost({ api = bridge, receiver = rxApi, spectrumTransport
         <button disabled={connection.busy || !view.paired} onClick={() => void connection.connection('connect')}>Reconnect</button>
         <button disabled={connection.busy || !view.paired} onClick={() => void connection.connection('disconnect')}>Disconnect</button>
         <button disabled={!view.connected || !view.connection_token || !capabilities.includes('logbook.read')} onClick={history.refresh}>Refresh log history</button>
-        <p>Frequency changes use xLog simplex tuning. Configure split operation in xLog. {ft.view.reason}</p>
+        <p>Frequency changes use xLog simplex tuning. Configure split operation in xLog. {ownerTxRefusal(ft.view.reason)}</p>
         {capabilities.includes('digital.tx') && <label><input type="checkbox" checked={ft.view.auto_sequence} disabled={!canTransmit}
           onChange={event => ftAction({ kind: 'auto_sequence', enabled: event.target.checked })} />Auto sequence</label>}
         <label>Theme <select value={theme} onChange={event => setTheme(event.target.value as 'dark' | 'light')}><option value="dark">Dark</option><option value="light">Light</option></select></label>

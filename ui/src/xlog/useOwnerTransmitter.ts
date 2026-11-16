@@ -14,6 +14,7 @@ export function useOwnerTransmitter(scope: FtScope, api: FtApi = ftApi) {
   const [held, setHeld] = useState<Held>({ key, api, view: ftOff, deadline: 0 })
   const [now, setNow] = useState(performance.now())
   const [error, setError] = useState('')
+  const [pollError, setPollError] = useState('')
   const [busy, setBusy] = useState(false)
   const [logNotice, setLogNotice] = useState('')
   const heldRef = useRef(held); heldRef.current = held
@@ -31,7 +32,7 @@ export function useOwnerTransmitter(scope: FtScope, api: FtApi = ftApi) {
   useEffect(() => { const timer = setInterval(() => setNow(performance.now()), 100); return () => clearInterval(timer) }, [])
   useEffect(() => {
     const token = ++generation.current
-    ordinaryBusy.current = false; setBusy(false); setError(''); setLogNotice('')
+    ordinaryBusy.current = false; setBusy(false); setError(''); setPollError(''); setLogNotice('')
     setHeld(old => old.key === key && old.api === api ? { ...old, deadline: 0 } : { key, api, view: ftOff, deadline: 0 })
     if (!scope.connected || !scope.capable || !scope.connectionToken) return
     let timer: ReturnType<typeof setTimeout>
@@ -40,10 +41,10 @@ export function useOwnerTransmitter(scope: FtScope, api: FtApi = ftApi) {
       try {
         const next = await api.status(scope.connectionToken!)
         if (token !== generation.current) return
-        if (sequence === actionSequence.current) { accept(next, started, key, api); setError('') }
+        if (sequence === actionSequence.current) { accept(next, started, key, api); setPollError('') }
       } catch (cause) {
         if (token !== generation.current || sequence !== actionSequence.current) return
-        setHeld(old => ({ ...old, deadline: 0 })); setError(message(cause))
+        setHeld(old => ({ ...old, deadline: 0 })); setPollError(message(cause))
       }
       if (token === generation.current) timer = setTimeout(poll, 200)
     }
@@ -94,5 +95,5 @@ export function useOwnerTransmitter(scope: FtScope, api: FtApi = ftApi) {
     catch (cause) { if (token === generation.current) setError(message(cause)) }
     finally { if (token === generation.current) { ordinaryBusy.current = false; setBusy(false) } }
   }
-  return { view, fresh, error, busy, action, log, logNotice }
+  return { view, fresh, error: error || pollError, busy, action, log, logNotice }
 }

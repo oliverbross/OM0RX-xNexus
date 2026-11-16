@@ -260,7 +260,7 @@ export function OperateQsoStrip({
   const atuTuneBlocked = noTx || !!radio?.atuStartTuneUnsupported || !can('atuTune')
   // WHY a mode cannot transmit / cannot run a QSO — prose about the MODE, shown on every
   // control it disables, so it moves with the strip rather than with the TX controls.
-  const noTxWhy = canAction('transmit') ? t('operate.strip.rxOnly.why') : OPERATE_UNAVAILABLE
+  const noTxWhy = rxOnly ? t('operate.strip.rxOnly.why') : radio?.txRefusal || OPERATE_UNAVAILABLE
   const isBeacon = beacon ?? false
   const beaconWhy = t('operate.strip.beacon.why')
   // No QSO to run on a beacon, and nothing to send on a receive-only tier.
@@ -515,7 +515,7 @@ export function OperateQsoStrip({
         <span className="cq-now-label">{stalled ? t('operate.strip.now.stalled') : TX_LABEL}</span>
         <span className="cq-now-msg mono">
           {noTx
-            ? t('operate.strip.now.rxOnly')
+            ? (rxOnly ? t('operate.strip.now.rxOnly') : noTxWhy)
             : isBeacon
               ? t('operate.strip.now.beacon')
               : (txNow ?? t('operate.strip.now.listening'))}

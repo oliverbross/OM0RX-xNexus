@@ -63,3 +63,18 @@ describe('native owner FT controls', () => {
     await act(async () => { clock += 500; await vi.advanceTimersByTimeAsync(500) }); expect(transport.log).toHaveBeenCalledOnce()
   })
 })
+
+describe('transmit refusal feedback', () => {
+  it('keeps an action refusal visible through successful status polls without retrying it', async () => {
+    const transport = api()
+    vi.mocked(transport.action).mockRejectedValueOnce(new Error('Confirm the TX route in xLog.'))
+    const { result } = renderHook(() => useOwnerTransmitter(scope, transport)); await flush()
+    await act(async () => { await result.current.action({ kind: 'work', decode_id: 'actual-row' }) })
+    expect(result.current.error).toBe('Confirm the TX route in xLog.')
+    await act(async () => { clock += 250; await vi.advanceTimersByTimeAsync(250) })
+    expect(result.current.error).toBe('Confirm the TX route in xLog.')
+    expect(transport.action).toHaveBeenCalledOnce()
+    await act(async () => { await result.current.action({ kind: 'stop' }) })
+    expect(result.current.error).toBe('')
+  })
+})
