@@ -1,6 +1,49 @@
 // SPDX-License-Identifier: GPL-3.0-only
 use super::*;
 
+#[test]
+fn passive_facts_survive_deadlines_but_not_revision_or_write_revocation() {
+    let (bridge, mut client) = paired(Readiness::Ready);
+    let mut batch = accept(&mut client, wire(Readiness::Ready, NOW)).unwrap();
+    batch.expires = Instant::now() - Duration::from_millis(1);
+    batch.authority.expires = batch.expires;
+    assert!(!batch.is_fresh());
+    assert_eq!(batch.remaining_valid_ms(), 0);
+    assert!(batch.results().is_err(), "live API must stay expired");
+    for n in 1..4 {
+        let mut state = client.authority.lock().unwrap();
+        state.observe(None, NOW + n).unwrap();
+        state
+            .observe(Some(&metadata(Readiness::Ready, NOW + n)), NOW + n)
+            .unwrap();
+        assert_eq!(
+            batch.display().unwrap().1[0].need.status,
+            crate::NeedStatus::Needed
+        );
+    }
+    let mut changed = metadata(Readiness::Ready, NOW + 4);
+    changed.authority.as_mut().unwrap().logbook_revision += 1;
+    client
+        .authority
+        .lock()
+        .unwrap()
+        .observe(Some(&changed), NOW + 4)
+        .unwrap();
+    assert!(
+        batch.display().is_err(),
+        "changed logbook withdraws old facts"
+    );
+    let mut response = wire(Readiness::Ready, NOW + 4);
+    response["authority"]["logbook_revision"] = json!(1);
+    let fresh = accept(&mut client, response).unwrap();
+    assert!(fresh.display().is_ok());
+    bridge.invalidate_needs();
+    assert!(
+        fresh.display().is_err(),
+        "pending writes also withdraw display"
+    );
+}
+
 fn pending() -> Value {
     json!({"protocol_version":1,"server_instance":"synthetic-server",
         "workspace_id":"synthetic-workspace","error":"needs_pending"})

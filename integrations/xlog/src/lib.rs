@@ -443,22 +443,49 @@ impl BridgeClient {
                     // Needs has its own short freshness window. Expired,
                     // backwards or invalid optional metadata must not retire
                     // otherwise fresh station/audio/control observations.
-                    self.invalidate_needs();
+                    self.needs_authority
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner)
+                        .invalidate_observation();
                 }
                 self.observation = Some(observation)
             }
             Ok(_) => {
-                self.disconnect();
+                self.expire_observation();
                 return Err(Error::Stale);
             }
             Err(error) => {
-                self.disconnect();
+                if matches!(
+                    error,
+                    Error::Transport
+                        | Error::Stale
+                        | Error::Http(408 | 429 | 500 | 502 | 503 | 504)
+                ) {
+                    self.expire_observation();
+                } else {
+                    self.disconnect();
+                }
                 return Err(error);
             }
         }
         self.snapshot()
     }
 
+    fn expire_observation(&mut self) {
+        // Retain the revision high-water mark, but expose no current control
+        // observation. A transport hiccup is not a new paired session.
+        if let Some(observation) = &mut self.observation {
+            observation.remaining = Duration::ZERO;
+        }
+        self.needs_authority
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .invalidate_observation();
+        self.bearing_authority
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clear();
+    }
     pub fn snapshot(&self) -> Result<&Snapshot, Error> {
         if !self.audio_session.load(Ordering::Acquire) {
             return Err(Error::Disconnected);

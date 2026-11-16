@@ -35,6 +35,8 @@ export interface NeedsResult {
   call_status: string; dxcc_status: string; need: NeedsStatus
 }
 export interface RxNeeds extends NeedsStatus {
+  /** Revision/session-bound passive facts, not live audio/control authority. */
+  display_valid?: boolean
   owner: NeedsResult | null; authority: NeedsAuthority | null
   generated_at_unix_ms: number | null; max_age_ms: number | null; remaining_valid_ms: number
 }

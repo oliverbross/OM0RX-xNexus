@@ -334,7 +334,17 @@ impl AudioClient {
             }
             self.accept(wire, now_ms()?)
         })();
-        if result.is_err() {
+        if matches!(
+            &result,
+            Err(Error::Transport | Error::Stale | Error::Http(408 | 429 | 500 | 502 | 503 | 504))
+        ) {
+            // Expire captured samples without retiring the authenticated reader.
+            // The next batch starts a new partial window at the retained cursor.
+            self.alive.store(false, Ordering::Release);
+            self.alive = Arc::new(AtomicBool::new(true));
+            self.descriptor = None;
+            self.next_frame = None;
+        } else if result.is_err() {
             self.disconnect();
         }
         result

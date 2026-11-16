@@ -77,7 +77,7 @@ describe('original receiver lifecycle', () => {
     at = 350; await act(async () => { await vi.advanceTimersByTimeAsync(500) })
     expect(result.current.pollError).toBe('Synthetic RX status unavailable')
     expect(result.current.view.rows[0].decode_id).toBe(view.rows[0].decode_id)
-    expect(facts()).toBeNull()
+    expect(facts()?.status).toBe('needed')
     at = 600; await act(async () => { await vi.advanceTimersByTimeAsync(500) })
     expect(result.current.pollError).toBe('')
     expect(facts()?.status).toBe('needed')
@@ -100,19 +100,46 @@ describe('original receiver lifecycle', () => {
   })
 })
 describe('temporary owner observation gaps', () => {
-  it('hides facts during a freshness gap but preserves only their original unexpired lease', async () => {
+  it('preserves passive facts across observation gaps without renewing live authority', async () => {
     vi.useFakeTimers(); let at = 100
     vi.spyOn(performance, 'now').mockImplementation(() => at)
     const api = source(), initial = scope(), view = received()
+    view.rows[0].needs.display_valid = true
+    view.rows[0].needs.remaining_valid_ms = 0
     vi.mocked(api.status).mockResolvedValue(view)
     const { result, rerender } = renderHook(value => useOwnerReceiver(value, api), {initialProps:initial})
     await act(async () => {})
     const original = result.current.leases.get(view.rows[0].decode_id)?.deadline
     rerender({...initial, fresh:false})
-    at=350; await act(async () => {await vi.advanceTimersByTimeAsync(500)})
-    expect(result.current.leases.size).toBe(0)
+    at=5000; await act(async () => {await vi.advanceTimersByTimeAsync(500)})
+    expect(currentNeeds(result.current.view.rows[0], result.current.view, result.current.leases, at, initial.owner)?.status).toBe('needed')
     rerender(initial); await act(async () => {})
     expect(result.current.leases.get(view.rows[0].decode_id)?.deadline).toBe(original)
     expect(currentNeeds(result.current.view.rows[0], result.current.view, result.current.leases, at, initial.owner)?.status).toBe('needed')
+    const invalidated = received()
+    invalidated.rows[0].needs = { ...invalidated.rows[0].needs, display_valid:false,
+      remaining_valid_ms:0, owner:null, authority:null }
+    vi.mocked(api.status).mockResolvedValue(invalidated)
+    await act(async () => {await vi.advanceTimersByTimeAsync(500)})
+    expect(currentNeeds(result.current.view.rows[0], result.current.view, result.current.leases, at, initial.owner)).toBeNull()
+    expect(result.current.view.rows).toHaveLength(view.rows.length)
+  })
+
+  it('retries a not-ready auto-start with remembered mode then respects ordinary Stop', async () => {
+    vi.useFakeTimers()
+    localStorage.setItem('xlog.rx.mode', 'FT4')
+    const api = source(), initial = { ...scope(), autoStart:true }
+    vi.mocked(api.start).mockRejectedValueOnce(Error('Owner capture not ready')).mockResolvedValue(received())
+    const { result } = renderHook(() => useOwnerReceiver(initial, api))
+    await act(async () => {})
+    expect(api.start).toHaveBeenCalledExactlyOnceWith('FT4')
+    await act(async () => { await vi.advanceTimersByTimeAsync(500) })
+    expect(api.start).toHaveBeenCalledTimes(2)
+    expect(api.start).toHaveBeenLastCalledWith('FT4')
+    await act(async () => { await result.current.receiving(false) })
+    await act(async () => { await vi.advanceTimersByTimeAsync(1500) })
+    expect(api.start).toHaveBeenCalledTimes(2)
+    expect(api.stop).toHaveBeenCalledTimes(1)
+    localStorage.removeItem('xlog.rx.mode')
   })
 })

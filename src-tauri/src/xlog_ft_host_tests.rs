@@ -416,6 +416,27 @@ fn accepted(
     p
 }
 #[test]
+fn temporary_audio_expiry_preserves_qso_but_not_work_admission() {
+    let (_fake, _bridge, host, mut audio) = setup();
+    accepted(&host, &mut audio);
+    host.action(Action::Work {
+        decode_id: "native-row".into(),
+    })
+    .unwrap();
+    audio.disconnect(); // Retires the actual sample authority, not owner TX context.
+    consume(&host.inner).unwrap();
+    assert_eq!(host.view().unwrap().dx_call.as_deref(), Some("W9XYZ"));
+    assert!(lock(&host.inner.state).unwrap().coordinator.is_some());
+    assert!(host
+        .action(Action::Work {
+            decode_id: "native-row".into()
+        })
+        .is_err());
+    host.feed().retire(); // Genuine route/full Stop still retires the sequencer.
+    consume(&host.inner).unwrap();
+    assert!(lock(&host.inner.state).unwrap().coordinator.is_none());
+}
+#[test]
 fn native_record_mailbox_work_auto_parity_hold_and_retirement() {
     let (_fake, _bridge, host, mut audio) = setup();
     let p = accepted(&host, &mut audio);
