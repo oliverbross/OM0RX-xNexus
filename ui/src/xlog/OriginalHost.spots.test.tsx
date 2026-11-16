@@ -8,10 +8,10 @@ import { OriginalHost } from './OriginalHost'
 import { rxOff } from './rxApi'
 import type { View } from './api'
 
-const control = vi.hoisted(() => ({ receive: vi.fn(), suspend: vi.fn(), command: vi.fn(), connection: vi.fn() }))
+const control = vi.hoisted(() => ({ receive: vi.fn(), receiverScope: vi.fn(), suspend: vi.fn(), command: vi.fn(), connection: vi.fn() }))
 const view: View = {
   paired: true, connected: true, connection_token: 'connection-1', endpoint: null,
-  hello: { application: 'OM0RX-xLog', protocol_version: 1, server_instance: 'server', workspace_id: 'workspace', capabilities: ['audio.rx', 'cluster.read', 'rotor.stop'] },
+  hello: { application: 'OM0RX-xLog', protocol_version: 1, server_instance: 'server', workspace_id: 'workspace', capabilities: ['audio.rx', 'cluster.read', 'rotor.stop', 'logbook.classify'] },
   snapshot: { protocol_version: 1, server_instance: 'server', workspace_id: 'workspace', revision: 3,
     generated_at_unix_ms: 10_000, max_age_ms: 3000,
     station: { connected: false, radio_id: null, frequency_hz: null, mode: null, transmitting: null },
@@ -24,9 +24,9 @@ vi.mock('./useOwnerConnection', () => ({ useOwnerConnection: () => ({ view, leas
   busy: false, pollError: '', actionError: '', receipt: null, command: control.command, connection: control.connection,
   isCurrentConnection: () => true, isCurrentReadConnection: () => false,
   isCurrentBearingIdentity: () => false, retirePointObservation: () => {}, poll: null, pointEvidence: null, observedPoint: vi.fn() }) }))
-vi.mock('./useOwnerReceiver', () => ({ useOwnerReceiver: () => ({ view: { ...rxOff, enabled: true }, pending: false,
+vi.mock('./useOwnerReceiver', () => ({ useOwnerReceiver: (scope: unknown) => (control.receiverScope(scope), ({ view: { ...rxOff, enabled: true }, pending: false,
   observation: 1, leases: new Map(), mode: 'FT8', now: 100, receiving: control.receive,
-  selectMode: vi.fn(), pollError: '', actionError: '' }) }))
+  selectMode: vi.fn(), pollError: '', actionError: '' })) }))
 vi.mock('./useOwnerSpectrum', () => ({ useOwnerSpectrum: () => ({ getSpectrumRow: async () => null,
   resetKey: 'spectrum-1', suspend: control.suspend }) }))
 vi.mock('./useOwnerHistory', () => ({ useOwnerHistory: () => ({ recent: null, recall: null, refresh: vi.fn(), canOpenContact: () => false }) }))
@@ -65,6 +65,11 @@ describe('original host Spots navigation', () => {
     expect((input as HTMLInputElement).value).toBe('K1ABC OM0RX -10')
     expect(control.command).not.toHaveBeenCalled()
     expect(control.connection).not.toHaveBeenCalled()
+  })
+
+  it('admits the actual xLog logbook classification capability', () => {
+    render(<OriginalHost />)
+    expect(control.receiverScope).toHaveBeenCalledWith(expect.objectContaining({ needsCapable: true }))
   })
 
   it('keeps the cockpit mounted and its draft, while global Stop remains reachable on Spots', () => {

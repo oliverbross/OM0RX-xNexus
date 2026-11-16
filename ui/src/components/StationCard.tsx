@@ -1,3 +1,4 @@
+import { OwnerNeedBadge } from './OwnerNeedBadge'
 import type { OperatingStation } from './operatingView'
 // ⚠️ THIS FILE IS ON THE MIGRATED LIST (i18n/hardcoded-strings.test.ts). Every operator-visible
 // string comes from the catalog; a hardcoded one fails CI. What does NOT come from it: the
@@ -154,11 +155,8 @@ export function StationCard({
                 </span>
               ) : null
             })}
-            {station.external && <span className="need-chip" title={[...station.external.reasons, station.external.reason].filter(Boolean).join(' · ')}>
-              {station.external.status === 'needed' ? t('xlog.need.needed') : station.external.status === 'worked' ? t('xlog.need.worked') : t('xlog.need.unknown')}
-              {station.external.score != null ? ` · ${station.external.score}` : ''}
-            </span>}
-            {station.worked && (
+            {station.external && <OwnerNeedBadge facts={station.external} />}
+            {!station.external && station.worked && (
               <span
                 className={`b4-chip${station.workedBand ? ' b4-band' : ''}`}
                 title={

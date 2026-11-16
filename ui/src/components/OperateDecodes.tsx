@@ -1,3 +1,4 @@
+import { OwnerNeedBadge } from './OwnerNeedBadge'
 // ⚠️ THIS FILE IS ON THE MIGRATED LIST (i18n/hardcoded-strings.test.ts). Every reading in this
 // pane is DATA and stays in the code: the callsign, the decoded message, the SNR and dB, the
 // DT in seconds, the audio offset in Hz, the UTC stamp, the band, the tier and the country.
@@ -1324,14 +1325,8 @@ const DecodeRowView = memo(function DecodeRowView({
               )}
             </span>
           )}
-          {'external' in d && (
-            <span className={`need-chip ${d.external.status === 'needed' ? 'need-entity' : ''}`}
-              title={['xLog', ...d.external.reasons, d.external.reason].filter(Boolean).join(' · ')}>
-              {d.external.status === 'needed' ? t('xlog.need.needed') : d.external.status === 'worked' ? t('xlog.need.worked') : t('xlog.need.unknown')}
-              {d.external.score != null ? ` · ${d.external.score}` : ''}
-            </span>
-          )}
-          {d.worked && (
+          {'external' in d && <OwnerNeedBadge facts={d.external} />}
+          {!('external' in d) && d.worked && (
             <span
               className={`b4-chip${d.workedBand ? ' b4-band' : ''}`}
               title={d.workedBand ? t('operate.b4.sameBand') : t('operate.b4.otherBand')}

@@ -1,3 +1,4 @@
+import { OwnerNeedBadge } from './OwnerNeedBadge'
 import type { OperatingStation } from './operatingView'
 // A WSJT-X / GridTracker-style Call Roster: one row per heard station as aligned,
 // sortable columns (Call · Calling · Need · Park · Country · State · Grid · Dist · Brg · SNR · Age) with
@@ -789,10 +790,7 @@ export function OperateRoster({
                 >
                   {/* The WATCH tile leads: this cell clips what does not fit, and the tile is
                       the one the operator asked for by name. */}
-                  {s.external && <span className="need-chip" title={[...s.external.reasons, s.external.reason].filter(Boolean).join(' · ')}>
-                    {s.external.status === 'needed' ? t('xlog.need.needed') : s.external.status === 'worked' ? t('xlog.need.worked') : t('xlog.need.unknown')}
-                    {s.external.score != null ? ` · ${s.external.score}` : ''}
-                  </span>}
+                  {s.external && <OwnerNeedBadge facts={s.external} />}
                   {watch && <WatchTile entry={watch} />}
                   {chips.map((t) => {
                     const c = NEED_CHIP[t]

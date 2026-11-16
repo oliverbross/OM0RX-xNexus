@@ -40,6 +40,11 @@ export interface ExternalDecodeEntry extends Omit<DecodeEntry, 'worked' | 'rv' |
     score: number | null
     reasons: readonly string[]
     reason: string | null
+    /** Authoritative xLog call/DXCC classifications; mode is its award family. */
+    callStatus?: string | null
+    dxccStatus?: string | null
+    classificationMode?: string | null
+    band?: string | null
   }
 }
 export type DisplayDecodeEntry = DecodeEntry | ExternalDecodeEntry

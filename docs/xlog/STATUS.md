@@ -1,5 +1,17 @@
 # Execution ledger — 15 November 2026
 
+## 16 November — decoded logbook facts
+
+The original cockpit now uses xLog's actual `logbook.classify` capability and
+retains call/DXCC classifications instead of dropping new-band/new-mode facts.
+The [presentation record](DECODE_CLASSIFICATION_PRESENTATION.md) records fifteen
+focused cases, strict TypeScript and three actual-component browser viewports.
+The [native lookup fixes](NEEDS_QUERY_LIFETIME.md) separately passed 175 SDK cases
+(with three existing external-input cases ignored), all-target Clippy and 37
+actual worker cases. Original deadlines and genuine revocation remain intact.
+These are committed source fixes, not a new installed candidate. Full TX remains
+active implementation work; no live output is claimed.
+
 ## 16 November — original Settings navigation
 
 The original rail's Settings gear now opens the supported connection/appearance
