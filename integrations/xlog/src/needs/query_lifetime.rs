@@ -168,3 +168,35 @@ fn real_revision_change_and_write_revocation_still_retire_old_authority() {
     );
     assert_eq!(client.remaining_authority_ms(), 0);
 }
+
+#[test]
+fn transient_transport_preserves_prior_facts_but_not_beyond_original_deadline() {
+    let (bridge, mut client) = paired(Readiness::Ready);
+    let mut batch = accept(&mut client, wire(Readiness::Ready, NOW)).unwrap();
+    let deadline = batch.expires;
+    // The paired fixture's loopback port has no listener: an actual failed read.
+    assert!(matches!(client.query(&queries()), Err(Error::Transport)));
+    assert!(batch.is_fresh());
+    assert_eq!(batch.expires, deadline);
+    batch.expires = Instant::now() - Duration::from_millis(1);
+    assert!(!batch.is_fresh());
+    bridge.invalidate_needs();
+    assert!(!batch.authority.live.load(Ordering::Acquire));
+}
+
+#[test]
+fn stale_refresh_response_does_not_erase_valid_earlier_result() {
+    let now = now_ms().unwrap();
+    let (bridge, mut client, server) = network_client(vec![
+        crate::tests::json_response(wire(Readiness::Ready, now)),
+        crate::tests::json_response(wire(Readiness::Ready, now - 2001)),
+    ]);
+    let batch = client.query(&queries()).unwrap();
+    let deadline = batch.expires.min(batch.authority.expires);
+    assert!(matches!(client.query(&queries()), Err(Error::Stale)));
+    assert!(batch.is_fresh());
+    assert_eq!(batch.expires.min(batch.authority.expires), deadline);
+    bridge.invalidate_needs();
+    assert!(!batch.is_fresh());
+    assert_eq!(server.join().unwrap().len(), 4);
+}

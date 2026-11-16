@@ -83,6 +83,12 @@ impl Row {
             context: self.context.clone(),
         })
     }
+    fn needs_refresh(&self) -> bool {
+        self.fact
+            .as_ref()
+            .and_then(Fact::view)
+            .is_none_or(|view| view.remaining_valid_ms <= 1100)
+    }
     fn refresh_needs(&mut self) {
         match self.fact.as_ref().and_then(Fact::view) {
             Some(view) => self.needs = view,
@@ -156,6 +162,40 @@ impl State {
         self.view.phase = phase.into();
         self.view.reason = reason.into();
     }
+    // A declared PCM gap invalidates partial DSP/FT work, not already decoded
+    // history from the exact same authenticated route. Keep original row IDs,
+    // contexts and fact deadlines; never replay those rows into the sequencer.
+    fn observe_audio(&mut self, batch: &Arc<AudioBatch>, poll_epoch: u64) -> bool {
+        let running = batch.state == AudioState::Running && batch.is_fresh();
+        let reset = batch.reset || !running || self.epoch != poll_epoch;
+        if reset {
+            let same_route_gap = running
+                && batch.reset
+                && self.epoch == poll_epoch
+                && self.view.route.is_some()
+                && self.view.route == batch.descriptor;
+            let retained = same_route_gap.then(|| std::mem::take(&mut self.view.rows));
+            self.reset(
+                "waiting",
+                batch.reason.as_deref().unwrap_or(if same_route_gap {
+                    "Audio gap; retaining decoded history and waiting for a complete period."
+                } else {
+                    "Audio route changed; waiting for a complete period."
+                }),
+            );
+            if let Some(rows) = retained {
+                self.view.rows = rows;
+            }
+        }
+        if running {
+            self.view.route = batch.descriptor.clone();
+            self.authority = Some(batch.clone());
+            if let Some(feed) = &self.ft_feed {
+                feed.touch(batch.clone());
+            }
+        }
+        reset
+    }
     fn expire(&mut self) -> bool {
         if self
             .authority
@@ -182,7 +222,9 @@ impl State {
     }
     fn contains(&mut self, candidate: &Candidate) -> bool {
         !self.needs_blocked.load(Ordering::Acquire)
-            && self.accepts(candidate.context.worker_epoch)
+            // Historical rows may predate a same-route PCM gap. They remain
+            // read-only lookup keys; DSP/FT still require the current epoch.
+            && self.accepts(self.epoch)
             && self.view.route.as_ref() == Some(&candidate.context.route)
             && self.view.mode == Some(candidate.context.decoder_mode)
             && self.view.rows.iter().any(|row| {
@@ -458,13 +500,11 @@ impl Worker {
                 let running = batch.state == AudioState::Running && batch.is_fresh();
                 {
                     let Ok(mut state) = poll_state.lock() else { break; };
-                    if batch.reset || !running || state.epoch != epoch {
+                    if state.observe_audio(&batch, epoch) {
                         assembler.reset();
                         spectrum.reset();
-                        state.reset("waiting", batch.reason.as_deref().unwrap_or("Audio route changed; waiting for a complete period."));
                     }
                     epoch = state.epoch;
-                    if running { state.view.route = batch.descriptor.clone(); state.authority = Some(batch.clone()); if let Some(feed)=&state.ft_feed{feed.touch(batch.clone());} }
                 }
                 if let Some(route) = batch.descriptor.as_ref().filter(|_| running) {
                     let context = context(route, &server, &workspace, mode);
@@ -668,7 +708,7 @@ fn lookup_loop(
                 .rows
                 .iter()
                 .rev()
-                .filter(|row| row.fact.is_none())
+                .filter(|row| row.needs_refresh())
                 .filter_map(Row::candidate)
                 .collect::<Vec<_>>();
             (retained, candidates)
@@ -679,7 +719,10 @@ fn lookup_loop(
         let mut bindings: Vec<(Candidate, String)> = Vec::new();
         let mut cached = Vec::new();
         for candidate in candidates {
-            if let Some(fact) = cache.find(&candidate) {
+            if let Some(fact) = cache.find(&candidate).filter(|fact| {
+                fact.view()
+                    .is_some_and(|view| view.remaining_valid_ms > 1100)
+            }) {
                 cached.push((candidate, fact));
                 continue;
             }
@@ -778,8 +821,8 @@ fn lookup_loop(
                     }
                 }
             }
-            Err(LookupFailure::Pending) => {
-                // The owner queued this group; it did not retract other facts.
+            Err(LookupFailure::Pending | LookupFailure::Retry) => {
+                // A queued/failed refresh does not retract other valid facts.
                 // Refresh against their original leases, never extend or restore.
                 state.refresh_needs();
             }
@@ -1045,6 +1088,95 @@ mod tests {
         }
     }
     #[test]
+    fn same_route_gap_keeps_history_but_retires_old_dsp_epoch() {
+        let (_owner, _audio, mut batches) = authority_batches(48000, &[1000, 1000]);
+        let first = batches.remove(0);
+        let mut next = batches.remove(0);
+        Arc::get_mut(&mut next).unwrap().reset = true; // owner-declared PCM gap
+        let mut state = state(first);
+        let old_epoch = state.epoch;
+        state.view.rows.push(row(&state, "retained_id", "K1ABC"));
+        let candidate = state.view.rows[0].candidate().unwrap();
+        assert!(state.observe_audio(&next, old_epoch));
+        assert!(!state.accepts(old_epoch), "queued old DSP cannot publish");
+        assert_eq!(state.view.rows.len(), 1);
+        assert_eq!(state.view.rows[0].decode_id, "retained_id");
+        assert_eq!(state.view.rows[0].context.worker_epoch, old_epoch);
+        assert!(
+            state.contains(&candidate),
+            "same-route history can be reclassified"
+        );
+        assert!(state.view.reason.starts_with("Audio gap;"));
+    }
+
+    #[test]
+    fn actual_route_changes_clear_retained_history() {
+        for change in 0..5 {
+            let (_owner, _audio, mut batches) = authority_batches(48000, &[1000, 1000]);
+            let first = batches.remove(0);
+            let mut next = batches.remove(0);
+            let next_mut = Arc::get_mut(&mut next).unwrap();
+            next_mut.reset = true;
+            let route = next_mut.descriptor.as_mut().unwrap();
+            match change {
+                0 => route.frequency_hz += 1000,
+                1 => route.mode = "USB".into(),
+                2 => route.capture_id = "00000000-0000-4000-8000-000000000009".into(),
+                3 => route.epoch = "00000000-0000-4000-8000-000000000009".into(),
+                _ => route.mapping_generation += 1,
+            }
+            let mut state = state(first);
+            state.view.rows.push(row(&state, "old_id", "K1ABC"));
+            let candidate = state.view.rows[0].candidate().unwrap();
+            assert!(state.observe_audio(&next, state.epoch));
+            assert!(state.view.rows.is_empty(), "route change {change}");
+            assert!(!state.contains(&candidate));
+        }
+    }
+
+    #[test]
+    fn refresh_starts_before_expiry_and_retry_keeps_original_fact() {
+        let (_audio_owner, _audio, batch) = live_authority();
+        let mut state = state(batch);
+        state.view.rows.push(row(&state, "refresh_a", "K1ABC"));
+        let candidate = state.view.rows[0].candidate().unwrap();
+        let (_owner, _needs, facts) = needs_batch(&[query(&candidate)], 1000);
+        assert!(state.attach(
+            &candidate,
+            Fact::new(facts, candidate.decode_id.clone()).unwrap()
+        ));
+        let before = state.view.rows[0].needs.remaining_valid_ms;
+        assert!(before > 0 && state.view.rows[0].needs_refresh());
+        let state = Arc::new(Mutex::new(state));
+        let (wake, rx) = mpsc::sync_channel(1);
+        wake.send(()).unwrap();
+        drop(wake);
+        let mut calls = 0;
+        lookup_loop(
+            |queries| {
+                calls += 1;
+                assert_eq!(queries[0].query_id, "refresh_a");
+                assert!(state.lock().unwrap().view.rows[0]
+                    .fact
+                    .as_ref()
+                    .unwrap()
+                    .is_fresh());
+                Lookup::Attempt(Err(LookupFailure::Retry))
+            },
+            state.clone(),
+            Arc::new(AtomicBool::new(false)),
+            rx,
+        );
+        assert_eq!(calls, 1);
+        let state = state.lock().unwrap();
+        assert_eq!(
+            state.view.rows[0].needs.status,
+            xnexus_xlog_client::NeedStatus::Needed
+        );
+        assert!(state.view.rows[0].needs.remaining_valid_ms <= before);
+    }
+
+    #[test]
     fn pending_query_lifetime_preserves_only_unrelated_fresh_rows() {
         for case in 0..3 {
             let (_audio_owner, _audio, audio_batch) = live_authority();
@@ -1087,7 +1219,7 @@ mod tests {
             let state = state.lock().unwrap();
             assert_eq!(
                 state.view.rows[0].needs.status,
-                if case == 0 {
+                if case != 2 {
                     xnexus_xlog_client::NeedStatus::Needed
                 } else {
                     xnexus_xlog_client::NeedStatus::Unknown
@@ -1401,7 +1533,7 @@ mod tests {
     }
 
     #[test]
-    fn lookup_error_clears_previous_facts_without_stopping_receive() {
+    fn retired_lookup_clears_previous_facts_without_stopping_receive() {
         let (_audio_owner, _audio, batch) = live_authority();
         let mut state = state(batch);
         state.view.rows = vec![row(&state, "row_a", "K1ABC"), row(&state, "row_b", "W9XYZ")];
@@ -1428,7 +1560,7 @@ mod tests {
             lookup_loop(
                 |_| {
                     entered_tx.send(()).unwrap();
-                    Lookup::Attempt(Err(LookupFailure::Retry))
+                    Lookup::Attempt(Err(LookupFailure::Retired))
                 },
                 state,
                 cancel,
