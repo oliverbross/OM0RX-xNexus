@@ -481,6 +481,11 @@ impl NeedsClient {
     pub fn query(&mut self, queries: &[NeedsQuery]) -> Result<NeedsBatch, Error> {
         let result = self.query_once(queries);
         if let Err(error) = &result {
+            if *error == Error::NeedsPending {
+                // Authenticated queue state is not invalid classification. Keep
+                // unrelated batches, with their original revocable deadlines.
+                return result;
+            }
             self.facts.store(false, Ordering::Release);
             self.facts = Arc::new(AtomicBool::new(true));
             if matches!(
@@ -532,8 +537,79 @@ impl NeedsClient {
             .timeout(Duration::from_secs(1))
             .send()
             .map_err(|_| Error::Transport)?;
+        if response.status().as_u16() == 503 {
+            return Err(self.pending_error(response, &lease));
+        }
         let wire: WireResponse = read_response(response, RESPONSE_BYTES)?;
         self.accept(wire, queries, lease, now_ms()?)
+    }
+
+    fn pending_error(
+        &self,
+        response: reqwest::blocking::Response,
+        lease: &AuthorityLease,
+    ) -> Error {
+        #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct Pending {
+            protocol_version: u32,
+            server_instance: String,
+            workspace_id: String,
+            error: String,
+        }
+        // Only the explicit bounded owner marker is a retryable queue state.
+        // Legacy/plain 503, busy, malformed, and unrelated errors still revoke.
+        let parsed = (|| -> Result<Pending, Error> {
+            const LIMIT: u64 = 1024;
+            if response.content_length().is_some_and(|n| n > LIMIT) {
+                return Err(Error::TooLarge);
+            }
+            let content_type = response
+                .headers()
+                .get(header::CONTENT_TYPE)
+                .and_then(|v| v.to_str().ok())
+                .unwrap_or("");
+            if !content_type
+                .split(';')
+                .next()
+                .unwrap_or("")
+                .trim()
+                .eq_ignore_ascii_case("application/json")
+            {
+                return Err(Error::Http(503));
+            }
+            let mut bytes = Vec::new();
+            response
+                .take(LIMIT + 1)
+                .read_to_end(&mut bytes)
+                .map_err(|_| Error::Transport)?;
+            if bytes.len() > LIMIT as usize {
+                return Err(Error::TooLarge);
+            }
+            serde_json::from_slice(&bytes).map_err(|_| Error::Http(503))
+        })();
+        let pending = match parsed {
+            Ok(pending) => pending,
+            Err(error) => return error,
+        };
+        if pending.error != "needs_pending" {
+            return Error::Http(503);
+        }
+        if pending.protocol_version != 1 {
+            return Error::Incompatible;
+        }
+        if pending.server_instance != self.hello.server_instance
+            || pending.workspace_id != self.hello.workspace_id
+        {
+            return Error::IdentityChanged;
+        }
+        if !self.connected || !self.session.load(Ordering::Acquire) {
+            return Error::Disconnected;
+        }
+        if !lease.fresh() {
+            return Error::Stale;
+        }
+        Error::NeedsPending
     }
     fn accept(
         &mut self,
@@ -572,7 +648,15 @@ impl NeedsClient {
         if Instant::now() >= expires {
             return Err(Error::Stale);
         }
-        if !lease.fresh() || !metadata.same_authority(&lease.metadata) {
+        if !lease.fresh() {
+            // A captured deadline is immutable; an older request must not retire
+            // a fresh same-authority observation sharing the live identity.
+            // observe(), explicit invalidation and session fences own revocation.
+            return Err(Error::Stale);
+        }
+        if !metadata.same_authority(&lease.metadata) {
+            // A genuinely changed result authority still withdraws the old
+            // identity. A newer different identity already has another Arc.
             lease.live.store(false, Ordering::Release);
             return Err(Error::Stale);
         }

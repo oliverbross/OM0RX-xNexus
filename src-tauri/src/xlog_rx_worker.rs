@@ -320,7 +320,9 @@ impl Worker {
                     }
                     Lookup::Attempt(client.query(queries).map_err(|error| {
                         use xnexus_xlog_client::Error;
-                        if matches!(
+                        if error == Error::NeedsPending {
+                            LookupFailure::Pending
+                        } else if matches!(
                             error,
                             Error::Disconnected
                                 | Error::IdentityChanged
@@ -569,6 +571,7 @@ impl Drop for Worker {
 }
 
 enum LookupFailure {
+    Pending,
     Retry,
     Retired,
 }
@@ -751,6 +754,11 @@ fn lookup_loop(
                         }
                     }
                 }
+            }
+            Err(LookupFailure::Pending) => {
+                // The owner queued this group; it did not retract other facts.
+                // Refresh against their original leases, never extend or restore.
+                state.refresh_needs();
             }
             Err(error) => {
                 if matches!(error, LookupFailure::Retired) {
@@ -1010,6 +1018,64 @@ mod tests {
             ),
         }
     }
+    #[test]
+    fn pending_query_lifetime_preserves_only_unrelated_fresh_rows() {
+        for case in 0..3 {
+            let (_audio_owner, _audio, audio_batch) = live_authority();
+            let mut state = state(audio_batch);
+            state.view.rows = vec![
+                row(&state, "known_a", "K1ABC"),
+                row(&state, "pending_b", "W9XYZ"),
+            ];
+            let a = state.view.rows[0].candidate().unwrap();
+            let (owner, _needs, batch) = needs_batch(&[query(&a)], 2000);
+            assert!(state.attach(&a, Fact::new(batch, a.decode_id.clone()).unwrap()));
+            let before = state.view.rows[0].needs.remaining_valid_ms;
+            assert!(before > 0);
+            if case == 2 {
+                owner.invalidate_needs();
+            }
+            let state = Arc::new(Mutex::new(state));
+            let (wake, rx) = mpsc::sync_channel(1);
+            wake.send(()).unwrap();
+            drop(wake); // One actual production lookup iteration, then natural exit.
+            let mut calls = 0;
+            lookup_loop(
+                |queries| {
+                    calls += 1;
+                    if case != 2 {
+                        assert_eq!(queries.len(), 1);
+                        assert_eq!(queries[0].query_id, "pending_b");
+                    }
+                    Lookup::Attempt(Err(if case == 1 {
+                        LookupFailure::Retry
+                    } else {
+                        LookupFailure::Pending
+                    }))
+                },
+                state.clone(),
+                Arc::new(AtomicBool::new(false)),
+                rx,
+            );
+            assert_eq!(calls, 1);
+            let state = state.lock().unwrap();
+            assert_eq!(
+                state.view.rows[0].needs.status,
+                if case == 0 {
+                    xnexus_xlog_client::NeedStatus::Needed
+                } else {
+                    xnexus_xlog_client::NeedStatus::Unknown
+                }
+            );
+            assert!(state.view.rows[0].needs.remaining_valid_ms <= before);
+            assert_eq!(
+                state.view.rows[1].needs.status,
+                xnexus_xlog_client::NeedStatus::Unknown
+            );
+            assert!(state.view.enabled, "pending/stale lookup does not Stop PCM");
+        }
+    }
+
     fn needs_batch(
         queries: &[NeedsQuery],
         lifetime: u64,
