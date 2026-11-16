@@ -310,30 +310,48 @@ async fn xlog_outbox_deliver(
     let queue = Arc::clone(&queue);
     let (generation, connection) = current(&shared)?;
     tauri::async_runtime::spawn_blocking(move || {
-        let mut client = lock(&connection.client)?;
-        if lock(&shared)?.generation != generation {
-            return Err("Connection changed".into());
-        }
-        // The write/recovery may race an independent needs request. Revoke its
-        // authority before dispatch and after any result, including uncertainty.
-        // A durable unresolved entry also blocks attachment despite fresh snapshots.
-        connection.needs_blocked.store(true, Ordering::Release);
-        client.invalidate_needs();
-        let result = with_queue(&queue, |outbox| {
-            match action {
-                DeliveryAction::Submit => outbox.submit(&mut client, &request_id),
-                DeliveryAction::Reconcile => outbox.reconcile(&mut client, &request_id),
-                DeliveryAction::RetryMissing => outbox.retry_missing(&mut client, &request_id),
-            }
-            .map_err(|error| error.to_string())
-        });
-        let gate = update_needs_gate(&queue, &connection);
-        client.invalidate_needs();
-        gate?;
-        result
+        deliver_queued(
+            &shared,
+            &queue,
+            generation,
+            &connection,
+            &request_id,
+            action,
+        )
     })
     .await
     .map_err(|_| "QSO result unavailable; check its receipt before retrying")?
+}
+
+fn deliver_queued(
+    shared: &Shared,
+    queue: &Queue,
+    generation: u64,
+    connection: &Arc<Connection>,
+    request_id: &str,
+    action: DeliveryAction,
+) -> Result<CommandReceipt, String> {
+    let mut client = lock(&connection.client)?;
+    if lock(&shared)?.generation != generation {
+        return Err("Connection changed".into());
+    }
+    // The write/recovery may race an independent needs request. Revoke its
+    // authority before dispatch and after any result, including uncertainty.
+    // A durable unresolved entry also blocks attachment despite fresh snapshots.
+    connection.needs_blocked.store(true, Ordering::Release);
+    client.invalidate_needs();
+    let result = with_queue(&queue, |outbox| {
+        match action {
+            DeliveryAction::Submit => outbox.submit(&mut client, &request_id),
+            DeliveryAction::Reconcile => outbox.reconcile(&mut client, &request_id),
+            DeliveryAction::RetryMissing => outbox.retry_missing(&mut client, &request_id),
+        }
+        .map_err(|error| error.to_string())
+    });
+    let gate = update_needs_gate(&queue, &connection);
+    client.invalidate_needs();
+    gate?;
+    result
 }
 
 #[derive(Clone, Deserialize)]
@@ -350,6 +368,7 @@ struct Connection {
     detail: passive_contact_detail::Lane,
     bearing: passive_bearing::Lane,
     hello: Hello,
+    ft: Option<Arc<crate::xlog_ft_host::Host>>,
     needs_blocked: Arc<AtomicBool>,
 }
 
@@ -361,6 +380,7 @@ struct Session {
     stop: Option<StopClient>,
     rx: Option<crate::xlog_rx_worker::Worker>,
     rx_generation: u64,
+    ft_last: Option<Arc<crate::xlog_ft_host::Host>>,
 }
 type Shared = Arc<Mutex<Session>>;
 
@@ -411,6 +431,9 @@ fn parse_pairing(bytes: &[u8]) -> Result<Pairing, String> {
 fn begin(session: &Shared) -> Result<u64, String> {
     let mut session = lock(session)?;
     if let Some(connection) = &session.connection {
+        if let Some(ft) = &connection.ft {
+            ft.revoke();
+        }
         connection.history.revoke();
         connection.detail.revoke();
         connection.bearing.revoke();
@@ -439,9 +462,23 @@ fn establish(shared: &Shared, generation: u64, pairing: Pairing) -> Result<View,
     let history = passive_history::Lane::new(&client)?;
     let detail = passive_contact_detail::Lane::new(&client, history.token())?;
     let bearing = passive_bearing::Lane::new(&client, history.token())?;
+    let prior_pending = lock(shared)?
+        .ft_last
+        .as_ref()
+        .is_some_and(|h| h.has_release());
+    let ft = if prior_pending {
+        None
+    } else {
+        crate::xlog_ft_host::Host::attach(&client, history.token().into())
+            .ok()
+            .map(Arc::new)
+    };
     let mut session = lock(shared)?;
     if session.generation != generation {
         return Err("Connection request cancelled".into());
+    }
+    if let Some(ft) = &ft {
+        session.ft_last = Some(ft.clone());
     }
     session.pairing = Some(pairing);
     session.stop = stop;
@@ -451,6 +488,7 @@ fn establish(shared: &Shared, generation: u64, pairing: Pairing) -> Result<View,
         detail,
         bearing,
         hello,
+        ft,
         needs_blocked: Arc::new(AtomicBool::new(true)),
     }));
     Ok(view(&session, Some(snapshot)))
@@ -558,6 +596,9 @@ async fn xlog_poll(state: State<'_, Shared>) -> Result<View, String> {
                 Ok(view(&session, Some(snapshot)))
             }
             Err(error) => {
+                if let Some(ft) = &connection.ft {
+                    ft.revoke();
+                }
                 connection.history.revoke();
                 connection.detail.revoke();
                 connection.bearing.revoke();
@@ -569,6 +610,136 @@ async fn xlog_poll(state: State<'_, Shared>) -> Result<View, String> {
     })
     .await
     .map_err(|_| "Snapshot request failed")?
+}
+
+fn ft_handle(
+    shared: &Shared,
+    token: &str,
+    stop: bool,
+) -> Result<Arc<crate::xlog_ft_host::Host>, String> {
+    let session = lock(shared)?;
+    if let Some(c) = &session.connection {
+        if c.history.token() == token {
+            return c
+                .ft
+                .clone()
+                .or_else(|| session.ft_last.clone())
+                .ok_or("Owner digital TX capability unavailable".into());
+        }
+    }
+    if stop {
+        if let Some(h) = &session.ft_last {
+            if h.token() == token {
+                return Ok(h.clone());
+            }
+        }
+    }
+    Err("FT connection changed".into())
+}
+#[tauri::command]
+fn xlog_ft_status(
+    state: State<'_, Shared>,
+    connection_token: String,
+) -> Result<crate::xlog_ft_host::FtView, String> {
+    let h = ft_handle(&state, &connection_token, true)?;
+    let mut view = h.view()?;
+    if h.token() != connection_token {
+        view.connection_token = connection_token;
+        view.available = false;
+        view.armed = false;
+        view.remaining_valid_ms = 0;
+        view.reason = "Previous exact TX release remains pending; reconnect after release".into();
+    }
+    Ok(view)
+}
+#[tauri::command]
+async fn xlog_ft_action(
+    state: State<'_, Shared>,
+    connection_token: String,
+    action: crate::xlog_ft_host::Action,
+) -> Result<crate::xlog_ft_host::FtView, String> {
+    let stop = matches!(
+        action,
+        crate::xlog_ft_host::Action::Stop | crate::xlog_ft_host::Action::Tune { enabled: false }
+    );
+    let h = ft_handle(&state, &connection_token, stop)?;
+    if stop {
+        h.stop();
+        return h.view();
+    }
+    if h.token() != connection_token {
+        return Err("Previous exact TX release remains pending".into());
+    }
+    if matches!(
+        action,
+        crate::xlog_ft_host::Action::Enable { enabled: false }
+    ) {
+        h.disarm_future()?;
+        return h.view();
+    }
+    tauri::async_runtime::spawn_blocking(move || h.action(action))
+        .await
+        .map_err(|_| "FT action failed")?
+}
+#[tauri::command]
+async fn xlog_ft_log(
+    state: State<'_, Shared>,
+    queue: State<'_, Queue>,
+    connection_token: String,
+) -> Result<Vec<OutboxEntry>, String> {
+    let shared = Arc::clone(&state);
+    let queue = Arc::clone(&queue);
+    let (generation, c) = current_read(&shared, &connection_token)?;
+    let h = c.ft.as_ref().ok_or("FT runtime unavailable")?;
+    let (request, qso, workspace) = h.log_draft()?;
+    if workspace != c.hello.workspace_id {
+        return Err("QSO belongs to another owner workspace".into());
+    }
+    tauri::async_runtime::spawn_blocking(move || {
+        check_read_connection(&shared, generation, &c)?;
+        {
+            let client = lock(&c.client)?;
+            client.snapshot().map_err(|e| e.to_string())?;
+            if !c.hello.capabilities.iter().any(|x| x == "logbook.write") {
+                return Err("xLog has not granted QSO writeback".into());
+            }
+            client.invalidate_needs();
+            c.needs_blocked.store(true, Ordering::Release);
+        }
+        let state = with_queue(&queue, |outbox| {
+            outbox
+                .enqueue(
+                    &c.hello.workspace_id,
+                    &request,
+                    LogbookMutation::Create { qso },
+                )
+                .map_err(|e| e.to_string())?;
+            Ok(outbox
+                .entry(&request, &c.hello.workspace_id)
+                .map_err(|e| e.to_string())?
+                .state
+                .clone())
+        })?;
+        use xnexus_xlog_client::outbox::OutboxState;
+        let action = match state {
+            OutboxState::Pending => Some(DeliveryAction::Submit),
+            OutboxState::NeedsReceipt => Some(DeliveryAction::Reconcile),
+            OutboxState::Settled(_) => None,
+        };
+        if let Some(action) = action {
+            let _ = deliver_queued(&shared, &queue, generation, &c, &request, action);
+        }
+        update_needs_gate(&queue, &c)?;
+        check_read_connection(&shared, generation, &c)?;
+        with_queue(&queue, |outbox| {
+            Ok(vec![outbox
+                .entry(&request, &c.hello.workspace_id)
+                .map_err(|e| e.to_string())?
+                .clone()])
+        })
+    })
+    .await
+    .map_err(|_| "QSO result unavailable; durable queue retained")?
 }
 
 #[tauri::command]
@@ -593,6 +764,9 @@ fn xlog_rx_spectrum(
 #[tauri::command]
 fn xlog_rx_stop(state: State<'_, Shared>) -> Result<crate::xlog_rx_worker::View, String> {
     let mut session = lock(&state)?;
+    if let Some(ft) = &session.ft_last {
+        ft.feed().retire();
+    }
     session.rx_generation = session.rx_generation.wrapping_add(1);
     session.rx = None;
     Ok(Default::default())
@@ -630,13 +804,14 @@ async fn xlog_rx_start(
             return Err("Receive request cancelled".into());
         }
         session.rx = None;
-        let worker = crate::xlog_rx_worker::Worker::start_with_needs_gate(
+        let worker = crate::xlog_rx_worker::Worker::start_with_ft(
             audio,
             connection.hello.server_instance.clone(),
             connection.hello.workspace_id.clone(),
             mode,
             needs,
             connection.needs_blocked.clone(),
+            connection.ft.as_ref().map(|ft| ft.feed()),
         )?;
         let view = worker.view()?;
         session.rx = Some(worker);
@@ -803,6 +978,9 @@ pub(crate) fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             xlog_status,
+            xlog_ft_status,
+            xlog_ft_action,
+            xlog_ft_log,
             xlog_import_pairing,
             xlog_connect,
             xlog_poll,

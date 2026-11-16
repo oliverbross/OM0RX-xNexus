@@ -200,6 +200,25 @@ pub struct NativeDecodedPeriod {
 }
 
 impl NativeDecodedPeriod {
+    /// Borrowed UI projection while the exact native period is retained in the
+    /// bounded TX inbox. No decode metric is reconstructed from this projection.
+    pub fn presentation(&self) -> DecodedPeriod {
+        DecodedPeriod {
+            context: self.context.clone(),
+            host_period_start_unix_us: self.host_period_start_unix_us,
+            clock: self.clock.clone().into(),
+            rows: self
+                .rows
+                .iter()
+                .map(|d| DecodeRow {
+                    message: d.message.clone(),
+                    snr_db: d.snr,
+                    time_offset_seconds: d.dt,
+                    audio_frequency_hz: d.freq,
+                })
+                .collect(),
+        }
+    }
     /// Consume the typed period at the existing presentation boundary. Raw decode
     /// metrics and owner coordinates are never reconstructed from this UI DTO.
     pub fn into_presentation(self) -> DecodedPeriod {
