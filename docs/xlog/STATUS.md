@@ -1,5 +1,17 @@
 # Execution ledger — 15 November 2026
 
+## 16 November — original Settings navigation
+
+The original rail's Settings gear now opens the supported connection/appearance
+settings without replacing or unmounting the cockpit. The regression reproduced
+the disabled gear before the fix; both focused navigation cases pass. Strict
+app/node TypeScript passes (receipt `DBB4B89E8EB53A9C0ACC03E5FAA2A8354E62D285C5A600350265D6EBA26B9E82`).
+A private headless browser passed three viewport/scale cases with hit testing,
+reachable controls and preserved cockpit state (receipt
+`1E5CEEC8E337F25D7E04ABD31E5E68B7E9AA13D781645F30CDFE86DF4223EBD3`).
+No native desktop automation, station control, package or installation ran for
+this source change. TX and decoded worked/needed fixes are separate active work.
+
 The integration remains in qualification. Source, synthetic tests, packaged
 binaries and physical station acceptance are separate evidence levels.
 

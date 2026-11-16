@@ -32,6 +32,7 @@ pub enum Error {
     Token,
     Transport,
     Http(u16),
+    NeedsPending,
     TooLarge,
     Invalid,
     Incompatible,
@@ -49,6 +50,7 @@ impl fmt::Display for Error {
             Self::Token => "Invalid pairing token",
             Self::Transport => "xLog bridge unavailable or timed out",
             Self::Http(_) => "xLog bridge refused the request",
+            Self::NeedsPending => "xLog needs lookup is pending",
             Self::TooLarge => "xLog bridge response exceeds the size limit",
             Self::Invalid => "Invalid xLog bridge response",
             Self::Incompatible => "Incompatible xLog bridge protocol or capability",
@@ -150,8 +152,8 @@ pub struct Snapshot {
 
 pub mod audio;
 pub mod bearing;
-pub mod contact_detail;
 mod commands;
+pub mod contact_detail;
 pub mod needs;
 mod station_identity;
 pub use commands::{Command, CommandReceipt, CommandStatus, StopClient};
