@@ -55,7 +55,7 @@ export function OriginalHost({ api = bridge, receiver = rxApi, spectrumTransport
   const fresh = !!connection.lease && view.connected && connection.lease.deadline > now
   const capabilities = view.hello?.capabilities ?? []
   const rx = useOwnerReceiver({ session, owner, connected: view.connected, fresh,
-    audioCapable: capabilities.includes('audio.rx'), needsCapable: capabilities.includes('needs.query') }, receiver)
+    audioCapable: capabilities.includes('audio.rx'), needsCapable: capabilities.includes('logbook.classify') }, receiver)
   const spectrum = useOwnerSpectrum({ session, owner: view, receiver, view: rx.view, pending: rx.pending, observation: rx.observation }, spectrumTransport)
   const receive = (start: boolean) => { spectrum.suspend(); void rx.receiving(start) }
   const decodeContext = `${session}:${spectrumContextKey(rx.view.current_context) ?? 'unavailable'}`
@@ -80,7 +80,7 @@ export function OriginalHost({ api = bridge, receiver = rxApi, spectrumTransport
   const model = ownerOperatingModel({ view, lease: connection.lease, now, session,
     receive: rx.view, needsLeases: rx.leases, decoderMode: rx.mode, rxMarkerHz: markerHz })
   const entries = ownerDecodeEntries({ view: rx.view, owner, leases: rx.leases, now: rx.now,
-    needsAvailable: fresh && capabilities.includes('needs.query') && !rx.pending,
+    needsAvailable: fresh && capabilities.includes('logbook.classify') && !rx.pending,
     mycall: model.identity?.mycall ?? null })
   const snap = ownerCockpitPresentation(model, selectedCall)
   snap.stations = ownerRoster(entries)

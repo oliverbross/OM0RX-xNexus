@@ -27,10 +27,20 @@ export function ownerDecodeEntries(args: {
       freqHz: row.audio_frequency_hz, message: row.message, tier: row.mode,
       isCq: words[0] === 'CQ',
       directedToMe: mycall ? words[0] === mycall.toUpperCase() : null,
-      worked: null, rv: null,
+      worked: facts?.owner && facts.owner.call_status !== 'Unknown'
+        ? facts.owner.call_status !== 'New Call' : null,
+      // Only the owner states that prove this band are mapped. New Band+Mode
+      // may also mean a new combination of separately worked band and mode.
+      workedBand: facts?.owner && ['Worked', 'Confirmed', 'New Mode'].includes(facts.owner.call_status)
+        ? true : facts?.owner?.call_status === 'New Band' ? false : undefined,
+      newDxcc: facts?.owner?.dxcc_status === 'ATNO', rv: null,
       country: facts?.owner?.country ?? null,
       external: {
         periodStartMs,
+        callStatus: facts?.owner?.call_status ?? null,
+        dxccStatus: facts?.owner?.dxcc_status ?? null,
+        classificationMode: facts?.owner?.classification_mode ?? null,
+        band: facts?.owner?.band ?? null,
         status: facts?.status ?? 'unknown', score: facts?.score ?? null,
         reasons: facts?.reasons ?? [],
         reason: facts?.reason_code ?? (!needsAvailable ? 'Needs lookup unavailable' :
@@ -54,7 +64,7 @@ export function ownerRoster(entries: readonly ExternalDecodeEntry[]): OperatingS
       snr: entry.snr, lastHeardSlot: entry.slot, heardCount: count,
       // Presence names a retained decode in the current RX route, not a live
       // radio or propagation prediction. Original recency filtering still runs.
-      presence: 'active', worked: null, country: entry.country, tier: entry.tier,
+      presence: 'active', worked: entry.worked, workedBand: entry.workedBand, country: entry.country, tier: entry.tier,
       freqHz: entry.freqHz,
       external: { ...entry.external, decodeId: entry.id, isCq: entry.isCq },
     })
