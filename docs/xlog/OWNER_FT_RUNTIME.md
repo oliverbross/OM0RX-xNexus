@@ -1,8 +1,10 @@
 # Original FT8/FT4 native coordinator
 
 Implementation slice based on `f8be70d5122cec63b99ef9cd2511043dbf5c072a`.
-The new native modules are not registered in the application yet. They do not
-open a device, call xLog, issue PTT, schedule playback, or write a contact.
+This record describes the original kernel-only slice. The subsequent
+[native host integration](OWNER_FT_HOST.md) wires it to authenticated xLog
+transport and the accepted native decoder seam. The kernel itself owns no
+device, PTT, playback backend or logbook.
 
 `src-tauri/src/xlog_ft_runtime.rs` owns exactly one original
 `tempo_core::qso::Station`. CQ, Work with decoded context/skip-Tx1, auto-sequence,
@@ -33,7 +35,7 @@ correlation, not another exchange state machine.
 5. Convert source PCM to the commissioned final format and obtain the owner's
    exact body binding separately. `bind` retains operation ID, whole-body digest
    and the complete local intent key. It is **not** a substitute for validating
-   the owner's body against the final PCM. This trusted adapter is not yet wired.
+   the owner's body against the final PCM. The host integration now supplies this binding.
 6. Implement `OwnerEvents` only in the authenticated native SDK adapter. It must
    verify operation/body/context/clock/event identities and distinguish actual
    start, definite no-start, observed release and uncertain outcomes. There is no
@@ -92,4 +94,5 @@ pass is retained separately and is not substituted for this final-source run.
 
 No full Tauri build, Cargo/Clippy, SDK owner transport, live actual-start event,
 commissioned output, GUI, hardware or RF acceptance is claimed by this slice.
-The modules are not yet wired into the application.
+Those exclusions describe this historical kernel-only run; see the linked host
+record for later source wiring and its separate qualification.

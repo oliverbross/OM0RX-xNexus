@@ -527,3 +527,98 @@ fn invalid_text_offset_and_expired_preparation_never_produce_pcm() {
         Err(xlog_ft_encode::Error::Expired)
     ));
 }
+
+#[test]
+fn live_context_heartbeat_renews_admission_but_not_immutable_slot_deadline() {
+    let (mut c, n) = runtime(DecoderMode::Ft8);
+    c.authority_deadline = n + Duration::from_millis(900);
+    c.apply(Intent::Cq, n).unwrap();
+    let p = c.plan(30_000_000, 30_050_000, 25_000_000, n).unwrap();
+    c.refresh(
+        &c.context.clone(),
+        n + Duration::from_secs(3),
+        n + Duration::from_millis(800),
+    )
+    .unwrap();
+    c.bind(
+        &p,
+        Operation {
+            key: p.key.clone(),
+            id: "bound".into(),
+            body_digest: [9; 32],
+        },
+        n + Duration::from_secs(2),
+    )
+    .unwrap();
+    c.refresh(
+        &c.context.clone(),
+        n + Duration::from_secs(99),
+        n + Duration::from_secs(2),
+    )
+    .unwrap();
+    assert_eq!(p.deadline, n + Duration::from_millis(5050));
+    assert_eq!(
+        c.bind(
+            &p,
+            Operation {
+                key: p.key.clone(),
+                id: "bound".into(),
+                body_digest: [9; 32]
+            },
+            n + Duration::from_secs(6)
+        ),
+        Err(Error::Expired)
+    );
+}
+#[test]
+fn directed_cq_and_manual_target_keep_original_message_and_grid() {
+    let (mut c, n) = runtime(DecoderMode::Ft8);
+    c.apply(Intent::CqDirected("DX".into()), n).unwrap();
+    assert_eq!(
+        c.view().unwrap().pending_text.as_deref(),
+        Some("CQ DX K1ABC FN42")
+    );
+    c.manual_target("W9XYZ", Some("EN50"), n).unwrap();
+    assert_eq!(c.view().unwrap().dx_call.as_deref(), Some("W9XYZ"));
+    assert_eq!(c.view().unwrap().dx_grid.as_deref(), Some("EN50"));
+    assert_eq!(
+        c.manual_target("W9XYZ", Some("bad"), n),
+        Err(Error::Invalid)
+    );
+}
+
+#[test]
+fn future_disarm_before_start_preserves_correlated_start_and_release_without_rearming() {
+    let (mut c, n) = runtime(DecoderMode::Ft4);
+    c.apply(Intent::Cq, n).unwrap();
+    plan_bind(&mut c, 15_000_000, n);
+    c.apply(Intent::Enable(false), n).unwrap();
+    assert!(!c.view().unwrap().armed);
+    assert!(c.stop.release().unwrap().is_some());
+    c.owner_event(&Fixture::Start, n).unwrap();
+    c.owner_event(&Fixture::Start, n).unwrap();
+    assert_eq!(c.view().unwrap().tx_count, 1);
+    assert!(!c.view().unwrap().armed);
+    c.owner_event(&Fixture::Released, n).unwrap();
+    assert!(matches!(
+        c.plan(30_000_000, 30_050_000, 29_000_000, n),
+        Err(Error::Disarmed)
+    ));
+}
+#[test]
+fn future_disarm_after_start_finishes_but_explicit_stop_retires_pending_state() {
+    let (mut c, n) = runtime(DecoderMode::Ft8);
+    c.apply(Intent::Cq, n).unwrap();
+    plan_bind(&mut c, 30_000_000, n);
+    c.owner_event(&Fixture::Start, n).unwrap();
+    c.apply(Intent::Enable(false), n).unwrap();
+    assert!(c.pending.is_some());
+    assert_eq!(c.view().unwrap().tx_count, 1);
+    c.owner_event(&Fixture::Released, n).unwrap();
+    assert!(!c.view().unwrap().armed);
+    c.apply(Intent::Enable(true), n).unwrap();
+    plan_bind(&mut c, 60_000_000, n);
+    c.apply(Intent::Stop, n).unwrap();
+    assert!(c.pending.is_none());
+    assert!(c.owner_event(&Fixture::Start, n).is_err());
+}

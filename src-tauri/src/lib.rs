@@ -169,6 +169,10 @@ mod test_dirs;
 mod window_state;
 /// Receive-only adapter for explicitly mapped xLog endpoint PCM.
 mod xlog_decode;
+mod xlog_ft_encode;
+mod xlog_ft_output;
+mod xlog_ft_runtime;
+mod xlog_ft_host;
 mod xlog_rx_worker;
 mod xlog_mode;
 

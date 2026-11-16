@@ -154,3 +154,26 @@ fn gain_deadline_and_offset_admission_are_explicit() {
         }
     }
 }
+
+#[test]
+#[ignore = "explicit owner cross-language fixture export requires a fresh absolute directory"]
+fn export_final_ft4_for_owner_validator() {
+    let root = std::path::PathBuf::from(
+        std::env::var_os("XNEXUS_FT_OUTPUT_EXPORT").expect("explicit export directory required"),
+    );
+    assert!(
+        root.is_absolute() && !root.exists(),
+        "fresh absolute export required"
+    );
+    let source = source(ModeKind::Ft4, "CQ K1ABC FN42", 1000.0);
+    let output = prepare(&source, 0.5, deadline()).unwrap();
+    std::fs::create_dir(&root).unwrap();
+    std::fs::write(root.join("manifest.json"), output.manifest()).unwrap();
+    std::fs::write(root.join("pcm.f32le"), output.pcm()).unwrap();
+    let inventory = serde_json::json!({"scope":"synthetic actual Nexus encoder/FIR; no RF", "mode":"FT4","message":"CQ K1ABC FN42","offset_hz":1000,"gain":0.5,"manifest_sha256":hex(&Sha256::digest(output.manifest()).into()),"pcm_sha256":hex(output.pcm_sha256()),"content_sha256":hex(output.content_sha256()),"pcm_bytes":output.pcm().len()});
+    std::fs::write(
+        root.join("export.json"),
+        serde_json::to_vec_pretty(&inventory).unwrap(),
+    )
+    .unwrap();
+}

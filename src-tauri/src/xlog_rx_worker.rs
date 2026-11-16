@@ -121,6 +121,7 @@ impl Default for View {
     }
 }
 struct State {
+    ft_feed: Option<crate::xlog_ft_host::Feed>,
     view: View,
     epoch: u64,
     authority: Option<Arc<AudioBatch>>,
@@ -142,6 +143,9 @@ impl State {
         }
     }
     fn reset(&mut self, phase: &str, reason: &str) {
+        if let Some(feed) = &self.ft_feed {
+            feed.retire();
+        }
         self.epoch = self.epoch.wrapping_add(1);
         self.authority = None;
         self.spectrum = None;
@@ -254,12 +258,23 @@ impl Worker {
         )
     }
     pub fn start_with_needs_gate(
+        audio: AudioClient,
+        server: String,
+        workspace: String,
+        mode: Mode,
+        needs: Option<NeedsClient>,
+        needs_blocked: Arc<AtomicBool>,
+    ) -> Result<Self, String> {
+        Self::start_with_ft(audio, server, workspace, mode, needs, needs_blocked, None)
+    }
+    pub(crate) fn start_with_ft(
         mut audio: AudioClient,
         server: String,
         workspace: String,
         mode: Mode,
         needs: Option<NeedsClient>,
         needs_blocked: Arc<AtomicBool>,
+        ft_feed: Option<crate::xlog_ft_host::Feed>,
     ) -> Result<Self, String> {
         if ACTIVE
             .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
@@ -284,6 +299,7 @@ impl Worker {
         let worker_instance = format!("w{:x}_{:x}_{:x}", std::process::id(), stamp, counter);
         let spectrum_mailbox = Arc::new(spectrum::Mailbox::default());
         let state = Arc::new(Mutex::new(State {
+            ft_feed,
             view: View {
                 enabled: true,
                 mode: Some(mode),
@@ -369,17 +385,24 @@ impl Worker {
                 if !state.accepts(job.epoch) { continue; }
                 match result {
                     Ok(period) => {
-                        let period = period.into_presentation();
+                        let period = Arc::new(period);
+                        let mut ids=Vec::new();
+                        for row in period.rows.iter().take(100) {
+                            if row.message.len()>512 || !row.dt.is_finite() || !row.freq.is_finite(){ids.push(None);continue}
+                            let Some(next)=ordinal.checked_add(1)else{state.reset("error","Decode identity exhausted");decode_cancel.store(true,Ordering::Release);break};
+                            ordinal=next;
+                            ids.push(decoded_needs::decode_id(&worker_instance,job.epoch,host_time,ordinal));
+                        }
+                        if let (Some(feed),Some(authority))=(&state.ft_feed,&state.authority){feed.publish(period.clone(),ids.clone(),authority.clone());}
+                        let period = period.presentation();
                         let Some(route) = state.view.route.clone() else { continue; };
                         let row_context = NeedsContext { worker_instance:worker_instance.clone(), worker_epoch:job.epoch, server_instance:decode_server.clone(), workspace_id:decode_workspace.clone(), route, decoder_mode:mode };
                         let clock = Clock { timestamp_basis:period.clock.timestamp_basis.into(), host_mapping_uncertainty_us:period.clock.host_mapping_uncertainty_us, calibration_uncertainty_us:period.clock.calibration_uncertainty_us, utc_sync_accuracy_us:period.clock.utc_sync_accuracy_us, remote_rf_latency_us:period.clock.remote_rf_latency_us, sample_alignment_offset_ns:period.clock.sample_alignment_offset_ns, resampler_center_offset_ns:period.clock.resampler_center_offset_ns };
                         state.view.phase = "receiving".into();
                         state.view.reason = "Receiving xLog audio. Host clock timing; UTC synchronization and RF latency are unknown.".into();
-                        for row in period.rows.into_iter().take(100) {
+                        for (index,row) in period.rows.into_iter().take(100).enumerate() {
                             if row.message.len() > 512 || !row.time_offset_seconds.is_finite() || !row.audio_frequency_hz.is_finite() { continue; }
-                            let Some(next) = ordinal.checked_add(1) else { state.reset("error", "Decode identity exhausted"); decode_cancel.store(true, Ordering::Release); break; };
-                            ordinal = next;
-                            let Some(decode_id) = decoded_needs::decode_id(&worker_instance, job.epoch, host_time, ordinal) else { state.reset("error", "Decode identity invalid"); decode_cancel.store(true, Ordering::Release); break; };
+                            let Some(decode_id)=ids.get(index).cloned().flatten()else{continue};
                             let sender_callsign = decoded_needs::literal_sender(&row.message);
                             let needs_fallback = if sender_callsign.is_none() { "native_not_literal_sender" } else if needs_available { "native_unclassified" } else { "native_capability_absent" };
                             state.view.rows.push(Row { decode_id, context:row_context.clone(), sender_callsign, needs:decoded_needs::View::unknown(needs_fallback), fact:None, needs_fallback, host_period_start_unix_us:host_time, mode, message:row.message, snr_db:row.snr_db, time_offset_seconds:row.time_offset_seconds, audio_frequency_hz:row.audio_frequency_hz, clock:clock.clone() });
@@ -441,7 +464,7 @@ impl Worker {
                         state.reset("waiting", batch.reason.as_deref().unwrap_or("Audio route changed; waiting for a complete period."));
                     }
                     epoch = state.epoch;
-                    if running { state.view.route = batch.descriptor.clone(); state.authority = Some(batch.clone()); }
+                    if running { state.view.route = batch.descriptor.clone(); state.authority = Some(batch.clone()); if let Some(feed)=&state.ft_feed{feed.touch(batch.clone());} }
                 }
                 if let Some(route) = batch.descriptor.as_ref().filter(|_| running) {
                     let context = context(route, &server, &workspace, mode);
@@ -872,6 +895,7 @@ mod tests {
     fn changing_epoch_or_stopping_rejects_late_decoder_results() {
         let (_bridge, _audio, batch) = live_authority();
         let mut state = State {
+            ft_feed: None,
             view: View {
                 enabled: true,
                 ..View::default()
@@ -911,6 +935,7 @@ mod tests {
     fn revoked_owner_authority_discards_rows_and_partial_context() {
         let (mut bridge, _audio, batch) = live_authority();
         let mut state = State {
+            ft_feed: None,
             view: View {
                 enabled: true,
                 route: batch.descriptor.clone(),
@@ -1000,6 +1025,7 @@ mod tests {
     }
     pub(super) fn state(batch: Arc<AudioBatch>) -> State {
         State {
+            ft_feed: None,
             view: View {
                 enabled: true,
                 mode: Some(Mode::FT8),

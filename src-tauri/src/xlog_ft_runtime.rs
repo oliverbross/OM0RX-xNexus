@@ -66,6 +66,7 @@ pub(crate) struct Settings {
 }
 pub(crate) enum Intent {
     Cq,
+    CqDirected(String),
     Work {
         call: String,
         heard: Option<(Msg, i32)>,
@@ -127,6 +128,9 @@ impl Plan {
     pub(crate) fn key(&self) -> &Key {
         &self.key
     }
+    pub(crate) fn deadline(&self) -> Instant {
+        self.deadline
+    }
     pub(crate) fn text(&self) -> &str {
         &self.text
     }
@@ -165,6 +169,7 @@ pub(crate) trait OwnerEvents {
 
 struct StopState {
     armed: bool,
+    cancelled: bool,
     release: Option<Arc<Operation>>,
     started: bool,
 }
@@ -176,6 +181,7 @@ impl StopHandle {
     pub(crate) fn stop(&self) -> Result<Option<Arc<Operation>>, Error> {
         let mut s = self.0.lock().map_err(|_| Error::Unknown)?;
         s.armed = false;
+        s.cancelled = true;
         Ok(s.release.clone())
     }
     pub(crate) fn release(&self) -> Result<Option<Arc<Operation>>, Error> {
@@ -189,6 +195,12 @@ struct Pending {
 }
 pub(crate) struct View {
     pub state: State,
+    pub dx_call: Option<String>,
+    pub dx_grid: Option<String>,
+    pub rx_report: Option<i32>,
+    pub cq_running: bool,
+    pub stalled: bool,
+    pub qso_epoch: u64,
     pub pending_text: Option<String>,
     pub tx_count: u32,
     pub armed: bool,
@@ -198,6 +210,14 @@ pub(crate) struct View {
     pub done: bool,
     pub halt: Option<Halt>,
     pub release: Option<Arc<Operation>>,
+}
+#[derive(Clone)]
+pub(crate) struct QsoFacts {
+    pub epoch: u64,
+    pub call: String,
+    pub grid: String,
+    pub received: Option<i32>,
+    pub started_us: u64,
 }
 pub(crate) struct Coordinator {
     context: Context,
@@ -213,9 +233,12 @@ pub(crate) struct Coordinator {
     reserved_until: u64,
     pending: Option<Pending>,
     cq_run: bool,
+    cq_direction: String,
     cq_resume: Option<Instant>,
     halt: Option<Halt>,
     transcript: Vec<String>,
+    finished: Option<QsoFacts>,
+    qso_started_us: u64,
 }
 impl Coordinator {
     pub(crate) fn new(
@@ -241,6 +264,7 @@ impl Coordinator {
             station,
             stop: StopHandle(Arc::new(Mutex::new(StopState {
                 armed: false,
+                cancelled: true,
                 release: None,
                 started: false,
             }))),
@@ -253,9 +277,12 @@ impl Coordinator {
             reserved_until: 0,
             pending: None,
             cq_run: false,
+            cq_direction: String::new(),
             cq_resume: None,
             halt: Some(Halt::Stop),
             transcript: Vec::new(),
+            finished: None,
+            qso_started_us: 0,
         })
     }
     pub(crate) fn stop_handle(&self) -> StopHandle {
@@ -268,6 +295,12 @@ impl Coordinator {
         let s = self.stop.0.lock().map_err(|_| Error::Unknown)?;
         Ok(View {
             state: self.station.state,
+            dx_call: self.station.dxcall.clone(),
+            dx_grid: self.station.dxgrid.clone(),
+            rx_report: self.station.rx_report,
+            cq_running: self.cq_run,
+            stalled: self.station.stalled(),
+            qso_epoch: self.qso_epoch,
             pending_text: self.station.pending_text(),
             tx_count: self.station.tx_count,
             armed: s.armed,
@@ -278,6 +311,43 @@ impl Coordinator {
             halt: self.halt,
             release: s.release.clone(),
         })
+    }
+    pub(crate) fn log_facts(&self) -> Option<QsoFacts> {
+        if self.station.keyed_on_air {
+            if let Some(call) = &self.station.dxcall {
+                return Some(QsoFacts {
+                    epoch: self.qso_epoch,
+                    call: call.clone(),
+                    grid: self.station.dxgrid.clone().unwrap_or_default(),
+                    received: self.station.rx_report,
+                    started_us: self.qso_started_us,
+                });
+            }
+        }
+        self.finished.clone()
+    }
+    pub(crate) fn manual_target(
+        &mut self,
+        call: &str,
+        grid: Option<&str>,
+        now: Instant,
+    ) -> Result<(), Error> {
+        if grid.is_some_and(|g| !g.is_empty() && !valid_grid(g)) {
+            return Err(Error::Invalid);
+        }
+        self.apply(
+            Intent::Work {
+                call: call.into(),
+                heard: None,
+                prefer_rrr: false,
+                skip_tx1: false,
+            },
+            now,
+        )?;
+        if let Some(grid) = grid.filter(|g| !g.is_empty()) {
+            self.station.dxgrid = Some(grid.into());
+        }
+        Ok(())
     }
     pub(crate) fn retire(&mut self, reason: Halt) -> Result<Option<Arc<Operation>>, Error> {
         let release = self.stop.stop()?;
@@ -306,7 +376,7 @@ impl Coordinator {
         self.authority_deadline = deadline;
         Ok(())
     }
-    fn check(&mut self, now: Instant) -> Result<(), Error> {
+    fn check_event(&mut self, now: Instant) -> Result<(), Error> {
         if now >= self.authority_deadline
             || now >= self.operator_deadline
             || self
@@ -317,14 +387,18 @@ impl Coordinator {
             self.retire(Halt::Expired)?;
             return Err(Error::Expired);
         }
-        if !self.stop.0.lock().map_err(|_| Error::Unknown)?.armed {
-            return Err(Error::Disarmed);
-        }
         if self.events == MAX_EVENTS {
             self.retire(Halt::Exhausted)?;
             return Err(Error::Exhausted);
         }
         self.events += 1;
+        Ok(())
+    }
+    fn check(&mut self, now: Instant) -> Result<(), Error> {
+        self.check_event(now)?;
+        if !self.stop.0.lock().map_err(|_| Error::Unknown)?.armed {
+            return Err(Error::Disarmed);
+        }
         Ok(())
     }
     fn drain_transcript(&mut self) {
@@ -339,7 +413,11 @@ impl Coordinator {
         }
     }
     pub(crate) fn apply(&mut self, intent: Intent, now: Instant) -> Result<(), Error> {
-        if matches!(intent, Intent::Stop | Intent::Enable(false)) {
+        if matches!(intent, Intent::Enable(false)) {
+            self.stop.0.lock().map_err(|_| Error::Unknown)?.armed = false;
+            return Ok(());
+        }
+        if matches!(intent, Intent::Stop) {
             self.retire(Halt::Stop)?;
             return Ok(());
         }
@@ -352,11 +430,46 @@ impl Coordinator {
         }
         let arms = !matches!(intent, Intent::Parity(_) | Intent::AutoSequence(_));
         let next = self.qso_epoch.checked_add(1).ok_or(Error::Exhausted)?;
-        match intent {
+        let intent = match intent {
+            Intent::CqDirected(direction) => {
+                if direction.is_empty()
+                    || direction.len() > 8
+                    || !direction
+                        .bytes()
+                        .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit())
+                {
+                    return Err(Error::Invalid);
+                }
+                let text = format!(
+                    "CQ {} {} {}",
+                    direction,
+                    self.settings.call,
+                    &self.settings.grid[..4]
+                );
+                xlog_ft_encode::validate_text(self.context.mode(), &text)
+                    .map_err(Error::Encoder)?;
+                self.cq_direction = direction;
+                Intent::CqDirected(String::new())
+            }
             Intent::Cq => {
+                self.cq_direction.clear();
+                Intent::Cq
+            }
+            other => other,
+        };
+        match intent {
+            Intent::Cq | Intent::CqDirected(_) => {
                 self.station = Station::calling_cq(&self.settings.call, &self.settings.grid);
+                if !self.cq_direction.is_empty() {
+                    self.station.override_next(Msg::Cq {
+                        de: self.settings.call.clone(),
+                        grid: self.settings.grid[..4].into(),
+                        dir: self.cq_direction.clone(),
+                    });
+                }
                 self.cq_run = true;
                 self.qso_epoch = next;
+                self.qso_started_us = 0;
             }
             Intent::Work {
                 call,
@@ -381,6 +494,7 @@ impl Coordinator {
                 );
                 self.cq_run = false;
                 self.qso_epoch = next;
+                self.qso_started_us = 0;
             }
             Intent::Parity(even) => {
                 self.settings.tx_even = even;
@@ -414,7 +528,9 @@ impl Coordinator {
         // Parity/Auto edits do not arm a stopped station. CQ/Work/Enable/Resend/
         // message selection are explicit send intents in the original controls.
         if arms {
-            self.stop.0.lock().map_err(|_| Error::Unknown)?.armed = true;
+            let mut s = self.stop.0.lock().map_err(|_| Error::Unknown)?;
+            s.armed = true;
+            s.cancelled = false;
         }
         self.events = 0;
         self.halt = None;
@@ -465,11 +581,26 @@ impl Coordinator {
         if self.pending.is_some() {
             return Err(Error::Busy);
         }
+        let prior_dx = self.station.dxcall.clone();
         if self.settings.auto_sequence {
             self.station.observe(&period.rows);
         }
+        if prior_dx.is_none() && self.station.dxcall.is_some() {
+            self.qso_epoch = self.qso_epoch.checked_add(1).ok_or(Error::Exhausted)?;
+            self.qso_started_us = period.host_period_start_unix_us;
+        }
+        if self.station.done() && self.station.keyed_on_air {
+            self.finished = self.log_facts();
+        }
         if self.cq_run && self.station.done() && self.station.pending.is_none() {
             self.station = Station::calling_cq(&self.settings.call, &self.settings.grid);
+            if !self.cq_direction.is_empty() {
+                self.station.override_next(Msg::Cq {
+                    de: self.settings.call.clone(),
+                    grid: self.settings.grid[..4].into(),
+                    dir: self.cq_direction.clone(),
+                });
+            }
             self.station.cq_call_cap = self.settings.cq_call_cap;
             self.station.call_cap = self.settings.call_cap;
             self.station.report_follows_latest_decode = true;
@@ -532,7 +663,6 @@ impl Coordinator {
         let deadline = now
             .checked_add(Duration::from_micros(latest_start_us - wall_now_us))
             .ok_or(Error::Invalid)?
-            .min(self.authority_deadline)
             .min(self.operator_deadline);
         if deadline <= now {
             return Err(Error::Expired);
@@ -540,7 +670,6 @@ impl Coordinator {
         let receipt_deadline = now
             .checked_add(Duration::from_micros(end - wall_now_us))
             .ok_or(Error::Invalid)?
-            .min(self.authority_deadline)
             .min(self.operator_deadline);
         let plan = Plan {
             key: Key {
@@ -627,7 +756,7 @@ impl Coordinator {
             self.pending = None;
             return Ok(());
         }
-        self.check(now)?;
+        self.check_event(now)?;
         match event {
             OwnerState::Pending => Ok(()),
             OwnerState::Refused | OwnerState::Unknown => {
@@ -655,7 +784,7 @@ impl Coordinator {
                     return Err(Error::WrongOperation);
                 }
                 let mut s = self.stop.0.lock().map_err(|_| Error::Unknown)?;
-                if !s.armed || s.release.as_deref() != Some(operation.as_ref()) {
+                if s.cancelled || s.release.as_deref() != Some(operation.as_ref()) {
                     return Err(Error::Disarmed);
                 }
                 p.frozen.after_tx();
