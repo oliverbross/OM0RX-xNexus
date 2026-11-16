@@ -281,6 +281,14 @@ impl Runtime {
             } else {
                 None
             };
+            // A sample-clock repair cannot create a second manual Log identity
+            // for the same Station/QSO. Keep its original saved key.
+            let key = self
+                .saved_log
+                .as_ref()
+                .filter(|old| old.facts.epoch == facts.epoch && old.key.same_station(&key))
+                .map(|old| old.key.clone())
+                .unwrap_or(key);
             self.saved_log = Some(SavedLog {
                 facts,
                 key,
@@ -991,6 +999,15 @@ fn consume(i: &Arc<Inner>) -> Result<(), String> {
             return Ok(());
         }
         let key = kernel_context(i, &c, &r)?;
+        if s.key
+            .as_ref()
+            .is_some_and(|old| old != &key && old.same_station(&key))
+        {
+            if let Some(coordinator) = s.coordinator.as_mut() {
+                coordinator.repair_receive_stream(&key).map_err(error)?;
+                s.key = Some(key.clone());
+            }
+        }
         if s.key.as_ref() != Some(&key) {
             if s.coordinator.is_some() {
                 i.request_stop();
@@ -1447,19 +1464,20 @@ fn start_tune(i: &Arc<Inner>, epoch: u64) -> Result<(), String> {
 fn current_rx(i: &Inner, r: &Receive) -> bool {
     lock(&i.rx_authority).is_ok_and(|a| {
         a.as_ref()
-            .is_some_and(|a| a.is_fresh() && rx_route_matches(a, r))
+            .is_some_and(|a| a.is_fresh() && rx_route_matches(a, r, true))
     })
 }
 // A temporary PCM lease gap cannot erase the original Station/QSO. Admission
 // of Work and newly decoded periods still uses current_rx / is_fresh above.
 fn same_rx_route(i: &Inner, r: &Receive) -> bool {
-    lock(&i.rx_authority).is_ok_and(|a| a.as_ref().is_some_and(|a| rx_route_matches(a, r)))
+    lock(&i.rx_authority).is_ok_and(|a| a.as_ref().is_some_and(|a| rx_route_matches(a, r, false)))
 }
-fn rx_route_matches(a: &AudioBatch, r: &Receive) -> bool {
+fn rx_route_matches(a: &AudioBatch, r: &Receive, strict_stream: bool) -> bool {
     a.descriptor.as_ref().is_some_and(|d| {
-        d.capture_id == r.period.owner.capture_id
-            && d.epoch == r.period.owner.epoch
-            && d.mapping_generation == r.period.owner.mapping_generation
+        (!strict_stream
+            || (d.capture_id == r.period.owner.capture_id
+                && d.epoch == r.period.owner.epoch
+                && d.mapping_generation == r.period.owner.mapping_generation))
             && d.radio_id == r.period.owner.radio_id
             && d.receiver_id == r.period.owner.receiver_id
             && d.frequency_hz == r.period.owner.frequency_hz

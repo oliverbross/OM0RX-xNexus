@@ -116,6 +116,11 @@ describe('temporary owner observation gaps', () => {
     rerender(initial); await act(async () => {})
     expect(result.current.leases.get(view.rows[0].decode_id)?.deadline).toBe(original)
     expect(currentNeeds(result.current.view.rows[0], result.current.view, result.current.leases, at, initial.owner)?.status).toBe('needed')
+    const repaired = { ...view, route: { ...view.route!, capture_id:'reopened', epoch:'repaired', mapping_generation:view.route!.mapping_generation+1 } }
+    vi.mocked(api.status).mockResolvedValue(repaired)
+    await act(async () => {await vi.advanceTimersByTimeAsync(500)})
+    expect(currentNeeds(result.current.view.rows[0], result.current.view, result.current.leases, at, initial.owner)?.status).toBe('needed')
+    expect(result.current.leases.get(view.rows[0].decode_id)?.deadline).toBe(original)
     const invalidated = received()
     invalidated.rows[0].needs = { ...invalidated.rows[0].needs, display_valid:false,
       remaining_valid_ms:0, owner:null, authority:null }

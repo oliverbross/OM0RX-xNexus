@@ -26,6 +26,17 @@ pub(crate) struct Context {
     pub owner: OwnerIdentity,
 }
 impl Context {
+    pub(crate) fn same_station(&self, other: &Self) -> bool {
+        let mut comparable = self.clone();
+        comparable.receive.stream_id = other.receive.stream_id.clone();
+        comparable.receive.epoch = other.receive.epoch.clone();
+        comparable.receive.mapping_generation = other.receive.mapping_generation;
+        comparable.receive.generation = other.receive.generation;
+        comparable.owner.capture_id = other.owner.capture_id.clone();
+        comparable.owner.epoch = other.owner.epoch.clone();
+        comparable.owner.mapping_generation = other.owner.mapping_generation;
+        comparable == *other
+    }
     fn mode(&self) -> ModeKind {
         match self.receive.mode {
             DecoderMode::Ft8 => ModeKind::Ft8,
@@ -372,6 +383,16 @@ impl Coordinator {
             return Err(Error::Expired);
         }
         self.authority_deadline = deadline;
+        Ok(())
+    }
+    /// A fresh accepted period may start a new sample interval on the same
+    /// physical station. Preserve Station/slot high-water and any immutable
+    /// pending operation; this does not refresh any deadline or release proof.
+    pub(crate) fn repair_receive_stream(&mut self, context: &Context) -> Result<(), Error> {
+        if !context.valid() || !self.context.same_station(context) {
+            return Err(Error::WrongContext);
+        }
+        self.context = context.clone();
         Ok(())
     }
     fn check_event(&mut self, now: Instant) -> Result<(), Error> {

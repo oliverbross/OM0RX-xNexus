@@ -174,8 +174,13 @@ impl State {
         let running = batch.state == AudioState::Running && batch.is_fresh();
         let reset = batch.reset || !running || self.epoch != poll_epoch;
         if reset {
-            let changed =
-                running && self.view.route.is_some() && self.view.route != batch.descriptor;
+            let changed = running
+                && self
+                    .view
+                    .route
+                    .as_ref()
+                    .zip(batch.descriptor.as_ref())
+                    .is_some_and(|(old, new)| !same_history_route(old, new));
             if changed {
                 self.reset(
                     "waiting",
@@ -228,7 +233,7 @@ impl State {
             // Historical rows may predate a same-route PCM gap. They remain
             // read-only lookup keys; DSP/FT still require the current epoch.
             && self.view.enabled
-            && self.view.route.as_ref() == Some(&candidate.context.route)
+            && self.view.route.as_ref().is_some_and(|route| same_history_route(route, &candidate.context.route))
             && self.view.mode == Some(candidate.context.decoder_mode)
             && self.view.rows.iter().any(|row| {
                 row.decode_id == candidate.decode_id
@@ -855,6 +860,21 @@ fn lookup_loop(
     }
 }
 
+// Capture IDs, epochs and mapping generations identify sample intervals, not
+// the passive radio history. The owner rotates them during DAX gap recovery.
+fn same_history_route(a: &AudioDescriptor, b: &AudioDescriptor) -> bool {
+    a.radio_id == b.radio_id
+        && a.receiver_id == b.receiver_id
+        && a.device_id == b.device_id
+        && a.slice == b.slice
+        && a.dax_channel == b.dax_channel
+        && a.frequency_hz == b.frequency_hz
+        && a.mode == b.mode
+        && a.source_channels == b.source_channels
+        && a.selected_channel == b.selected_channel
+        && a.sample_rate == b.sample_rate
+        && a.sample_format == b.sample_format
+}
 fn context(d: &AudioDescriptor, server: &str, workspace: &str, mode: Mode) -> ReceiveContext {
     ReceiveContext {
         mode: mode.native(),
@@ -1139,6 +1159,49 @@ mod tests {
         assert!(state.view.rows.is_empty());
     }
     #[test]
+    fn stream_repair_and_capture_reopen_preserve_history_and_facts() {
+        let (_owner, _audio, mut batches) = authority_batches(48000, &[1000, 1000, 1000]);
+        let mut state = state(batches.remove(0));
+        state.view.rows.push(row(&state, "history_stream", "K1ABC"));
+        let candidate = state.view.rows[0].candidate().unwrap();
+        let (_needs_owner, _needs, facts) = needs_batch(&[query(&candidate)], 2000);
+        assert!(state.attach(
+            &candidate,
+            Fact::new(facts, candidate.decode_id.clone()).unwrap()
+        ));
+        for (index, mut batch) in batches.into_iter().enumerate() {
+            let repaired = Arc::get_mut(&mut batch).unwrap();
+            repaired.reset = true;
+            let route = repaired.descriptor.as_mut().unwrap();
+            route.epoch = format!("repaired-{index}");
+            if index == 1 {
+                route.capture_id = "reopened-capture".into();
+                route.mapping_generation += 1;
+            }
+            let previous_epoch = state.epoch;
+            assert!(state.observe_audio(&batch, previous_epoch));
+            assert!(
+                !state.accepts(previous_epoch),
+                "old DSP result cannot publish"
+            );
+            state.refresh_needs();
+            assert_eq!(state.view.rows.len(), 1);
+            assert_eq!(
+                state.view.rows[0].needs.status,
+                xnexus_xlog_client::NeedStatus::Needed
+            );
+            assert!(state.view.rows[0].needs.display_valid);
+            assert!(
+                state.contains(&candidate),
+                "historical facts remain classifiable"
+            );
+            assert!(state.view.current_context.is_none());
+        }
+        // Preserve the existing negative physical-route matrix in this same
+        // regression: frequency/mode/device/receiver/channel still clear rows.
+        actual_route_changes_clear_retained_history();
+    }
+    #[test]
     fn same_route_gap_keeps_history_but_retires_old_dsp_epoch() {
         let (_owner, _audio, mut batches) = authority_batches(48000, &[1000, 1000]);
         let first = batches.remove(0);
@@ -1172,9 +1235,9 @@ mod tests {
             match change {
                 0 => route.frequency_hz += 1000,
                 1 => route.mode = "USB".into(),
-                2 => route.capture_id = "00000000-0000-4000-8000-000000000009".into(),
-                3 => route.epoch = "00000000-0000-4000-8000-000000000009".into(),
-                _ => route.mapping_generation += 1,
+                2 => route.device_id = "replacement-dax".into(),
+                3 => route.receiver_id = "replacement-slice".into(),
+                _ => route.selected_channel = 1,
             }
             let mut state = state(first);
             state.view.rows.push(row(&state, "old_id", "K1ABC"));
