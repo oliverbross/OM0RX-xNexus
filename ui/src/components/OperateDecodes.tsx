@@ -117,6 +117,7 @@ interface Props {
   /** Work / answer a decoded station. `freq` = the decode's audio offset (Hz) so the
    * rig moves RX/TX onto it (WSJT-X double-click). */
   onCall: (call: string, grid?: string, message?: string, snr?: number, freq?: number) => void
+  onCallExternal?: (decodeId: string) => void
   /** WSJT-X single-click SELECT: populate the Tx panel's DX Call/Grid from this
    * decode — no RF action, no TX. Grid is parsed from a trailing 4-char grid. */
   onSelectDecode?: (call: string, grid?: string, message?: string, snr?: number) => void
@@ -287,6 +288,7 @@ export function OperateDecodes({
   late = null,
   harqRescues,
   onCall,
+  onCallExternal,
   onSelectDecode,
   onSetRx,
   selectedCall,
@@ -732,7 +734,8 @@ export function OperateDecodes({
       onSetRx?.(d.freqHz)
       return
     }
-    onCall(d.from, undefined, d.message, d.snr, d.freqHz)
+    if ('external' in d && onCallExternal) onCallExternal(d.id)
+    else onCall(d.from, undefined, d.message, d.snr, d.freqHz)
   }
 
   // Keyboard: arrow through rows, Enter selects, Shift+Enter works the station,
@@ -741,7 +744,10 @@ export function OperateDecodes({
     const d = drawn[i]
     if (!d?.from || d.heard) return
     if (mods.alt) onToggleIgnore?.(d.from)
-    else if (mods.shift) onCall(d.from, undefined, d.message, d.snr, d.freqHz)
+    else if (mods.shift) {
+      if ('external' in d && onCallExternal) onCallExternal(d.id)
+      else onCall(d.from, undefined, d.message, d.snr, d.freqHz)
+    }
     else onSelectDecode?.(d.from, gridFromMessage(d.message), d.message, d.snr)
   })
 

@@ -125,6 +125,8 @@ interface Props {
     spectrumResetKey: string
     /** Owner host mounts the original strip once in its global header. */
     rotorInGlobalHeader?: boolean
+    /** Exact immutable producer row, used only by an external FT coordinator. */
+    onCallDecode?: (decodeId: string) => void
   }
   /** Configured companion UDP listen address (Settings) — shown instead of a
    * hardcoded :2237 so a moved WSJT-X port reads truthfully. */
@@ -1079,7 +1081,7 @@ function OperateCockpitBody({
   // then worked fresh when a Tx button sends to it. The after-log clear below stays on the screen:
   // that contact is already logged and closing.
   const endContact = () => {
-    void clearDxCall().then((s) => onSnap?.(s)).catch((e) => pushToast(String(e), 'error'))
+    void clearDxCall().then((s) => { if (s) onSnap?.(s) }).catch((e) => pushToast(String(e), 'error'))
   }
   const clearDxAndContact = () => {
     clearDx()
@@ -1192,7 +1194,7 @@ function OperateCockpitBody({
       // refuses it with its reason when the contest cannot start, and the reason is shown.
       if (contestCq) {
         setLocalNext(5)
-        void startRunning().then((s) => onSnap?.(s)).catch((e) => pushToast(String(e), 'error'))
+        void startRunning().then((s) => { if (s) onSnap?.(s) }).catch((e) => pushToast(String(e), 'error'))
         return
       }
       const dir = cqDirFromText(tx6, snap.mycall)
@@ -1213,11 +1215,11 @@ function OperateCockpitBody({
       }
       if (contestCqTyped) {
         setLocalNext(5)
-        void startRunning(dir).then((s) => onSnap?.(s)).catch((e) => pushToast(String(e), 'error'))
+        void startRunning(dir).then((s) => { if (s) onSnap?.(s) }).catch((e) => pushToast(String(e), 'error'))
         return
       }
       setLocalNext(5)
-      void startCq(dir).then((s) => onSnap?.(s)).catch((e) => pushToast(String(e), 'error'))
+      void startCq(dir).then((s) => { if (s) onSnap?.(s) }).catch((e) => pushToast(String(e), 'error'))
       return
     }
     const call = dxCall.trim().toUpperCase()
@@ -1311,6 +1313,7 @@ function OperateCockpitBody({
   // Click-model props shared by every decode pane (Band Activity + Rx Freq in
   // both layouts) so select/ignore behave identically everywhere.
   const decodeClickProps = {
+    onCallExternal: canAction('transmit') ? external?.onCallDecode : undefined,
     onSelectDecode: selectDecode,
     onSetRx: handleSetRx,
     selectedCall: dxCall || null,
@@ -1399,7 +1402,7 @@ function OperateCockpitBody({
       setDismissedCall(recallCallRef.current)
       onClearSelection?.()
       // This computer's S&P asks for it by its own verb.
-      void startSearchAndPounce().then((s) => onSnap?.(s)).catch((e) => pushToast(String(e), 'error'))
+      void startSearchAndPounce().then((s) => { if (s) onSnap?.(s) }).catch((e) => pushToast(String(e), 'error'))
       return
     }
     onSetMode(mode)
@@ -2188,7 +2191,7 @@ function OperateCockpitBody({
               }
               dir = typed
             }
-            void startRunning(dir).then((s) => onSnap?.(s)).catch((e) => pushToast(String(e), 'error'))
+            void startRunning(dir).then((s) => { if (s) onSnap?.(s) }).catch((e) => pushToast(String(e), 'error'))
           }}
           onResend={onResend}
           onFreetext={onFreetext}

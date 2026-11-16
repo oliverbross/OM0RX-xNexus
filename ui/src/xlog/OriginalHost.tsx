@@ -37,6 +37,9 @@ import { ownerCockpitPresentation } from './ownerCockpitPresentation'
 import { ownerDecodeEntries, ownerRoster } from './ownerDecodeEntries'
 import { installOwnerLogBoundary, unavailableOwnerLog } from './ownerLogBoundary'
 import { ownerSpotsSource } from './ownerSpots'
+import { ftApi, type FtApi, type FtAction } from './ftApi'
+import { useOwnerTransmitter } from './useOwnerTransmitter'
+import { ownerFtPresentation } from './ownerFtPresentation'
 
 const NO_BAND_PLAN: BandChannel[] = []
 const NO_NATIVE_NEEDS = new Map<string, NeedTag>()
@@ -44,7 +47,7 @@ const FT_MODES = new Set<Tier>(['FT8', 'FT4'])
 
 /** Exported for the actual original-component browser fixture. Production entry
  * switches only after this host and its owner data boundaries are qualified. */
-export function OriginalHost({ api = bridge, receiver = rxApi, spectrumTransport = spectrumApi.read, historyTransport = historyReads, contactTransport = contactReads, bearingTransport = bearingReads }: { api?: Bridge; receiver?: RxApi; spectrumTransport?: typeof spectrumApi.read; historyTransport?: typeof historyReads; contactTransport?: typeof contactReads; bearingTransport?: typeof bearingReads }) {
+export function OriginalHost({ api = bridge, receiver = rxApi, spectrumTransport = spectrumApi.read, historyTransport = historyReads, contactTransport = contactReads, bearingTransport = bearingReads, transmitter = ftApi }: { api?: Bridge; receiver?: RxApi; spectrumTransport?: typeof spectrumApi.read; historyTransport?: typeof historyReads; contactTransport?: typeof contactReads; bearingTransport?: typeof bearingReads; transmitter?: FtApi }) {
   installOwnerLogBoundary()
   const connection = useOwnerConnection(api)
   const manualCreate = useOwnerManualCreate(connection, api)
@@ -54,6 +57,7 @@ export function OriginalHost({ api = bridge, receiver = rxApi, spectrumTransport
   } : null
   const fresh = !!connection.lease && view.connected && connection.lease.deadline > now
   const capabilities = view.hello?.capabilities ?? []
+  const ft = useOwnerTransmitter({ session, connectionToken: view.connection_token ?? null, connected: view.connected, capable: capabilities.includes('digital.tx') }, transmitter)
   const rx = useOwnerReceiver({ session, owner, connected: view.connected, fresh,
     audioCapable: capabilities.includes('audio.rx'), needsCapable: capabilities.includes('logbook.classify') }, receiver)
   const spectrum = useOwnerSpectrum({ session, owner: view, receiver, view: rx.view, pending: rx.pending, observation: rx.observation }, spectrumTransport)
@@ -82,7 +86,7 @@ export function OriginalHost({ api = bridge, receiver = rxApi, spectrumTransport
   const entries = ownerDecodeEntries({ view: rx.view, owner, leases: rx.leases, now: rx.now,
     needsAvailable: fresh && capabilities.includes('logbook.classify') && !rx.pending,
     mycall: model.identity?.mycall ?? null })
-  const snap = ownerCockpitPresentation(model, selectedCall)
+  const snap = ownerFtPresentation(ownerCockpitPresentation(model, selectedCall), ft.view, ft.fresh && fresh)
   snap.stations = ownerRoster(entries)
   const history = useOwnerHistory(view, session, selectedCall ? { callsign: selectedCall,
     ...(snap.radio.band ? { band: snap.radio.band, exactMode: rx.mode } : {}) } : null, historyTransport)
@@ -105,13 +109,32 @@ export function OriginalHost({ api = bridge, receiver = rxApi, spectrumTransport
     callsign:selectedCall,poll:connection.poll,pointEvidence:connection.pointEvidence,
     observedPoint:connection.observedPoint,retirePointObservation:connection.retirePointObservation },bearingTransport)
   selectionRetire.current = bearing.retire
+  const canTransmit = fresh && ft.fresh && ft.view.available && (ft.view.mode == null || ft.view.mode === rx.mode)
+  const canLog = fresh && capabilities.includes('logbook.write') && !!ft.view.dx_call
+  const canStopTransmit = capabilities.includes('digital.tx') || !!ft.view.operation_id || ft.view.release_pending
+  const ftCurrent = useRef(ft); ftCurrent.current = ft
+  const ftAction = (action: FtAction) => { void ftCurrent.current.action(action) }
+  const callDecode = (decodeId: string) => ftAction({ kind: 'work', decode_id: decodeId })
+  const workCall = (call: string) => {
+    const station = snap.stations.find(row => row.call === call)
+    if (station?.external) callDecode(station.external.decodeId)
+    else setNotice('Select a currently heard station, or use an explicit TX message.')
+  }
   const services = useMemo<OperateServiceAdapter>(() => {
     const actions = new Set<OperateAction>(['decoder', 'rxMarker'])
     if (canTune) actions.add('radio')
+    if (canTransmit) actions.add('transmit')
+    if (canStopTransmit) actions.add('stopTransmit')
+    if (canLog) actions.add('log')
     return {
       actions, tiers: rx.view.enabled || rx.pending ? new Set<Tier>([rx.mode]) : FT_MODES,
       onDeniedAction: () => setNotice('This control is not available through xLog.'),
       handlers: {
+        startCq: async direction => { await ftCurrent.current.action({ kind: 'cq', direction: direction ?? null }) },
+        startRunning: async direction => { await ftCurrent.current.action({ kind: 'cq', direction: direction ?? null }) },
+        startSearchAndPounce: async () => { await ftCurrent.current.action({ kind: 'search_and_pounce', enabled: true }) },
+        clearDxCall: async () => { await ftCurrent.current.action({ kind: 'clear' }) },
+        setSkipTx1: async enabled => { await ftCurrent.current.action({ kind: 'skip_tx1', enabled }) },
         getSpectrumRow: spectrum.getSpectrumRow,
         appVersion: async () => `${__XNEXUS_VERSION__} · ${__BUILD_ID__}`,
         setFrequency: async (dialMhz, _band, mode) => {
@@ -122,17 +145,17 @@ export function OriginalHost({ api = bridge, receiver = rxApi, spectrumTransport
         },
       },
     }
-  }, [api, session, fresh, canTune, rx.view.enabled, rx.pending, rx.mode, spectrum.getSpectrumRow])
+  }, [api, session, fresh, canTune, canTransmit, canLog, canStopTransmit, rx.view.enabled, rx.pending, rx.mode, spectrum.getSpectrumRow])
   const logSource = useMemo(() => unavailableOwnerLog('A current xLog history answer is unavailable.'), [session])
   const nav = useMemo(() => Object.fromEntries(allFeatureIds().map(id => [id, id === 'operate' || id === 'spots'])) as Record<ReturnType<typeof allFeatureIds>[number], boolean>, [])
-  const denied = () => setNotice(model.transmit.reason)
+  const denied = () => setNotice('This control is not available through xLog.')
   const selectMode = (tier: Tier) => { if (tier === 'FT8' || tier === 'FT4') rx.selectMode(tier) }
   const tune = (mhz: number, _band: string, mode: string) => {
     void services.handlers.setFrequency?.(mhz, _band, mode).catch(error => setNotice(String(error)))
   }
   const roster = <StationList stations={snap.stations} myGrid={snap.mygrid ?? ''}
     currentSlot={snap.radio.slot} activePeer={selectedCall} unreadByPeer={{}}
-    needByCall={NO_NATIVE_NEEDS} onSelect={selectCall} onCall={denied}
+    needByCall={NO_NATIVE_NEEDS} onSelect={selectCall} onCall={workCall}
     conversations={[]} onArchive={denied} bandActive={false} bandUnread={0} onSelectBand={denied}
     dropAfterCycles={3} grip="stations" />
   const status = <div className="now-bar now-bar-inbar" aria-label="xLog connection and receiver">
@@ -143,15 +166,15 @@ export function OriginalHost({ api = bridge, receiver = rxApi, spectrumTransport
       onClick={() => receive(true)}>Start receiving</button>
     <button className="op-btn" disabled={!rx.view.enabled && !rx.pending} onClick={() => receive(false)}>Stop receiving</button>
     <RotorStrip external={{ ...rotor, bearing: bearing.presentation }} />
-    <span role="status">{rx.pollError || rx.actionError || connection.actionError || connection.pollError || notice ||
+    <span role="status">{ft.error || rx.pollError || rx.actionError || connection.actionError || connection.pollError || notice || ft.logNotice ||
       (connection.receipt ? `xLog control: ${connection.receipt.status}${connection.receipt.message ? ` — ${connection.receipt.message}` : ''}` : rx.view.reason)}</span>
   </div>
   return <OperateServices adapter={services}><LogSourceProvider source={logSource}>
     <div className="app">
       <TopBar mycall={snap.mycall} mygrid={snap.mygrid} radio={snap.radio} link={snap.link}
         bandPlan={NO_BAND_PLAN} tier={rx.mode} onTierChange={selectMode} onSetFrequency={tune}
-        onSetTxEnabled={denied} onSetTune={denied} onHaltTx={denied} onSetTxEven={denied}
-        onSetTxCycleAuto={denied} onSetHoldTxFreq={denied}
+        onSetTxEnabled={enabled => ftAction({ kind: 'enable', enabled })} onSetTune={enabled => ftAction({ kind: 'tune', enabled })} onHaltTx={() => ftAction({ kind: 'stop' })} onSetTxEven={even => ftAction({ kind: 'parity', even })}
+        onSetTxCycleAuto={enabled => ftAction({ kind: 'auto_cycle', enabled })} onSetHoldTxFreq={enabled => ftAction({ kind: 'hold', enabled })}
         hideTxControls hideFrequencyControl ftScreen alarmCell nowBar={status} />
       <div className="shell">
         <ModeNav view={page} mode="qso" enabled={nav} tier={rx.mode}
@@ -164,13 +187,15 @@ export function OriginalHost({ api = bridge, receiver = rxApi, spectrumTransport
           <OperateCockpit snap={snap} theme={theme} tier={rx.mode} services={services}
             external={{ decodes: { contextKey: decodeContext, entries },
               recent: history.recent, history: history.recall,
-              spectrumResetKey: `${spectrum.resetKey}:${page}`, rotorInGlobalHeader: true }}
+              spectrumResetKey: `${spectrum.resetKey}:${page}`, rotorInGlobalHeader: true, onCallDecode: callDecode }}
             onTierChange={selectMode} onSourceChange={denied}
-            onTune={(hz, target) => { if (target === 'rx' && Number.isFinite(hz)) setMarkerHz(Math.max(0, Math.min(5000, hz))); else denied() }}
-            onCall={denied} onSetTxLevel={denied} bandPlan={NO_BAND_PLAN} onSetFrequency={tune}
-            onSetMode={denied} onSetTxEven={denied} onSetTxCycleAuto={denied} onResend={denied}
-            onFreetext={denied} onLog={denied} onOverrideTx={denied} onHaltTx={denied}
-            onSetTxEnabled={denied} onSetTune={denied} onSetHoldTxFreq={denied}
+            onTune={(hz, target) => { if (!Number.isFinite(hz)) return; if (target === 'rx' || target === 'both') setMarkerHz(Math.max(0, Math.min(5000, hz))); if (target === 'tx' || target === 'both') ftAction({ kind: 'offset', hz }) }}
+            onCall={workCall} onSetTxLevel={level => ftAction({ kind: 'drive', gain: level * .8 })} bandPlan={NO_BAND_PLAN} onSetFrequency={tune}
+            onSetMode={mode => ftAction(mode === 'qso-run' ? { kind: 'cq', direction: null } : { kind: 'search_and_pounce', enabled: true })}
+            onSetTxEven={even => ftAction({ kind: 'parity', even })} onSetTxCycleAuto={enabled => ftAction({ kind: 'auto_cycle', enabled })} onResend={() => ftAction({ kind: 'resend' })}
+            onFreetext={message => ftAction({ kind: 'free_text', message })} onLog={() => void ft.log()}
+            onOverrideTx={(call, grid, message) => ftAction({ kind: 'override', call: call || null, grid, message })} onHaltTx={() => ftAction({ kind: 'stop' })}
+            onSetTxEnabled={enabled => ftAction({ kind: 'enable', enabled })} onSetTune={enabled => ftAction({ kind: 'tune', enabled })} onSetHoldTxFreq={enabled => ftAction({ kind: 'hold', enabled })}
             roster={roster} needByCall={NO_NATIVE_NEEDS} selectedCall={selectedCall} onSelect={selectCall}
             onClearSelection={() => selectCall(null)} onOpenLogbook={(call, id) => {
               void contact.open(call, id).then(opened => { if (!opened) setNotice(t('contactCard.owner.unavailable')) })
@@ -192,7 +217,9 @@ export function OriginalHost({ api = bridge, receiver = rxApi, spectrumTransport
         <button disabled={connection.busy || !view.paired} onClick={() => void connection.connection('connect')}>Reconnect</button>
         <button disabled={connection.busy || !view.paired} onClick={() => void connection.connection('disconnect')}>Disconnect</button>
         <button disabled={!view.connected || !view.connection_token || !capabilities.includes('logbook.read')} onClick={history.refresh}>Refresh log history</button>
-        <p>Frequency changes use xLog simplex tuning. Configure split operation in xLog. Transmission is unavailable in this connection.</p>
+        <p>Frequency changes use xLog simplex tuning. Configure split operation in xLog. {ft.view.reason}</p>
+        {capabilities.includes('digital.tx') && <label><input type="checkbox" checked={ft.view.auto_sequence} disabled={!canTransmit}
+          onChange={event => ftAction({ kind: 'auto_sequence', enabled: event.target.checked })} />Auto sequence</label>}
         <label>Theme <select value={theme} onChange={event => setTheme(event.target.value as 'dark' | 'light')}><option value="dark">Dark</option><option value="light">Light</option></select></label>
         <label>Scale <select value={scale} onChange={event => setScale(Number(event.target.value))}>{[0.8, 1, 1.25, 1.5, 1.75].map(value => <option key={value} value={value}>{value * 100}%</option>)}</select></label>
         <button onClick={() => setConnectionOpen(false)}>Close</button>

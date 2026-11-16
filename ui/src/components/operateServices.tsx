@@ -19,7 +19,10 @@ const names = [
   'appVersion', 'repairClock', 'getPrivilegeSpans', 'rotatorBearingToCall',
 ] as const satisfies readonly (keyof typeof native)[]
 export type OperateServiceName = typeof names[number]
-export type OperateApi = Omit<Pick<typeof native, OperateServiceName>, 'setFrequency' | 'getSpectrumRow'> & {
+type FtMutation = 'startCq' | 'startRunning' | 'startSearchAndPounce' | 'clearDxCall' | 'setSkipTx1'
+export type OperateApi = Omit<Pick<typeof native, OperateServiceName>, 'setFrequency' | 'getSpectrumRow' | FtMutation> & {
+  [K in FtMutation]: (...args: Parameters<typeof native[K]>) => Promise<Awaited<ReturnType<typeof native[K]>> | void>
+} & {
   // An owner command completes with its own receipt and refreshes observations
   // independently; it must never forge an AppSnapshot to satisfy a callback.
   setFrequency: (...args: Parameters<typeof native.setFrequency>) => Promise<Awaited<ReturnType<typeof native.setFrequency>> | void>
