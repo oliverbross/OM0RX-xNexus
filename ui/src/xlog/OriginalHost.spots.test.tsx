@@ -46,6 +46,27 @@ beforeEach(() => { localStorage.clear(); sessionStorage.clear(); vi.clearAllMock
 afterEach(() => { cleanup(); vi.restoreAllMocks() })
 
 describe('original host Spots navigation', () => {
+  it('opens supported settings from the original gear without losing the cockpit draft', () => {
+    const { container } = render(<OriginalHost />)
+    const cockpit = screen.getByTestId('retained-cockpit')
+    const input = screen.getByLabelText('Preserved cockpit draft')
+    fireEvent.change(input, { target: { value: 'K1ABC OM0RX -10' } })
+    const settings = screen.getByRole('button', { name: 'Settings' }) as HTMLButtonElement
+    expect(settings.disabled).toBe(false)
+    fireEvent.click(settings)
+    expect(screen.getByRole('dialog')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Open pairing file' })).toBeTruthy()
+    expect(screen.getByLabelText('Theme')).toBeTruthy()
+    expect(screen.getByLabelText('Scale')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: /^Close$/ }))
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(container.querySelector('.operate-host')?.hasAttribute('hidden')).toBe(false)
+    expect(screen.getByTestId('retained-cockpit')).toBe(cockpit)
+    expect((input as HTMLInputElement).value).toBe('K1ABC OM0RX -10')
+    expect(control.command).not.toHaveBeenCalled()
+    expect(control.connection).not.toHaveBeenCalled()
+  })
+
   it('keeps the cockpit mounted and its draft, while global Stop remains reachable on Spots', () => {
     const bearingTransport = { read: vi.fn(async () => { throw Error('Unexpected bearing IPC') }) }
     const { container } = render(<OriginalHost bearingTransport={bearingTransport} />)

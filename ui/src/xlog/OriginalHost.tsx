@@ -155,8 +155,8 @@ export function OriginalHost({ api = bridge, receiver = rxApi, spectrumTransport
         hideTxControls hideFrequencyControl ftScreen alarmCell nowBar={status} />
       <div className="shell">
         <ModeNav view={page} mode="qso" enabled={nav} tier={rx.mode}
-          canSelect={selected => selected === 'operate' || selected === 'spots'}
-          onSelect={selected => { if (selected === 'operate' || selected === 'spots') setPage(selected) }}
+          canSelect={selected => selected === 'operate' || selected === 'spots' || selected === 'settings'}
+          onSelect={selected => { if (selected === 'settings') setConnectionOpen(true); else if (selected === 'operate' || selected === 'spots') setPage(selected) }}
           onDigitalMode={mode => { if (mode === 'digital') setPage('operate'); else denied() }} />
         {/* Use the upstream keep-alive host: hidden collapses it and active pauses
             its polls/renderer. RX ownership and global Stop remain above it. */}
@@ -185,7 +185,7 @@ export function OriginalHost({ api = bridge, receiver = rxApi, spectrumTransport
       {manualCreate.controller && <OwnerManualCreate controller={manualCreate.controller}
         onClose={manualCreate.close} connection={() => setConnectionOpen(true)} />}
       <ConfirmHost />
-      <Dialog open={connectionOpen} onOpenChange={setConnectionOpen} title="xLog connection"
+      <Dialog open={connectionOpen} onOpenChange={setConnectionOpen} title={t('nav.settings.label')}
         description="Enable companion sharing in xLog, then open its pairing file here. Radio and logbook ownership stays in xLog.">
         <p role="status">{fresh ? 'Current station observations received.' : 'No current station observation.'}</p>
         <button disabled={connection.busy} onClick={() => void connection.connection('import')}>Open pairing file</button>
