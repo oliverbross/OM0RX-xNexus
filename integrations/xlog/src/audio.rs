@@ -195,7 +195,7 @@ impl AudioDescriptor {
             && commands::valid_request_id(&self.epoch)
             && bounded(&self.radio_id, 256) && bounded(&self.receiver_id, 512)
             && (1..=SAFE).contains(&self.mapping_generation)
-            && bounded(&self.device_id, 2048) && self.slice == "A"
+            && bounded(&self.device_id, 2048) && matches!(self.slice.as_str(), "A" | "B" | "C" | "D" | "E" | "F" | "G" | "H")
             && (1..=8).contains(&self.dax_channel) && frequency(self.frequency_hz)
             && bounded(&self.mode, 32) && (1..=16).contains(&self.source_channels)
             && self.selected_channel < self.source_channels

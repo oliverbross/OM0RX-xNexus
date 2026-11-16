@@ -430,6 +430,10 @@ fn parse_pairing(bytes: &[u8]) -> Result<Pairing, String> {
 
 fn begin(session: &Shared) -> Result<u64, String> {
     let mut session = lock(session)?;
+    Ok(retire_connection(&mut session))
+}
+
+fn retire_connection(session: &mut Session) -> u64 {
     if let Some(connection) = &session.connection {
         if let Some(ft) = &connection.ft {
             ft.revoke();
@@ -442,7 +446,46 @@ fn begin(session: &Shared) -> Result<u64, String> {
     session.rx = None;
     session.rx_generation = session.rx_generation.wrapping_add(1);
     session.connection = None;
-    Ok(session.generation)
+    session.generation
+}
+
+fn published_pairing() -> Result<Pairing, String> {
+    let root = std::env::var_os("LOCALAPPDATA").ok_or("Waiting for the local xLog connection")?;
+    let path = std::path::PathBuf::from(root)
+        .join("OM0RX/xLog/companion/connection.json");
+    let mut bytes = Vec::new();
+    File::open(path)
+        .map_err(|_| "Waiting for xLog to start")?
+        .take(16_385)
+        .read_to_end(&mut bytes)
+        .map_err(|_| "Waiting for the local xLog connection")?;
+    parse_pairing(&bytes)
+}
+
+fn same_pairing(left: Option<&Pairing>, right: &Pairing) -> bool {
+    left.is_some_and(|left| left.endpoint == right.endpoint && left.token == right.token)
+}
+
+fn connect_published(shared: &Shared, expected: u64, pairing: Pairing) -> Result<View, String> {
+    let generation = {
+        let mut session = lock(shared)?;
+        if session.generation != expected {
+            return Err("Connection request cancelled".into());
+        }
+        if session.connection.is_some() && same_pairing(session.pairing.as_ref(), &pairing) {
+            return Ok(view(&session, None));
+        }
+        let generation = retire_connection(&mut session);
+        session.stop = None;
+        session.pairing = Some(pairing.clone());
+        generation
+    };
+    establish(shared, generation, pairing)
+}
+
+fn transient_poll_error(error: &xnexus_xlog_client::Error) -> bool {
+    use xnexus_xlog_client::Error;
+    matches!(error, Error::Transport | Error::Stale | Error::Http(408 | 429 | 500 | 502 | 503 | 504))
 }
 
 fn establish(shared: &Shared, generation: u64, pairing: Pairing) -> Result<View, String> {
@@ -540,13 +583,10 @@ async fn xlog_import_pairing(
 #[tauri::command]
 async fn xlog_connect(state: State<'_, Shared>) -> Result<View, String> {
     let shared = Arc::clone(&state);
-    let generation = begin(&shared)?;
-    lock(&shared)?.stop = None;
-    let pairing = lock(&shared)?
-        .pairing
-        .clone()
-        .ok_or("Import a pairing file from xLog first")?;
-    tauri::async_runtime::spawn_blocking(move || establish(&shared, generation, pairing))
+    let generation = lock(&shared)?.generation;
+    tauri::async_runtime::spawn_blocking(move || {
+        connect_published(&shared, generation, published_pairing()?)
+    })
         .await
         .map_err(|_| "Connection request failed")?
 }
@@ -564,9 +604,19 @@ async fn xlog_poll(state: State<'_, Shared>) -> Result<View, String> {
     let shared = Arc::clone(&state);
     let (generation, connection) = current(&shared)?;
     tauri::async_runtime::spawn_blocking(move || {
+        // The owner atomically replaces this descriptor on a real restart or
+        // workspace change. An unchanged descriptor never re-handshakes a
+        // healthy (or temporarily slow) session.
+        let pairing = published_pairing()?;
+        let replaced = {
+            let session = lock(&shared)?;
+            if session.generation != generation { return Err("Connection changed".into()); }
+            !same_pairing(session.pairing.as_ref(), &pairing)
+        };
+        if replaced { return connect_published(&shared, generation, pairing); }
         let (result, needs_observed) = {
             let mut client = lock(&connection.client)?;
-            let result = client.poll().cloned().map_err(|e| e.to_string());
+            let result = client.poll().cloned();
             // The base DTO may retain rejected optional metadata. Wake only
             // for an actually accepted SDK authority; no extra HTTP request.
             let valid = client
@@ -596,6 +646,11 @@ async fn xlog_poll(state: State<'_, Shared>) -> Result<View, String> {
                 Ok(view(&session, Some(snapshot)))
             }
             Err(error) => {
+                if transient_poll_error(&error) {
+                    // Observation leases expire independently. Do not retire
+                    // the audio cursor, FT session or retained exact Stop lane.
+                    return Err(error.to_string());
+                }
                 if let Some(ft) = &connection.ft {
                     ft.revoke();
                 }
@@ -604,7 +659,7 @@ async fn xlog_poll(state: State<'_, Shared>) -> Result<View, String> {
                 connection.bearing.revoke();
                 session.rx = None;
                 session.connection = None;
-                Err(error)
+                Err(error.to_string())
             }
         }
     })
