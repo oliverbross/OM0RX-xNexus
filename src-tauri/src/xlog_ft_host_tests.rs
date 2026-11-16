@@ -12,6 +12,7 @@ const W: &str = "22222222-2222-4222-8222-222222222222";
 const C: &str = "33333333-3333-4333-8333-333333333333";
 const K: &str = "44444444-4444-4444-8444-444444444444";
 struct FakeState {
+    audio_generation: AtomicU64,
     enabled: AtomicBool,
     receipt: Mutex<Option<Value>>,
     terminal: AtomicBool,
@@ -37,6 +38,7 @@ impl Fake {
         listener.set_nonblocking(true).unwrap();
         let url = format!("http://{}", listener.local_addr().unwrap());
         let state = Arc::new(FakeState {
+            audio_generation: AtomicU64::new(1),
             enabled: AtomicBool::new(false),
             receipt: Mutex::new(None),
             terminal: AtomicBool::new(false),
@@ -139,7 +141,18 @@ fn serve(mut stream: TcpStream, state: &FakeState) {
         json!({"application":"OM0RX-xLog","protocol_version":1,"server_instance":S,"workspace_id":W,"capabilities":["snapshot.read","digital.tx","audio.rx"]})
     } else if path.starts_with("/xlog/v1/audio?") {
         let after = path.split('=').last().unwrap().parse::<u64>().unwrap();
-        json!({"protocol_version":1,"server_instance":S,"workspace_id":W,"generated_at_unix_ms":wall_us().unwrap()/1000,"max_age_ms":1000,"state":"running","reason":null,"descriptor":{"capture_id":C,"epoch":K,"radio_id":"radio","receiver_id":"A","mapping_generation":1,"device_id":"synthetic-input","slice":"A","dax_channel":1,"frequency_hz":14074000,"mode":"DIGU","source_channels":1,"selected_channel":0,"sample_rate":12000,"sample_format":"s16le","timestamp_basis":"windows_endpoint_capture","remote_rf_latency_us":null,"utc_sync_accuracy_us":null},"oldest_sequence":after+1,"next_sequence":after+2,"gap":false,"chunks":[{"sequence":after+1,"first_frame":after,"frame_count":1,"sample0_unix_us":wall_us().unwrap(),"calibration_uncertainty_us":10,"pcm_base64":"AAA="}]})
+        let generation = state.audio_generation.load(Ordering::Acquire);
+        let capture = if generation == 1 {
+            C.to_owned()
+        } else {
+            W.to_owned()
+        };
+        let epoch = if generation == 1 {
+            K.to_owned()
+        } else {
+            S.to_owned()
+        };
+        json!({"protocol_version":1,"server_instance":S,"workspace_id":W,"generated_at_unix_ms":wall_us().unwrap()/1000,"max_age_ms":1000,"state":"running","reason":null,"descriptor":{"capture_id":capture,"epoch":epoch,"radio_id":"radio","receiver_id":"A","mapping_generation":generation,"device_id":"synthetic-input","slice":"A","dax_channel":1,"frequency_hz":14074000,"mode":"DIGU","source_channels":1,"selected_channel":0,"sample_rate":12000,"sample_format":"s16le","timestamp_basis":"windows_endpoint_capture","remote_rf_latency_us":null,"utc_sync_accuracy_us":null},"oldest_sequence":after+1,"next_sequence":after+2,"gap":false,"chunks":[{"sequence":after+1,"first_frame":after,"frame_count":1,"sample0_unix_us":wall_us().unwrap(),"calibration_uncertainty_us":10,"pcm_base64":"AAA="}]})
     } else if path.ends_with("/context") {
         context(state)
     } else if path.ends_with("/heartbeat") {
@@ -354,16 +367,25 @@ fn accepted(
     host: &Host,
     audio: &mut xnexus_xlog_client::audio::AudioClient,
 ) -> Arc<NativeDecodedPeriod> {
+    accepted_generation(host, audio, 1, None)
+}
+fn accepted_generation(
+    host: &Host,
+    audio: &mut xnexus_xlog_client::audio::AudioClient,
+    generation: u64,
+    period_start: Option<u64>,
+) -> Arc<NativeDecodedPeriod> {
     let b = Arc::new(audio.poll().unwrap());
     host.feed().touch(b.clone());
+    let descriptor = b.descriptor.as_ref().unwrap();
     let owner = OwnerIdentity {
         server_instance: S.into(),
         workspace_id: W.into(),
-        capture_id: C.into(),
-        epoch: K.into(),
+        capture_id: descriptor.capture_id.clone(),
+        epoch: descriptor.epoch.clone(),
         radio_id: "radio".into(),
         receiver_id: "A".into(),
-        mapping_generation: 1,
+        mapping_generation: descriptor.mapping_generation,
         device_id: "synthetic-input".into(),
         slice: "A".into(),
         dax_channel: 1,
@@ -373,13 +395,14 @@ fn accepted(
         source_channels: 1,
         selected_channel: 0,
     };
-    let start = wall_us().unwrap() / 7_500_000 * 7_500_000 - 7_500_000;
+    let start =
+        period_start.unwrap_or_else(|| wall_us().unwrap() / 7_500_000 * 7_500_000 - 7_500_000);
     let p = Arc::new(NativeDecodedPeriod {
         context: DecodeContext {
-            stream_id: C.into(),
-            epoch: K.into(),
-            mapping_generation: 1,
-            generation: 1,
+            stream_id: descriptor.capture_id.clone(),
+            epoch: descriptor.epoch.clone(),
+            mapping_generation: descriptor.mapping_generation,
+            generation,
             radio_id: "radio".into(),
             receiver_id: "A".into(),
             mode: DecoderMode::Ft4,
@@ -410,8 +433,15 @@ fn accepted(
             raw: None,
         }],
     });
-    host.feed()
-        .publish(p.clone(), vec![Some("native-row".into())], b);
+    host.feed().publish(
+        p.clone(),
+        vec![Some(if generation == 1 {
+            "native-row".into()
+        } else {
+            format!("native-row-{generation}")
+        })],
+        b,
+    );
     consume(&host.inner).unwrap();
     p
 }
@@ -435,6 +465,74 @@ fn temporary_audio_expiry_preserves_qso_but_not_work_admission() {
     host.feed().retire(); // Genuine route/full Stop still retires the sequencer.
     consume(&host.inner).unwrap();
     assert!(lock(&host.inner.state).unwrap().coordinator.is_none());
+}
+#[test]
+fn capture_repair_preserves_qso_log_and_exact_pending_release_but_not_old_work() {
+    let (fake, _bridge, host, mut audio) = setup();
+    let original = accepted(&host, &mut audio);
+    host.action(Action::Work {
+        decode_id: "native-row".into(),
+    })
+    .unwrap();
+    let log = host.log_draft().unwrap();
+    let before = host.view().unwrap();
+    let (operation, stop) = {
+        let mut state = lock(&host.inner.state).unwrap();
+        let coordinator = state.coordinator.as_mut().unwrap();
+        let now = Instant::now();
+        let wall = wall_us().unwrap();
+        let mut slot = (wall / 7_500_000 + 1) * 7_500_000;
+        if slot / 7_500_000 % 2 != u64::from(!coordinator.view().unwrap().tx_even) {
+            slot += 7_500_000;
+        }
+        let plan = coordinator.plan(slot, slot + 50_000, wall, now).unwrap();
+        let operation = kernel::Operation {
+            key: plan.key().clone(),
+            id: "original-owned-operation".into(),
+            body_digest: [7; 32],
+        };
+        coordinator.bind(&plan, operation.clone(), now).unwrap();
+        (operation, coordinator.stop_handle())
+    };
+    fake.state.audio_generation.store(2, Ordering::Release);
+    // An actual SDK audio reply changes all stream coordinates. The complete
+    // accepted period is new; old decoded records are not replayed as input.
+    let repaired = accepted_generation(
+        &host,
+        &mut audio,
+        2,
+        Some(original.host_period_start_unix_us + 7_500_000),
+    );
+    let after = host.view().unwrap();
+    assert_eq!(after.qso_state, before.qso_state);
+    assert_eq!(after.dx_call, before.dx_call);
+    assert_eq!(host.log_draft().unwrap(), log);
+    assert_eq!(
+        lock(&host.inner.state)
+            .unwrap()
+            .key
+            .as_ref()
+            .unwrap()
+            .receive,
+        repaired.context
+    );
+    assert!(host
+        .action(Action::Work {
+            decode_id: "native-row".into()
+        })
+        .is_err());
+    assert_eq!(stop.release().unwrap().as_deref(), Some(&operation));
+    host.stop();
+    assert_eq!(stop.release().unwrap().as_deref(), Some(&operation));
+    assert_eq!(stop.stop().unwrap().as_deref(), Some(&operation));
+    assert_eq!(
+        operation.key.context.owner.capture_id,
+        original.owner.capture_id
+    );
+    assert_ne!(
+        operation.key.context.owner.capture_id,
+        repaired.owner.capture_id
+    );
 }
 #[test]
 fn native_record_mailbox_work_auto_parity_hold_and_retirement() {

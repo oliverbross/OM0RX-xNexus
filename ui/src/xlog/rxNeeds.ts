@@ -6,10 +6,12 @@ export interface NeedsLease { evidence: string; deadline: number }
 export type NeedsLeases = Map<string, NeedsLease>
 
 function routeKey(route: RxRoute): string {
-  return JSON.stringify([route.capture_id, route.epoch, route.radio_id, route.receiver_id,
-    route.mapping_generation, route.device_id, route.slice, route.dax_channel, route.frequency_hz,
+  // Passive classification follows the physical tuning context, not a DAX
+  // sample interval/capture generation. Controls keep their separate fences.
+  return JSON.stringify([route.radio_id, route.receiver_id,
+    route.device_id, route.slice, route.dax_channel, route.frequency_hz,
     route.mode, route.source_channels, route.selected_channel, route.sample_rate, route.sample_format,
-    route.timestamp_basis, route.remote_rf_latency_us, route.utc_sync_accuracy_us])
+  ])
 }
 
 /** Validate the native attachment, never classify or derive an award score here. */
