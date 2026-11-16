@@ -7,7 +7,7 @@
 //! removes usable state. Reconnection is explicit and replaces session identity.
 //! HTTP is limited to an explicitly configured IPv4 loopback endpoint, with no
 //! redirects/proxies. Error messages never include payloads, URLs or credentials.
-//! Controls require explicit advertised capabilities. No transmission API exists.
+//! Controls and owner-mediated transmission require explicit advertised capabilities.
 //! Availability depends on the companion bridge in the paired xLog build.
 
 use reqwest::{blocking::Client, header, redirect::Policy, Url};
@@ -156,6 +156,7 @@ mod commands;
 pub mod contact_detail;
 pub mod needs;
 mod station_identity;
+pub mod tx;
 pub use commands::{Command, CommandReceipt, CommandStatus, StopClient};
 pub use station_identity::{
     IdentityBinding, IdentitySource, IdentityState, OperatingModule, StationIdentity,
