@@ -84,3 +84,42 @@ These are SDK and actual-module tests, not a full Tauri macro/type/link gate,
 cross-platform qualification, browser acceptance, installation, production API
 exercise, or hardware qualification. No GUI, device, radio, database or real
 pairing credentials were accessed by this validation.
+
+
+## Installed .8 follow-up: refresh and same-route PCM gaps
+
+The 16 November report of briefly visible classifications and disappearing rows
+exposed two additional native mechanisms in source `1958e9206`: lookup selected
+only already-expired facts, and every `AudioBatch.reset` cleared decoded history.
+The latter flag also denotes a sequence gap on an unchanged route; the generic
+"Audio route changed" message therefore did not establish an actual retune.
+No production capture trace was collected for this source diagnosis.
+
+The lookup now requests refresh with at most 1100 ms remaining, retaining each
+old fact only until its original deadline. A transport failure or stale refresh
+reply does not retract a different still-valid result. Authenticated authority
+changes, malformed replies, pending writes, disconnect and expiry still revoke
+facts. Request cadence, batch size and owner TTL are unchanged; this does not
+promise continuous classification of all 200 retained unique senders.
+
+An owner-declared gap with an exactly unchanged descriptor retires partial DSP,
+spectrum and FT work and advances the decode epoch, while preserving historical
+row IDs and original contexts. Those rows can be reclassified for the same route;
+they are never replayed into the sequencer. Frequency, mode, capture, capture
+epoch or mapping changes still clear history. Local audio-authority expiration
+and explicit retirement remain conservative; no audio transport reconnect or
+TX-authority behavior is added here.
+
+Focused validation passed four SDK and six Worker cases on the first run using
+fresh actual SDK/assembler/Worker artifacts and immutable retained dependencies.
+Cases cover real failed loopback reads, stale replies without TTL renewal,
+malformed 503 revocation, pre-expiry refresh, pending/retry retention, same-route
+gap history with old-DSP rejection, five real route changes and explicit owner
+revocation. The RX-only harness supplies no FT feed; it does not qualify TX.
+
+Evidence is retained under `rx-needs-continuity/target/continuity-attempt-813b789259ae4152a5e2bebac062e2ca`.
+Receipt SHA-256: `00CD6951AC421CAF1E48E080303ABFA081F7F6D74C2331A3A8AD8BD96FA9B65D`.
+Guard SHA-256: `0FEEB4B800F1AF5CEF49CC485E3B15BFDFEDC46CE18C776C31CB614FFBB24CF5`.
+The 2 GiB/300-second GNU 1.93.1 job exited naturally with zero descendants,
+peak 892,116,992 bytes, and all source/tool/dependency pins unchanged. No full
+application, browser, installation, hardware or live receive test ran.

@@ -481,9 +481,10 @@ impl NeedsClient {
     pub fn query(&mut self, queries: &[NeedsQuery]) -> Result<NeedsBatch, Error> {
         let result = self.query_once(queries);
         if let Err(error) = &result {
-            if *error == Error::NeedsPending {
-                // Authenticated queue state is not invalid classification. Keep
-                // unrelated batches, with their original revocable deadlines.
+            if matches!(error, Error::NeedsPending | Error::Transport | Error::Stale) {
+                // An unavailable new read does not retract an earlier valid result.
+                // Its original deadline, authority/session revocation and write
+                // fence still apply; no lease is renewed by this failure.
                 return result;
             }
             self.facts.store(false, Ordering::Release);
