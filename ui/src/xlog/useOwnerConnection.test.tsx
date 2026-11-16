@@ -28,6 +28,53 @@ const receipt = (id: string): Receipt => ({ request_id: id, server_instance: 'A'
 const tune = { kind: 'station.tune', radio_id: 'radio1', frequency_hz: 14074000, mode: 'DIGU' } as const
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.useRealTimers() })
 describe('original host connection ownership', () => {
+  it('automatically waits for xLog, preserves the session across transient polls, and resets only for a new native token', async () => {
+    vi.useFakeTimers()
+    const connected = { ...currentView(), connection_token: 'first' }
+    const replacement = { ...connected, connection_token: 'replacement' }
+    const owner = api(Promise.resolve(disconnected))
+    vi.mocked(owner.status).mockResolvedValueOnce(disconnected).mockResolvedValue(connected)
+    vi.mocked(owner.connect).mockRejectedValueOnce(Error('Waiting for xLog to start')).mockResolvedValue(connected)
+    vi.mocked(owner.poll).mockRejectedValueOnce(Error('xLog bridge unavailable or timed out'))
+      .mockResolvedValueOnce(connected).mockResolvedValue(replacement)
+    const { result } = renderHook(() => useOwnerConnection(owner, true))
+    await act(async () => {})
+    await act(async () => { await vi.advanceTimersByTimeAsync(0) })
+    expect(owner.connect).toHaveBeenCalledTimes(1)
+    await act(async () => { await vi.advanceTimersByTimeAsync(1500) })
+    expect(owner.connect).toHaveBeenCalledTimes(2)
+    const session = result.current.session
+    await act(async () => { await vi.advanceTimersByTimeAsync(500) })
+    expect(result.current.view).toEqual(connected)
+    expect(result.current.session).toBe(session)
+    expect(result.current.lease).toBeNull()
+    expect(result.current.pollError).toContain('timed out')
+    await act(async () => { await vi.advanceTimersByTimeAsync(500) })
+    expect(result.current.pollError).toBe('')
+    expect(result.current.session).toBe(session)
+    expect(owner.connect).toHaveBeenCalledTimes(2)
+    await act(async () => { await vi.advanceTimersByTimeAsync(500) })
+    expect(result.current.view.connection_token).toBe('replacement')
+    expect(result.current.session).toBeGreaterThan(session)
+    expect(owner.importPairing).not.toHaveBeenCalled()
+  })
+  it('automatic connection preserves a manual disconnect intent and never overlaps discovery requests', async () => {
+    vi.useFakeTimers()
+    const connecting = pending<View>(), connected = { ...currentView(), connection_token: 'first' }
+    const owner = api(Promise.resolve(disconnected))
+    vi.mocked(owner.connect).mockReturnValue(connecting.promise)
+    vi.mocked(owner.disconnect).mockResolvedValue(disconnected)
+    const { result } = renderHook(() => useOwnerConnection(owner, true))
+    await act(async () => {})
+    await act(async () => { await vi.advanceTimersByTimeAsync(4500) })
+    expect(owner.connect).toHaveBeenCalledTimes(1)
+    await act(async () => { await result.current.connection('disconnect') })
+    await act(async () => { connecting.resolve(connected) })
+    await act(async () => { await vi.advanceTimersByTimeAsync(4500) })
+    expect(result.current.view.connected).toBe(false)
+    expect(owner.connect).toHaveBeenCalledTimes(1)
+    expect(owner.poll).not.toHaveBeenCalled()
+  })
   it('the new API predicate refuses old accepted identity before its passive replacement effect runs', async () => {
     const view = { ...currentView(), connection_token: 'read-token' }
     view.hello = { ...view.hello!, capabilities: ['logbook.contact.read'] }

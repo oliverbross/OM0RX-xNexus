@@ -59,7 +59,7 @@ export function OriginalHost({ api = bridge, receiver = rxApi, spectrumTransport
   const capabilities = view.hello?.capabilities ?? []
   const ft = useOwnerTransmitter({ session, connectionToken: view.connection_token ?? null, connected: view.connected, capable: capabilities.includes('digital.tx') }, transmitter)
   const rx = useOwnerReceiver({ session, owner, connected: view.connected, fresh,
-    audioCapable: capabilities.includes('audio.rx'), needsCapable: capabilities.includes('logbook.classify') }, receiver)
+    audioCapable: capabilities.includes('audio.rx'), needsCapable: capabilities.includes('logbook.classify'), autoStart: true }, receiver)
   const spectrum = useOwnerSpectrum({ session, owner: view, receiver, view: rx.view, pending: rx.pending, observation: rx.observation }, spectrumTransport)
   const receive = (start: boolean) => { spectrum.suspend(); void rx.receiving(start) }
   const decodeContext = `${session}:${spectrumContextKey(rx.view.current_context) ?? 'unavailable'}`
@@ -84,7 +84,7 @@ export function OriginalHost({ api = bridge, receiver = rxApi, spectrumTransport
   const model = ownerOperatingModel({ view, lease: connection.lease, now, session,
     receive: rx.view, needsLeases: rx.leases, decoderMode: rx.mode, rxMarkerHz: markerHz })
   const entries = ownerDecodeEntries({ view: rx.view, owner, leases: rx.leases, now: rx.now,
-    needsAvailable: fresh && capabilities.includes('logbook.classify') && !rx.pending,
+    needsAvailable: capabilities.includes('logbook.classify'),
     mycall: model.identity?.mycall ?? null })
   const snap = ownerFtPresentation(ownerCockpitPresentation(model, selectedCall), ft.view, ft.fresh && fresh)
   snap.stations = ownerRoster(entries)
@@ -159,7 +159,7 @@ export function OriginalHost({ api = bridge, receiver = rxApi, spectrumTransport
     conversations={[]} onArchive={denied} bandActive={false} bandUnread={0} onSelectBand={denied}
     dropAfterCycles={3} grip="stations" />
   const status = <div className="now-bar now-bar-inbar" aria-label="xLog connection and receiver">
-    <button className="op-btn" onClick={() => setConnectionOpen(true)}>{fresh ? 'xLog connected' : 'Connect xLog'}</button>
+    <button className="op-btn" onClick={() => setConnectionOpen(true)}>{view.connected ? 'xLog connected' : 'Connecting to xLog…'}</button>
     <button className="op-btn" onClick={manualCreate.open}>{t('logbook.ownerCreate.title')}</button>
     {contact.savedAvailable && <button className="op-btn" disabled={!contact.resumeEnabled} onClick={() => void contact.resume()}>{ownerEditorResumeLabel()}</button>}
     <button className="op-btn" disabled={rx.pending || rx.view.enabled || !fresh || !capabilities.includes('audio.rx')}
@@ -211,11 +211,8 @@ export function OriginalHost({ api = bridge, receiver = rxApi, spectrumTransport
         onClose={manualCreate.close} connection={() => setConnectionOpen(true)} />}
       <ConfirmHost />
       <Dialog open={connectionOpen} onOpenChange={setConnectionOpen} title={t('nav.settings.label')}
-        description="Enable companion sharing in xLog, then open its pairing file here. Radio and logbook ownership stays in xLog.">
-        <p role="status">{fresh ? 'Current station observations received.' : 'No current station observation.'}</p>
-        <button disabled={connection.busy} onClick={() => void connection.connection('import')}>Open pairing file</button>
-        <button disabled={connection.busy || !view.paired} onClick={() => void connection.connection('connect')}>Reconnect</button>
-        <button disabled={connection.busy || !view.paired} onClick={() => void connection.connection('disconnect')}>Disconnect</button>
+        description="xNexus connects to xLog automatically. Choose the slice and DAX audio connections once in xLog settings.">
+        <p role="status">{view.connected ? connection.pollError || 'Connected to xLog.' : connection.pollError || 'Waiting for xLog to start…'}</p>
         <button disabled={!view.connected || !view.connection_token || !capabilities.includes('logbook.read')} onClick={history.refresh}>Refresh log history</button>
         <p>Frequency changes use xLog simplex tuning. Configure split operation in xLog. {ownerTxRefusal(ft.view.reason)}</p>
         {capabilities.includes('digital.tx') && <label><input type="checkbox" checked={ft.view.auto_sequence} disabled={!canTransmit}

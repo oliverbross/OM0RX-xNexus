@@ -10,9 +10,9 @@ const message = (error: unknown) => error instanceof Error ? error.message : Str
 
 export interface OwnerConnectionScope { session: number; connectionToken: string; serverInstance: string; workspaceId: string }
 
-/** Connection lifecycle only. Mounting reads status; it never pairs, starts RX,
- * changes a radio, opens a feed, or starts the upstream station engine. */
-export function useOwnerConnection(api: Bridge = bridge) {
+/** Native production discovers xLog locally. Injected adapters remain explicit
+ * unless auto is requested; neither path starts a Nexus station engine. */
+export function useOwnerConnection(api: Bridge = bridge, auto = api === bridge) {
   const [heldView, holdView] = useState({ api, value: disconnected })
   const view = heldView.api === api ? heldView.value : disconnected
   const setView = (next: View | ((old: View) => View)) => holdView(old => ({ api,
@@ -35,6 +35,9 @@ export function useOwnerConnection(api: Bridge = bridge) {
   const commandSequence = useRef(0)
   const live = useRef(true)
   const acceptedView = useRef<View>(disconnected)
+  const nativeConnected = useRef(false)
+  const connectionPending = useRef(false)
+  const autoPaused = useRef(false)
   const lastPoll = useRef<ControlPoll | null>(null)
   const pollBarrier = useRef(0)
   const stopsPending = useRef(0)
@@ -67,6 +70,12 @@ export function useOwnerConnection(api: Bridge = bridge) {
       && bearingIdentityKey(current.binding) !== null && bearingIdentityKey(current.binding) === bearingIdentityKey(binding)
   }
   const accept = (next: View, started: number, control = controlGeneration.current, pendingAtStart = ordinaryPending.current) => {
+    const previous = acceptedView.current
+    if (previous.connection_token && next.connection_token !== previous.connection_token) {
+      retireEvidence(); ordinaryPending.current = false; controlGeneration.current++
+      setSession(++epoch.current)
+    }
+    nativeConnected.current = next.connected
     acceptedView.current = next
     setView(next)
     const nextLease = !pendingAtStart && !ordinaryPending.current && control === controlGeneration.current
@@ -79,6 +88,7 @@ export function useOwnerConnection(api: Bridge = bridge) {
     live.current = true
     const generation = ++epoch.current
     acceptedView.current = disconnected
+    nativeConnected.current = false; autoPaused.current = false; connectionPending.current = true
     retireEvidence(); stopsPending.current = 0
     ordinaryPending.current = false; controlGeneration.current++
     setSession(generation); setView(disconnected); setLease(null)
@@ -87,8 +97,21 @@ export function useOwnerConnection(api: Bridge = bridge) {
     void api.status().then(next => {
       if (live.current && currentApi.current === api && generation === epoch.current) accept(next, started)
     }, error => { if (live.current && currentApi.current === api && generation === epoch.current) setPollError(message(error)) })
+      .finally(() => { if (live.current && currentApi.current === api && generation === epoch.current) connectionPending.current = false })
     return () => { live.current = false; ++epoch.current; retireEvidence() }
   }, [api])
+  useEffect(() => {
+    if (!auto) return
+    let active = true
+    let timer: ReturnType<typeof setTimeout>
+    const discover = async () => {
+      if (!active || currentApi.current !== api) return
+      if (!autoPaused.current && !nativeConnected.current && !connectionPending.current) await connection('connect', true)
+      if (active) timer = setTimeout(discover, 1500)
+    }
+    timer = setTimeout(discover, 0)
+    return () => { active = false; clearTimeout(timer) }
+  }, [api, auto])
   useEffect(() => {
     const timer = setInterval(() => setNow(performance.now()), 100)
     return () => clearInterval(timer)
@@ -123,22 +146,37 @@ export function useOwnerConnection(api: Bridge = bridge) {
         if (!active || currentApi.current !== api || generation !== epoch.current) return
         // Retire passive-read admission synchronously, before React commits.
         // Keep paired/token identity for the existing independent Stop lane.
-        acceptedView.current = { ...acceptedView.current, connected: false, snapshot: null }
+        acceptedView.current = { ...acceptedView.current, connected: false }
         setLease(null); setPollError(message(error))
         lastPoll.current = null
-        setView(old => ({ ...old, connected: false, snapshot: null }))
-        return
+        if (!auto) {
+          setView(old => ({ ...old, connected: false, snapshot: null }))
+          return
+        }
+        // Local status distinguishes a retired native connection from a slow
+        // owner poll. Keep the original facts/identity while their own leases
+        // expire, so receiver and FT hooks are not torn down on a timeout.
+        try {
+          const status = await api.status()
+          if (!active || currentApi.current !== api || generation !== epoch.current) return
+          if (!status.connected || status.connection_token !== acceptedView.current.connection_token) {
+            accept(status, performance.now())
+          }
+        } catch { /* Continue the bounded poll; a failed status is not revocation. */ }
       }
       if (active && generation === epoch.current) timer = setTimeout(poll, 500)
     }
     timer = setTimeout(poll, 500)
     return () => { active = false; clearTimeout(timer) }
-  }, [api, view.connected, session])
+  }, [api, auto, view.connected, session])
 
-  async function connection(kind: 'import' | 'connect' | 'disconnect' | 'forget') {
-    if (currentApi.current !== api) return
+  async function connection(kind: 'import' | 'connect' | 'disconnect' | 'forget', automatic = false) {
+    if (currentApi.current !== api || (automatic && connectionPending.current)) return
+    if (!automatic) autoPaused.current = kind === 'disconnect' || kind === 'forget'
+    connectionPending.current = true
     const generation = ++epoch.current
     acceptedView.current = disconnected
+    nativeConnected.current = false
     retireEvidence(); stopsPending.current = 0
     ordinaryPending.current = false; controlGeneration.current++
     setSession(generation); setBusy(true); setActionError(''); setPollError(''); setReceipt(null)
@@ -155,9 +193,13 @@ export function useOwnerConnection(api: Bridge = bridge) {
         if (live.current && currentApi.current === api && generation === epoch.current) accept(status, statusStarted)
       }
     } catch (error) {
-      if (live.current && currentApi.current === api && generation === epoch.current) setActionError(message(error))
+      if (live.current && currentApi.current === api && generation === epoch.current) {
+        if (automatic) setPollError(message(error)); else setActionError(message(error))
+      }
     } finally {
-      if (live.current && currentApi.current === api && generation === epoch.current) setBusy(false)
+      if (live.current && currentApi.current === api && generation === epoch.current) {
+        connectionPending.current = false; setBusy(false)
+      }
     }
   }
 
