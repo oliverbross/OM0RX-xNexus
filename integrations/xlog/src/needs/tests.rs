@@ -5,6 +5,8 @@ use serde_json::{json, Value};
 const NOW: u64 = 1_790_000_000_000;
 #[path = "owner_replay.rs"]
 mod owner_replay;
+#[path = "query_lifetime.rs"]
+mod query_lifetime;
 fn metadata(readiness: Readiness, now: u64) -> NeedsMetadata {
     NeedsMetadata {
         generated_at_unix_ms: now,
