@@ -44,11 +44,26 @@ vi.mock('../api', async original => ({ ...await original<typeof import('../api')
   getDxccEntityLocations: vi.fn(async () => { throw new Error('Independent centroid read forbidden') }),
   setPounceSpotterFilter: vi.fn(async () => { throw new Error('Independent feed mutation forbidden') }),
 }))
-beforeEach(() => { localStorage.clear(); sessionStorage.clear(); vi.clearAllMocks(); control.fresh = true; control.mode = 'FT8'; control.command.mockResolvedValue(undefined); vi.spyOn(performance, 'now').mockReturnValue(100) })
+beforeEach(() => { localStorage.clear(); sessionStorage.clear(); vi.clearAllMocks(); lease.deadline = 1000; control.fresh = true; control.mode = 'FT8'; control.command.mockResolvedValue(undefined); vi.spyOn(performance, 'now').mockReturnValue(100) })
 afterEach(() => { cleanup(); vi.restoreAllMocks() })
 
 const cockpit = () => control.cockpit as ComponentProps<typeof OperateCockpit>
 describe('original host FT control bindings', () => {
+  it('uses fresh TX context while ordinary station snapshot is expired, then retains Stop after TX expiry', () => {
+    lease.deadline = 0
+    const mounted = render(<OriginalHost />)
+    expect(cockpit().services!.actions.has('transmit')).toBe(true)
+    expect(cockpit().snap.radio.txAllowed).toBe(true)
+    cockpit().onSetTxEnabled!(true)
+    expect(control.ftAction).toHaveBeenCalledExactlyOnceWith({ kind: 'enable', enabled: true })
+    control.fresh = false
+    mounted.rerender(<OriginalHost />)
+    expect(cockpit().services!.actions.has('transmit')).toBe(false)
+    expect(cockpit().snap.radio.txAllowed).toBe(false)
+    expect(cockpit().services!.actions.has('stopTransmit')).toBe(true)
+    cockpit().onHaltTx()
+    expect(control.ftAction).toHaveBeenLastCalledWith({ kind: 'stop' })
+  })
   it('forwards directed CQ and exact native decode identities', async () => {
     render(<OriginalHost />)
     await cockpit().services!.handlers.startRunning!('DX')

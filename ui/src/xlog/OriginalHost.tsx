@@ -86,7 +86,7 @@ export function OriginalHost({ api = bridge, receiver = rxApi, spectrumTransport
   const entries = ownerDecodeEntries({ view: rx.view, owner, leases: rx.leases, now: rx.now,
     needsAvailable: capabilities.includes('logbook.classify'),
     mycall: model.identity?.mycall ?? null })
-  const snap = ownerFtPresentation(ownerCockpitPresentation(model, selectedCall), ft.view, ft.fresh && fresh)
+  const snap = ownerFtPresentation(ownerCockpitPresentation(model, selectedCall), ft.view, ft.fresh)
   snap.stations = ownerRoster(entries)
   const history = useOwnerHistory(view, session, selectedCall ? { callsign: selectedCall,
     ...(snap.radio.band ? { band: snap.radio.band, exactMode: rx.mode } : {}) } : null, historyTransport)
@@ -109,7 +109,7 @@ export function OriginalHost({ api = bridge, receiver = rxApi, spectrumTransport
     callsign:selectedCall,poll:connection.poll,pointEvidence:connection.pointEvidence,
     observedPoint:connection.observedPoint,retirePointObservation:connection.retirePointObservation },bearingTransport)
   selectionRetire.current = bearing.retire
-  const canTransmit = fresh && ft.fresh && ft.view.available && (ft.view.mode == null || ft.view.mode === rx.mode)
+  const canTransmit = ft.fresh && ft.view.available && (ft.view.mode == null || ft.view.mode === rx.mode)
   const canLog = fresh && capabilities.includes('logbook.write') && !!ft.view.dx_call
   const canStopTransmit = capabilities.includes('digital.tx') || !!ft.view.operation_id || ft.view.release_pending
   const ftCurrent = useRef(ft); ftCurrent.current = ft

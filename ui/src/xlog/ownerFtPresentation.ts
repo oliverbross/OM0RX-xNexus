@@ -3,11 +3,11 @@ import type { OperatingSnapshot } from '../components/operatingView'
 import type { FtView } from './ftApi'
 export function ownerTxRefusal(reason: string): string {
   const messages: Record<string, string> = {
-    local_tx_disabled: 'Enable digital TX in xLog companion settings (FLEX A / DAX TX).',
-    commissioned_tx_route_unavailable: 'Refresh and confirm FLEX A / DAX TX in xLog companion settings.',
-    confirmed_station_identity_unavailable: 'Confirm your saved callsign and locator in xLog TX settings.',
+    local_tx_disabled: 'xLog transmit service is unavailable.',
+    commissioned_tx_route_unavailable: 'Waiting for xLog’s current FLEX and DAX TX connection.',
+    confirmed_station_identity_unavailable: 'Your saved xLog callsign and locator are unavailable.',
     worker_tx_lease_unsupported: 'Update the xLog station worker before enabling digital TX.',
-    pairing_revoked: 'Reconnect xLog using its current pairing file.',
+    pairing_revoked: 'Waiting for the automatic local xLog connection.',
   }
   return messages[reason] ?? (reason || 'Waiting for current xLog transmit context.')
 }
