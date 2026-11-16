@@ -10,6 +10,7 @@ interface Scope {
   fresh: boolean
   audioCapable: boolean
   needsCapable: boolean
+  autoStart?: boolean
 }
 interface Held {
   api: RxApi
@@ -24,7 +25,9 @@ const errorText = (error: unknown) => error instanceof Error ? error.message : S
 export function useOwnerReceiver(scope: Scope, api: RxApi = rxApi) {
   const key = JSON.stringify([scope.session, scope.owner?.server_instance, scope.owner?.workspace_id])
   const [held, setHeld] = useState<Held>({ api, scope: key, view: rxOff, leases: new Map() })
-  const [mode, setMode] = useState<RxMode>('FT8')
+  const [mode, setMode] = useState<RxMode>(() => {
+    try { return localStorage.getItem('xlog.rx.mode') === 'FT4' ? 'FT4' : 'FT8' } catch { return 'FT8' }
+  })
   const [pending, setPending] = useState(false)
   const [observation, setObservation] = useState(0)
   const [pollError, setPollError] = useState('')
@@ -33,11 +36,12 @@ export function useOwnerReceiver(scope: Scope, api: RxApi = rxApi) {
   const generation = useRef(0)
   const action = useRef(0)
   const pendingAction = useRef(false)
+  const autoStarted = useRef('')
   const current = useRef({ api, key, scope })
   current.current = { api, key, scope }
   const visible = held.api === api && held.scope === key && scope.connected && scope.audioCapable
   const view = visible ? held.view : rxOff
-  const leases = visible && scope.fresh && scope.needsCapable && !pending && !pollError
+  const leases = visible && scope.needsCapable && !pending
     ? held.leases : new Map<string, { evidence: string; deadline: number }>()
 
   useEffect(() => {
@@ -76,12 +80,19 @@ export function useOwnerReceiver(scope: Scope, api: RxApi = rxApi) {
       try {
         const next = await api.status()
         if (token !== generation.current) return
-        if (sequence === action.current) { accept(next, started, key, api); setPollError('') }
+        if (sequence === action.current) {
+          accept(next, started, key, api); setPollError('')
+          const admitted = current.current.scope
+          if (admitted.autoStart && admitted.fresh && autoStarted.current !== key) {
+            if (next.enabled) autoStarted.current = key
+            else if (!pendingAction.current) await receiving(true)
+          }
+        }
       } catch (error) {
         if (token !== generation.current) return
         if (sequence === action.current) {
-          // A failed read hides facts for this observation, but cannot revoke
-          // a still-valid earlier response or extend its original deadline.
+          // Read-only history survives an observation gap. Native revision and
+          // session fences still invalidate facts; controls use scope.fresh.
           setPollError(errorText(error))
         }
       }
@@ -92,14 +103,19 @@ export function useOwnerReceiver(scope: Scope, api: RxApi = rxApi) {
   }, [api, key, scope.connected, scope.audioCapable])
 
   async function receiving(start: boolean) {
-    if (start && (!scope.connected || !scope.fresh || !scope.audioCapable)) return
+    const admitted = current.current.scope
+    if (start && (!admitted.connected || !admitted.fresh || !admitted.audioCapable)) return
+    if (!start) autoStarted.current = key // Ordinary Stop stays stopped in this connection.
     const token = generation.current, sequence = ++action.current
     const started = performance.now()
     pendingAction.current = true; setPending(true); setActionError('')
     setHeld(old => ({ ...old, leases: revokeNeeds(old.leases) }))
     try {
       const next = await (start ? api.start(mode) : api.stop())
-      if (token === generation.current && sequence === action.current) accept(next, started, key, api)
+      if (token === generation.current && sequence === action.current) {
+        if (start && next.enabled) autoStarted.current = key
+        accept(next, started, key, api)
+      }
     } catch (error) {
       if (token === generation.current && sequence === action.current) setActionError(errorText(error))
     } finally {
@@ -109,7 +125,10 @@ export function useOwnerReceiver(scope: Scope, api: RxApi = rxApi) {
     }
   }
   function selectMode(next: RxMode) {
-    if (!view.enabled && !pending) setMode(next)
+    if (!view.enabled && !pending) {
+      setMode(next)
+      try { localStorage.setItem('xlog.rx.mode', next) } catch { /* optional preference */ }
+    }
   }
   return { view, leases, mode, selectMode, pending, receiving, pollError, actionError, now, observation }
 }

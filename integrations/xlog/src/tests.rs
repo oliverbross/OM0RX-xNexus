@@ -84,6 +84,50 @@ pub(crate) fn server(replies: Vec<String>) -> (BridgeClient, thread::JoinHandle<
 
 const REQUEST_ID: &str = "00000000-0000-4000-8000-000000000001";
 #[test]
+fn transient_station_and_audio_reads_preserve_session_then_auth_retires_it() {
+    let mut h = hello();
+    h["capabilities"] = json!(["snapshot.read", "audio.rx"]);
+    let first = snapshot();
+    let mut next = first.clone();
+    next["revision"] = json!(6);
+    let audio1 = audio::tests::fixture(now_ms().unwrap());
+    let mut audio2 = audio1.clone();
+    audio2["chunks"][0]["sequence"] = json!(2);
+    audio2["chunks"][0]["first_frame"] = json!(3);
+    audio2["next_sequence"] = json!(3);
+    let unavailable =
+        "HTTP/1.1 503 Service Unavailable\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+            .to_string();
+    let (mut bridge, server) = server(vec![
+        json_response(h),
+        json_response(first),
+        json_response(audio1),
+        String::new(),
+        json_response(next),
+        unavailable,
+        json_response(audio2),
+        "HTTP/1.1 401 Unauthorized\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".into(),
+    ]);
+    bridge.connect().unwrap();
+    bridge.poll().unwrap();
+    let session = bridge.audio_session.clone();
+    let mut audio = bridge.audio_handle().unwrap();
+    let old = audio.poll().unwrap();
+    assert_eq!(bridge.poll().unwrap_err(), Error::Transport);
+    assert!(session.load(Ordering::Acquire));
+    assert!(bridge.snapshot().is_err(), "no stale control observation");
+    assert_eq!(bridge.poll().unwrap().revision, 6);
+    assert!(Arc::ptr_eq(&session, &bridge.audio_session));
+    assert_eq!(audio.poll().err(), Some(Error::Http(503)));
+    assert!(!old.is_fresh());
+    let resumed = audio.poll().unwrap();
+    assert!(resumed.is_fresh() && resumed.reset);
+    assert_eq!(bridge.poll().unwrap_err(), Error::Http(401));
+    assert!(!resumed.is_fresh());
+    assert!(!session.load(Ordering::Acquire));
+    assert_eq!(server.join().unwrap().len(), 8);
+}
+#[test]
 fn audio_native_handle_is_capability_gated_and_revoke_is_terminal() {
     let (mut no_audio, server1) = server(vec![json_response(hello())]);
     no_audio.connect().unwrap();

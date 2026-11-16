@@ -23,7 +23,8 @@ export function validNeeds(row: RxRow, view: Pick<RxView, 'route' | 'mode'>, ide
     owner.dial_frequency_hz !== context.route.frequency_hz || owner.decoder_mode !== context.decoder_mode) return null
   if (!Number.isSafeInteger(facts.generated_at_unix_ms) || facts.generated_at_unix_ms! <= 0 || facts.generated_at_unix_ms! > 8640000000000000 ||
     !Number.isSafeInteger(facts.max_age_ms) || facts.max_age_ms! <= 0 || facts.max_age_ms! > 2000 ||
-    !Number.isSafeInteger(facts.remaining_valid_ms) || facts.remaining_valid_ms <= 0 ||
+    !Number.isSafeInteger(facts.remaining_valid_ms) || facts.remaining_valid_ms < 0 ||
+    (facts.remaining_valid_ms === 0 && facts.display_valid !== true) ||
     facts.remaining_valid_ms > facts.max_age_ms! || !Number.isSafeInteger(authority.logbook_revision) || authority.logbook_revision < 0 ||
     !Number.isSafeInteger(authority.classification_revision) || authority.classification_revision < 0 || !authority.country_reference_revision || !authority.policy_revision) return null
   if (!['needed', 'worked', 'unknown'].includes(facts.status) || facts.status !== owner.need.status ||
@@ -70,7 +71,7 @@ export function revokeNeeds(previous: NeedsLeases): NeedsLeases {
 
 export function currentNeeds(row: RxRow, view: Pick<RxView, 'route' | 'mode'>, leases: NeedsLeases, now: number, identity?: OwnerIdentity): RxNeeds | null {
   const facts = validNeeds(row, view, identity), lease = leases.get(row.decode_id)
-  return facts && lease && lease.deadline > now && lease.evidence === evidenceKey(row, facts) ? facts : null
+  return facts && lease && (facts.display_valid === true || lease.deadline > now) && lease.evidence === evidenceKey(row, facts) ? facts : null
 }
 
 const unknownReasons: Record<string, string> = {

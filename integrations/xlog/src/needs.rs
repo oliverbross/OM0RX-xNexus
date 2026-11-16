@@ -136,12 +136,14 @@ struct AuthorityObservation {
 pub(crate) struct AuthorityState {
     current: Option<AuthorityObservation>,
     last_timestamp: Option<(u64, Instant)>,
+    display: Option<(NeedsAuthority, Arc<AtomicBool>)>,
 }
 #[derive(Clone)]
 struct AuthorityLease {
     metadata: NeedsMetadata,
     expires: Instant,
     live: Arc<AtomicBool>,
+    display_live: Arc<AtomicBool>,
 }
 impl AuthorityLease {
     fn fresh(&self) -> bool {
@@ -150,6 +152,12 @@ impl AuthorityLease {
 }
 impl AuthorityState {
     pub(crate) fn invalidate(&mut self) {
+        if let Some((_, live)) = self.display.take() {
+            live.store(false, Ordering::Release);
+        }
+        self.invalidate_observation();
+    }
+    pub(crate) fn invalidate_observation(&mut self) {
         if let Some(old) = self.current.take() {
             old.live.store(false, Ordering::Release);
         }
@@ -160,20 +168,20 @@ impl AuthorityState {
         now: u64,
     ) -> Result<(), Error> {
         let Some(metadata) = metadata else {
-            self.invalidate();
+            self.invalidate_observation();
             return Ok(());
         };
         let duration = match metadata.lifetime(now) {
             Ok(d) => d,
             Err(e) => {
-                self.invalidate();
+                self.invalidate_observation();
                 return Err(e);
             }
         };
         let mut expires = Instant::now() + duration;
         if let Some((generated, deadline)) = self.last_timestamp {
             if metadata.generated_at_unix_ms < generated {
-                self.invalidate();
+                self.invalidate_observation();
                 return Err(Error::Revision);
             }
             if metadata.generated_at_unix_ms == generated {
@@ -182,8 +190,20 @@ impl AuthorityState {
         }
         self.last_timestamp = Some((metadata.generated_at_unix_ms, expires));
         if Instant::now() >= expires {
-            self.invalidate();
+            self.invalidate_observation();
             return Err(Error::Stale);
+        }
+        // Passive classification is revision-bound, not an audio/query lease.
+        // A missing/temporarily stale observation does not contradict it.
+        if let Some(authority) = &metadata.authority {
+            if self
+                .display
+                .as_ref()
+                .is_none_or(|(old, _)| old != authority)
+            {
+                self.invalidate();
+                self.display = Some((authority.clone(), Arc::new(AtomicBool::new(true))));
+            }
         }
         if let Some(old) = self.current.as_mut() {
             if metadata.same_authority(&old.metadata)
@@ -202,7 +222,7 @@ impl AuthorityState {
                 return Ok(());
             }
         }
-        self.invalidate();
+        self.invalidate_observation();
         self.current = Some(AuthorityObservation {
             metadata: metadata.clone(),
             expires,
@@ -216,6 +236,11 @@ impl AuthorityState {
             metadata: current.metadata.clone(),
             expires: current.expires,
             live: current.live.clone(),
+            display_live: self
+                .display
+                .as_ref()
+                .map(|(_, live)| live.clone())
+                .unwrap_or_else(|| Arc::new(AtomicBool::new(false))),
         };
         if !lease.fresh() {
             return Err(Error::Stale);
@@ -395,6 +420,18 @@ pub struct NeedsBatch {
     facts: Arc<AtomicBool>,
 }
 impl NeedsBatch {
+    /// Last validated read-only facts. This grants no query, audio or TX authority.
+    /// Original deadlines remain unchanged; replacement revisions and explicit
+    /// write/session revocation withdraw this display cache synchronously.
+    pub fn display(&self) -> Result<(&NeedsMetadata, &[NeedsResult]), Error> {
+        if !self.session.load(Ordering::Acquire)
+            || !self.authority.display_live.load(Ordering::Acquire)
+            || self.metadata.authority.is_none()
+        {
+            return Err(Error::Stale);
+        }
+        Ok((&self.metadata, &self.results))
+    }
     pub fn is_fresh(&self) -> bool {
         self.session.load(Ordering::Acquire)
             && self.facts.load(Ordering::Acquire)
@@ -476,6 +513,9 @@ impl NeedsClient {
     pub fn disconnect(&mut self) {
         self.connected = false;
         self.facts.store(false, Ordering::Release);
+        if let Ok(mut state) = self.authority.lock() {
+            state.invalidate();
+        }
     }
     /// One synchronous bounded read. No mutex is held during the request, no retry.
     pub fn query(&mut self, queries: &[NeedsQuery]) -> Result<NeedsBatch, Error> {
@@ -659,6 +699,9 @@ impl NeedsClient {
             // A genuinely changed result authority still withdraws the old
             // identity. A newer different identity already has another Arc.
             lease.live.store(false, Ordering::Release);
+            if metadata.authority.is_some() && metadata.authority != lease.metadata.authority {
+                lease.display_live.store(false, Ordering::Release);
+            }
             return Err(Error::Stale);
         }
         if wire.results.len() != queries.len() {

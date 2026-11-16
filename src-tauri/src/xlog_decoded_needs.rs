@@ -5,9 +5,8 @@
 //! a turn even when earlier facts expire before the next batch completes.
 //! One pending group retries cache misses for at most6 SDK invocations or6s;
 //! ordinary snapshot expiry defers it without resetting those bounds.
-//! At most 200 rows/cache entries survive, while owner leases last at most two
-//! seconds. Older visible rows may therefore remain Unknown: retaining a row
-//! does not promise continuous classification, and cache hits never renew TTL.
+//! At most 200 rows/cache entries survive. Passive facts remain tied to the
+//! owner's revision/session, independently of the short live query deadline.
 use super::Mode;
 use serde::Serialize;
 use std::sync::{Arc, Mutex};
@@ -102,6 +101,8 @@ pub struct View {
     pub max_age_ms: Option<u64>,
     /// Native monotonic remaining lifetime. UI deadlines start BEFORE its IPC request.
     pub remaining_valid_ms: u64,
+    /// Passive classification only; never audio, query or transmit authority.
+    pub display_valid: bool,
 }
 impl Default for View {
     fn default() -> Self {
@@ -120,6 +121,7 @@ impl View {
             generated_at_unix_ms: None,
             max_age_ms: None,
             remaining_valid_ms: 0,
+            display_valid: false,
         }
     }
 }
@@ -136,16 +138,8 @@ impl Fact {
     }
     pub fn view(&self) -> Option<View> {
         let remaining_valid_ms = self.batch.remaining_valid_ms();
-        if remaining_valid_ms == 0 {
-            return None;
-        }
-        let metadata = self.batch.metadata().ok()?;
-        let result = self
-            .batch
-            .results()
-            .ok()?
-            .iter()
-            .find(|r| r.query_id == self.query_id)?;
+        let (metadata, results) = self.batch.display().ok()?;
+        let result = results.iter().find(|r| r.query_id == self.query_id)?;
         Some(View {
             status: result.need.status,
             score: result.need.score,
@@ -156,6 +150,7 @@ impl Fact {
             generated_at_unix_ms: Some(metadata.generated_at_unix_ms),
             max_age_ms: Some(metadata.max_age_ms),
             remaining_valid_ms,
+            display_valid: true,
         })
     }
     pub fn is_fresh(&self) -> bool {
@@ -164,7 +159,7 @@ impl Fact {
         self.batch.remaining_valid_ms() > 0
     }
     pub fn matches(&self, candidate: &Candidate) -> bool {
-        self.batch.results().ok().is_some_and(|results| {
+        self.batch.display().ok().is_some_and(|(_, results)| {
             results.iter().any(|row| {
                 row.query_id == self.query_id
                     && row.normalized_callsign == candidate.callsign

@@ -477,7 +477,9 @@ impl Host {
             reason: if available {
                 s.reason.clone()
             } else {
-                s.context.as_ref().and_then(|c| c.context().reason.clone())
+                s.context
+                    .as_ref()
+                    .and_then(|c| c.context().reason.clone())
                     .unwrap_or_else(|| s.reason.clone())
             },
             mode: s.receive.as_ref().map(|r| match r.period.context.mode {
@@ -963,7 +965,7 @@ fn consume(i: &Arc<Inner>) -> Result<(), String> {
     let incoming = lock(&i.inbox)?.take();
     let now = Instant::now();
     let mut s = lock(&i.state)?;
-    if s.receive.as_ref().is_some_and(|r| !current_rx(i, r)) {
+    if s.receive.as_ref().is_some_and(|r| !same_rx_route(i, r)) {
         i.request_stop();
         s.retain_log();
         s.coordinator = None;
@@ -1444,27 +1446,32 @@ fn start_tune(i: &Arc<Inner>, epoch: u64) -> Result<(), String> {
 
 fn current_rx(i: &Inner, r: &Receive) -> bool {
     lock(&i.rx_authority).is_ok_and(|a| {
-        a.as_ref().is_some_and(|a| {
-            a.is_fresh()
-                && a.descriptor.as_ref().is_some_and(|d| {
-                    d.capture_id == r.period.owner.capture_id
-                        && d.epoch == r.period.owner.epoch
-                        && d.mapping_generation == r.period.owner.mapping_generation
-                        && d.radio_id == r.period.owner.radio_id
-                        && d.receiver_id == r.period.owner.receiver_id
-                        && d.frequency_hz == r.period.owner.frequency_hz
-                        && d.mode == r.period.owner.radio_mode
-                        && d.device_id == r.period.owner.device_id
-                        && d.sample_rate == r.period.owner.sample_rate
-                        && d.source_channels == u16::from(r.period.owner.source_channels)
-                        && d.selected_channel == u16::from(r.period.owner.selected_channel)
-                        && d.slice == r.period.owner.slice
-                        && d.dax_channel == r.period.owner.dax_channel
-                })
-        })
+        a.as_ref()
+            .is_some_and(|a| a.is_fresh() && rx_route_matches(a, r))
     })
 }
-
+// A temporary PCM lease gap cannot erase the original Station/QSO. Admission
+// of Work and newly decoded periods still uses current_rx / is_fresh above.
+fn same_rx_route(i: &Inner, r: &Receive) -> bool {
+    lock(&i.rx_authority).is_ok_and(|a| a.as_ref().is_some_and(|a| rx_route_matches(a, r)))
+}
+fn rx_route_matches(a: &AudioBatch, r: &Receive) -> bool {
+    a.descriptor.as_ref().is_some_and(|d| {
+        d.capture_id == r.period.owner.capture_id
+            && d.epoch == r.period.owner.epoch
+            && d.mapping_generation == r.period.owner.mapping_generation
+            && d.radio_id == r.period.owner.radio_id
+            && d.receiver_id == r.period.owner.receiver_id
+            && d.frequency_hz == r.period.owner.frequency_hz
+            && d.mode == r.period.owner.radio_mode
+            && d.device_id == r.period.owner.device_id
+            && d.sample_rate == r.period.owner.sample_rate
+            && d.source_channels == u16::from(r.period.owner.source_channels)
+            && d.selected_channel == u16::from(r.period.owner.selected_channel)
+            && d.slice == r.period.owner.slice
+            && d.dax_channel == r.period.owner.dax_channel
+    })
+}
 impl Host {
     pub(crate) fn log_draft(&self) -> Result<(String, QsoDraft, String), String> {
         let mut s = lock(&self.inner.state)?;

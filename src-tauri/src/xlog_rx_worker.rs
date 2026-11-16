@@ -152,13 +152,18 @@ impl State {
         if let Some(feed) = &self.ft_feed {
             feed.retire();
         }
+        self.reset_dsp(phase, reason);
+        self.view.route = None;
+        self.view.rows.clear();
+    }
+    // Partial samples and FFTs expire; already decoded text and the operator's
+    // QSO do not. A subsequent different descriptor still takes the hard reset.
+    fn reset_dsp(&mut self, phase: &str, reason: &str) {
         self.epoch = self.epoch.wrapping_add(1);
         self.authority = None;
         self.spectrum = None;
         self.spectrum_mailbox.clear();
-        self.view.route = None;
         self.view.current_context = None;
-        self.view.rows.clear();
         self.view.phase = phase.into();
         self.view.reason = reason.into();
     }
@@ -169,22 +174,20 @@ impl State {
         let running = batch.state == AudioState::Running && batch.is_fresh();
         let reset = batch.reset || !running || self.epoch != poll_epoch;
         if reset {
-            let same_route_gap = running
-                && batch.reset
-                && self.epoch == poll_epoch
-                && self.view.route.is_some()
-                && self.view.route == batch.descriptor;
-            let retained = same_route_gap.then(|| std::mem::take(&mut self.view.rows));
-            self.reset(
-                "waiting",
-                batch.reason.as_deref().unwrap_or(if same_route_gap {
-                    "Audio gap; retaining decoded history and waiting for a complete period."
-                } else {
-                    "Audio route changed; waiting for a complete period."
-                }),
-            );
-            if let Some(rows) = retained {
-                self.view.rows = rows;
+            let changed =
+                running && self.view.route.is_some() && self.view.route != batch.descriptor;
+            if changed {
+                self.reset(
+                    "waiting",
+                    "Audio route changed; waiting for a complete period.",
+                );
+            } else {
+                self.reset_dsp(
+                    "waiting",
+                    batch.reason.as_deref().unwrap_or(
+                        "Audio gap; retaining decoded history and waiting for a complete period.",
+                    ),
+                );
             }
         }
         if running {
@@ -202,7 +205,7 @@ impl State {
             .as_ref()
             .is_some_and(|batch| !batch.is_fresh())
         {
-            self.reset(
+            self.reset_dsp(
                 "waiting",
                 "Audio authority expired; waiting for a fresh complete period.",
             );
@@ -224,7 +227,7 @@ impl State {
         !self.needs_blocked.load(Ordering::Acquire)
             // Historical rows may predate a same-route PCM gap. They remain
             // read-only lookup keys; DSP/FT still require the current epoch.
-            && self.accepts(self.epoch)
+            && self.view.enabled
             && self.view.route.as_ref() == Some(&candidate.context.route)
             && self.view.mode == Some(candidate.context.decoder_mode)
             && self.view.rows.iter().any(|row| {
@@ -453,7 +456,7 @@ impl Worker {
                         state.view.rows.drain(..extra);
                         let _ = needs_wake.try_send(());
                     }
-                    Err(error) => state.reset("waiting", &format!("Decode discarded: {error}")),
+                    Err(error) => state.reset_dsp("waiting", &format!("Decode discarded: {error}")),
                 }
             }
         });
@@ -491,6 +494,13 @@ impl Worker {
                 }
                 let batch = match audio.poll() {
                     Ok(batch) => Arc::new(batch),
+                    Err(xnexus_xlog_client::Error::Transport | xnexus_xlog_client::Error::Stale | xnexus_xlog_client::Error::Http(408 | 429 | 500 | 502 | 503 | 504)) => {
+                        if let Ok(mut state) = poll_state.lock() {
+                            state.reset_dsp("waiting", "Audio temporarily unavailable; retaining decoded history.");
+                        }
+                        std::thread::sleep(Duration::from_millis(40));
+                        continue;
+                    }
                     Err(error) => {
                         if let Ok(mut state) = poll_state.lock() { state.reset("error", &format!("RX stopped: {error}. Start receiving again when xLog RX sharing is ready.")); state.view.enabled = false; }
                         break;
@@ -520,7 +530,7 @@ impl Worker {
                                 Err(mpsc::TrySendError::Full(_)) => {
                                     assembler.reset();
                                     spectrum.reset();
-                                    if let Ok(mut state) = poll_state.lock() { state.reset("waiting", "Decoder backlog discarded; waiting for a complete period."); epoch = state.epoch; }
+                                    if let Ok(mut state) = poll_state.lock() { state.reset_dsp("waiting", "Decoder backlog discarded; waiting for a complete period."); epoch = state.epoch; }
                                     break;
                                 },
                                 Err(mpsc::TrySendError::Disconnected(_)) => {
@@ -532,7 +542,7 @@ impl Worker {
                             Ok(None) => {},
                             Err(error) => {
                                 spectrum.reset();
-                                if let Ok(mut state) = poll_state.lock() { state.reset("waiting", &format!("Audio continuity lost: {error:?}. Waiting for a complete period.")); epoch = state.epoch; }
+                                if let Ok(mut state) = poll_state.lock() { state.reset_dsp("waiting", &format!("Audio continuity lost: {error:?}. Waiting for a complete period.")); epoch = state.epoch; }
                                 break;
                             }
                         }
@@ -802,8 +812,9 @@ fn lookup_loop(
                         if row.candidate().is_some_and(|candidate| {
                             bindings.iter().any(|(key, _)| *key == candidate)
                         }) {
-                            row.fact = None;
-                            row.needs_fallback = reason;
+                            if row.fact.as_ref().and_then(Fact::view).is_none() {
+                                row.needs_fallback = reason;
+                            }
                             row.refresh_needs();
                         }
                     }
@@ -975,7 +986,7 @@ mod tests {
         assert!(!worker.view().unwrap().enabled);
     }
     #[test]
-    fn revoked_owner_authority_discards_rows_and_partial_context() {
+    fn unusable_audio_discards_partial_context_but_retains_read_only_history() {
         let (mut bridge, _audio, batch) = live_authority();
         let mut state = State {
             ft_feed: None,
@@ -1029,8 +1040,8 @@ mod tests {
         bridge.disconnect();
         assert!(state.expire());
         assert_eq!(state.epoch, 4);
-        assert!(state.view.route.is_none());
-        assert!(state.view.rows.is_empty());
+        assert!(state.view.route.is_some());
+        assert_eq!(state.view.rows.len(), 1);
         assert!(!state.accepts(4));
     }
 
@@ -1086,6 +1097,46 @@ mod tests {
                 "worker-workspace".into(),
             ),
         }
+    }
+    #[test]
+    fn recurring_dsp_resets_keep_history_and_facts_until_real_route_change() {
+        let (_audio_owner, _audio, batch) = live_authority();
+        let mut state = state(batch.clone());
+        state.view.rows.push(row(&state, "history_a", "K1ABC"));
+        let candidate = state.view.rows[0].candidate().unwrap();
+        let (owner, _needs, facts) = needs_batch(&[query(&candidate)], 2000);
+        assert!(state.attach(
+            &candidate,
+            Fact::new(facts, candidate.decode_id.clone()).unwrap()
+        ));
+        for reason in [
+            "Audio authority expired",
+            "Audio continuity lost",
+            "Decoder backlog discarded",
+        ] {
+            let epoch = state.epoch;
+            state.reset_dsp("waiting", reason);
+            state.refresh_needs();
+            assert!(!state.accepts(epoch));
+            assert_eq!(state.view.rows[0].decode_id, "history_a");
+            assert_eq!(
+                state.view.rows[0].needs.status,
+                xnexus_xlog_client::NeedStatus::Needed
+            );
+            assert!(state.view.rows[0].needs.display_valid);
+            assert!(state.view.current_context.is_none());
+            state.observe_audio(&batch, epoch);
+            assert!(state.contains(&candidate));
+        }
+        owner.invalidate_needs();
+        state.refresh_needs();
+        assert_eq!(state.view.rows.len(), 1);
+        assert_eq!(
+            state.view.rows[0].needs.status,
+            xnexus_xlog_client::NeedStatus::Unknown
+        );
+        state.reset("waiting", "Real frequency/route replacement");
+        assert!(state.view.rows.is_empty());
     }
     #[test]
     fn same_route_gap_keeps_history_but_retires_old_dsp_epoch() {
@@ -1354,7 +1405,10 @@ mod tests {
         assert!(!state.attach(&b, fact_b.clone()));
         state.view.mode = Some(Mode::FT8);
         state.epoch += 1;
-        assert!(!state.attach(&b, fact_b));
+        assert!(
+            state.attach(&b, fact_b),
+            "historical lookup is not a DSP epoch admission"
+        );
     }
     #[test]
     fn cached_facts_keep_original_ttl_and_parent_revocation() {
@@ -1370,10 +1424,14 @@ mod tests {
         changed.context.route.mapping_generation += 1;
         assert!(cache.find(&changed).is_none());
         let deadline = Instant::now() + Duration::from_secs(1);
-        while fact.view().is_some() && Instant::now() < deadline {
+        while fact.is_fresh() && Instant::now() < deadline {
             std::thread::sleep(Duration::from_millis(10));
         }
         assert!(cache.find(&candidate).is_none());
+        assert!(
+            fact.view().is_some(),
+            "passive facts survive the live cache TTL"
+        );
         owner.disconnect();
         let (mut owner, _needs, facts) = needs_batch(&[query(&candidate)], 2000);
         let fact = Fact::new(facts, candidate.decode_id.clone()).unwrap();
