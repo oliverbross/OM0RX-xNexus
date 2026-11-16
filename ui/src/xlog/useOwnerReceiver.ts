@@ -37,7 +37,7 @@ export function useOwnerReceiver(scope: Scope, api: RxApi = rxApi) {
   current.current = { api, key, scope }
   const visible = held.api === api && held.scope === key && scope.connected && scope.audioCapable
   const view = visible ? held.view : rxOff
-  const leases = visible && scope.fresh && scope.needsCapable && !pending
+  const leases = visible && scope.fresh && scope.needsCapable && !pending && !pollError
     ? held.leases : new Map<string, { evidence: string; deadline: number }>()
 
   useEffect(() => {
@@ -45,10 +45,10 @@ export function useOwnerReceiver(scope: Scope, api: RxApi = rxApi) {
     return () => clearInterval(timer)
   }, [])
   useEffect(() => {
-    if (!scope.fresh || !scope.needsCapable) {
+    if (!scope.needsCapable) {
       setHeld(old => ({ ...old, leases: revokeNeeds(old.leases) }))
     }
-  }, [scope.fresh, scope.needsCapable])
+  }, [scope.needsCapable])
 
   function accept(next: RxView, started: number, acceptKey: string, acceptApi: RxApi) {
     const admitted = current.current
@@ -57,7 +57,7 @@ export function useOwnerReceiver(scope: Scope, api: RxApi = rxApi) {
       const previous = old.api === acceptApi && old.scope === acceptKey ? old.leases : new Map()
       const nextLeases = receiveNeeds(previous, next, started, admitted.scope.owner ?? undefined)
       return { api: acceptApi, scope: acceptKey, view: next,
-        leases: admitted.scope.fresh && admitted.scope.needsCapable && !pendingAction.current
+        leases: admitted.scope.needsCapable && !pendingAction.current
           ? nextLeases : revokeNeeds(nextLeases) }
     })
     if (next.mode) setMode(next.mode)
@@ -80,7 +80,8 @@ export function useOwnerReceiver(scope: Scope, api: RxApi = rxApi) {
       } catch (error) {
         if (token !== generation.current) return
         if (sequence === action.current) {
-          setHeld(old => ({ ...old, leases: revokeNeeds(old.leases) }))
+          // A failed read hides facts for this observation, but cannot revoke
+          // a still-valid earlier response or extend its original deadline.
           setPollError(errorText(error))
         }
       }

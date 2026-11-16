@@ -64,20 +64,25 @@ describe('original receiver lifecycle', () => {
     expect(api.start).toHaveBeenCalledOnce()
   })
 
-  it('revokes needs on status failure, retains decode history and never revives identical expired evidence', async () => {
-    vi.useFakeTimers(); vi.spyOn(performance, 'now').mockReturnValue(100)
+  it('recovers valid facts after a short read failure without extending their original deadline', async () => {
+    vi.useFakeTimers(); let at = 100
+    vi.spyOn(performance, 'now').mockImplementation(() => at)
     const api = source(), ownerScope = scope(), view = received()
     vi.mocked(api.status).mockResolvedValueOnce(view).mockRejectedValueOnce(Error('Synthetic RX status unavailable')).mockResolvedValue(view)
     const { result } = renderHook(() => useOwnerReceiver(ownerScope, api))
     await act(async () => {})
-    const facts = () => currentNeeds(result.current.view.rows[0], result.current.view, result.current.leases, 100, ownerScope.owner)
+    const facts = () => currentNeeds(result.current.view.rows[0], result.current.view, result.current.leases, at, ownerScope.owner)
     expect(facts()?.status).toBe('needed')
-    await act(async () => { await vi.advanceTimersByTimeAsync(500) })
+    const deadline = 100 + view.rows[0].needs.remaining_valid_ms
+    at = 350; await act(async () => { await vi.advanceTimersByTimeAsync(500) })
     expect(result.current.pollError).toBe('Synthetic RX status unavailable')
     expect(result.current.view.rows[0].decode_id).toBe(view.rows[0].decode_id)
     expect(facts()).toBeNull()
-    await act(async () => { await vi.advanceTimersByTimeAsync(500) })
+    at = 600; await act(async () => { await vi.advanceTimersByTimeAsync(500) })
     expect(result.current.pollError).toBe('')
+    expect(facts()?.status).toBe('needed')
+    expect(result.current.leases.get(view.rows[0].decode_id)?.deadline).toBe(deadline)
+    at = deadline + 1
     expect(facts()).toBeNull()
     expect(api.start).not.toHaveBeenCalled()
   })
@@ -92,5 +97,22 @@ describe('original receiver lifecycle', () => {
     expect(result.current.view.rows).toEqual([])
     expect(result.current.leases.size).toBe(0)
     expect(b.start).not.toHaveBeenCalled()
+  })
+})
+describe('temporary owner observation gaps', () => {
+  it('hides facts during a freshness gap but preserves only their original unexpired lease', async () => {
+    vi.useFakeTimers(); let at = 100
+    vi.spyOn(performance, 'now').mockImplementation(() => at)
+    const api = source(), initial = scope(), view = received()
+    vi.mocked(api.status).mockResolvedValue(view)
+    const { result, rerender } = renderHook(value => useOwnerReceiver(value, api), {initialProps:initial})
+    await act(async () => {})
+    const original = result.current.leases.get(view.rows[0].decode_id)?.deadline
+    rerender({...initial, fresh:false})
+    at=350; await act(async () => {await vi.advanceTimersByTimeAsync(500)})
+    expect(result.current.leases.size).toBe(0)
+    rerender(initial); await act(async () => {})
+    expect(result.current.leases.get(view.rows[0].decode_id)?.deadline).toBe(original)
+    expect(currentNeeds(result.current.view.rows[0], result.current.view, result.current.leases, at, initial.owner)?.status).toBe('needed')
   })
 })
