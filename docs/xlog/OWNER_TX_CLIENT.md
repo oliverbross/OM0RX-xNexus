@@ -1,5 +1,59 @@
 # Owner-mediated digital TX client
 
+## Prepare admission and native failure recovery (2026-11-17)
+
+The native preparer now obtains a fresh authenticated owner context after building
+the immutable body. `prepare_with_context` accepts it only when every context
+field except the generation timestamp matches the original context. The existing
+`prepare` method retains its original deadline semantics. Both use the same
+once-only dispatch marker; neither retries or retargets an operation.
+
+After a completed prepare call, a false dispatch marker permits removal of only
+the exact locally bound, never-started operation. A failure before binding cancels
+only the exact unbound plan. Station state and slot high-water marks remain;
+transport failures after dispatch retain the original release obligation. The
+first prepare error remains visible instead of being overwritten by a later
+missing-receipt message. Explicit actions refresh the coordinator before applying
+Work/parity, so a fresh owner response is not rejected by an older local deadline.
+
+Qualification used actual SDK/native modules on base
+`8993f4ced31f8da696e6cb81b284d6e1d09263e8`, GNU Rust 1.93.1 and a fake loopback
+owner. Four unchanged focused cases passed: never-dispatched cleanup without slot
+replay; dispatched transport failure retaining exact release and first reason;
+expired original admission followed by one matching fresh admission (changed
+route/limits rejected); and post-body context failure followed by a new explicit
+Work. No application, hardware, RF, full Cargo suite, Clippy or package gate ran.
+
+Evidence is retained under the task worktree's
+`target/prepare-dispatch-refresh-attempt-7a3ede45b8994a71b955341289b79224`:
+
+| Record | SHA256 |
+| --- | --- |
+| Inputs | `3DCAA0832F2C97453CFCC68A7AD3684CBEFE0DC02D200FF4ACC2E467C8AB3B19` |
+| Receipt | `12D4D525318909E619CE8BB8D8F05545A7C8F6F2F8744DBD70D3BD39D1767D78` |
+| Checks | `ABB2E9A661887155616F808E5D76BC7EB3CC32E55229B0A5EC0C58F961C148CB` |
+| Guard | `807C6C516A300FFC3BB557FCB28108CA4CDF63001743EA799E1ABA7867C4B32B` |
+
+The 2 GiB/300 s guard used 8/6 GiB admission, 2/2 GiB runtime floors, one
+BelowNormal compiler and a five-second natural drain bound. Root/final exit was
+0, final active count 0, natural drain 22 ms and peak job memory 986,320,896 bytes;
+all source/tool/dependency hashes remained unchanged. SDK and prepare artifacts
+were reused from the first attempt. Contrary to the proposal's native-only
+description, its pinned child also redundantly rebuilt the RX library at the
+retained path; its bytes remained exactly
+`A193615A9F534A06DE6B30A6292E83CAAB91095042256FE1ED0B0F613C775121`.
+This is not a claim that the RX artifact was read-only during the run.
+
+The first attempt remains preserved at
+`target/prepare-dispatch-attempt-2b16cc64019f480189836a5d26c7a990`, receipt
+`7DB6CF1DD3B05C3447BD77A2F592E51CA1834EF651BBFFDE53934350793D989E`.
+Two explicitly labeled mechanical old-behavior variants reproduced the lifecycle
+failures; they were not exact installed-source builds. Three green cases passed,
+but the fourth exposed `Expired` before the existing coordinator refresh. Moving
+that refresh before action matching fixed the failure without changing the four
+tests. The failed receipt and original red evidence are unchanged; no automatic
+retry or resource-limit increase occurred. The application version is unchanged.
+
 This SDK slice provides authenticated transport and immutable owner receipt
 evidence. It does not encode, schedule audio, open devices, assert PTT, or prove
 RF transmission. Native integration and owner backend qualification are separate.

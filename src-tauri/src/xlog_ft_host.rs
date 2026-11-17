@@ -301,6 +301,7 @@ impl Runtime {
 struct Active {
     stop_client: Arc<xnexus_xlog_client::tx::TxStopClient>,
     query_ready: bool,
+    prepare_error: Option<String>,
     operation: Arc<PreparedOperation>,
     native: Option<kernel::Operation>,
     stop_event: String,
@@ -505,7 +506,9 @@ impl Host {
             tx_cycle_auto: s.config.cycle_auto,
             armed: available && v.as_ref().is_some_and(|v| v.armed),
             phase: s.phase.clone(),
-            reason: if available {
+            reason: if let Some(reason) = active.as_ref().and_then(|a| a.prepare_error.clone()) {
+                reason
+            } else if available {
                 s.reason.clone()
             } else {
                 s.context
@@ -680,6 +683,20 @@ impl Host {
         if lock(&self.inner.active)?.is_some() || self.inner.preparing.load(Ordering::Acquire) {
             return Err("Stop the current operation before changing its intent".into());
         }
+        if let (Some(key), Some(current)) = (s.key.clone(), s.context.clone()) {
+            let remaining = current.remaining_valid_ms();
+            if remaining == 0 {
+                return Err("Owner TX context expired".into());
+            }
+            if let Some(c) = s.coordinator.as_mut() {
+                c.refresh(
+                    &key,
+                    Instant::now() + Duration::from_millis(remaining),
+                    Instant::now(),
+                )
+                .map_err(error)?;
+            }
+        }
         let intent = match action {
             Action::Offset { hz } => {
                 if !hz.is_finite() || !(100.0..=4900.0).contains(&hz) {
@@ -815,20 +832,6 @@ impl Host {
             _ => None,
         };
         if let Some(intent) = intent {
-            if let (Some(key), Some(current)) = (s.key.clone(), s.context.clone()) {
-                let remaining = current.remaining_valid_ms();
-                if remaining == 0 {
-                    return Err("Owner TX context expired".into());
-                }
-                if let Some(c) = s.coordinator.as_mut() {
-                    c.refresh(
-                        &key,
-                        Instant::now() + Duration::from_millis(remaining),
-                        Instant::now(),
-                    )
-                    .map_err(error)?;
-                }
-            }
             let newqso = matches!(
                 intent,
                 kernel::Intent::Cq | kernel::Intent::CqDirected(_) | kernel::Intent::Work { .. }
@@ -1357,6 +1360,20 @@ fn prepare_operation(
     cfg: Config,
     epoch: u64,
 ) -> Result<(), String> {
+    let result = prepare_operation_inner(i, &plan, cfg, epoch);
+    if result.is_err() {
+        if let Some(c) = lock(&i.state)?.coordinator.as_mut() {
+            c.discard_unbound(&plan).map_err(error)?;
+        }
+    }
+    result
+}
+fn prepare_operation_inner(
+    i: &Inner,
+    plan: &kernel::Plan,
+    cfg: Config,
+    epoch: u64,
+) -> Result<(), String> {
     let source = plan.prepare(cfg.offset).map_err(error)?;
     let output = xlog_ft_output::prepare(&source, cfg.gain, plan.deadline()).map_err(error)?;
     if epoch != i.epoch.load(Ordering::Acquire) {
@@ -1386,46 +1403,33 @@ fn prepare_operation(
             .build_prepared(&c, descriptor, output.pcm())
             .map_err(|e| format!("SDK body validation: {e:?}; admission {before_build_ms}ms"))?,
     );
-    let stop_client = Arc::new(i.client.stop_handle(&prepared).map_err(error)?);
-    let stop_event = uuid()?;
-    let native = kernel::Operation {
-        key: plan.key().clone(),
-        id: prepared.key().operation_id.clone(),
-        body_digest: prepared.key().body_digest,
-    };
-    let reservation = Reservation::acquire()?;
-    {
-        let mut s = lock(&i.state)?;
+    let admission = {
+        let _lane = lock(&i.context_lane)?;
+        let current = i.action_context()?;
         if epoch != i.epoch.load(Ordering::Acquire) {
-            OPERATION_HELD.store(false, Ordering::Release);
-            return Err("Preparation cancelled".into());
+            return Err("Preparation owner changed before dispatch".into());
         }
-        if let Err(e) = s.coordinator.as_mut().ok_or("Coordinator retired")?.bind(
-            &plan,
-            native.clone(),
-            Instant::now(),
-        ) {
-            OPERATION_HELD.store(false, Ordering::Release);
-            return Err(error(e));
-        }
-        *lock(&i.active)? = Some(Active {
-            stop_client,
-            query_ready: false,
-            operation: prepared.clone(),
-            native: Some(native),
-            stop_event,
-            start_delivered: false,
-            terminal: false,
-        });
-    }
-    reservation.published();
-    let before_dispatch_ms = c.remaining_valid_ms();
-    let result = i.client.prepare(&prepared);
-    if let Some(a) = lock(&i.active)?.as_mut() {
-        a.query_ready = true;
-    }
-    let receipt = result.map_err(|e| format!("SDK prepare dispatch: {e:?}; body admission {before_build_ms}ms, dispatch {before_dispatch_ms}ms"))?;
-    apply_proof(i, receipt)?;
+        let mut s = lock(&i.state)?;
+        let key = s.key.clone().ok_or("Coordinator retired")?;
+        s.coordinator
+            .as_mut()
+            .ok_or("Coordinator retired")?
+            .refresh(
+                &key,
+                Instant::now() + Duration::from_millis(current.remaining_valid_ms()),
+                Instant::now(),
+            )
+            .map_err(error)?;
+        current
+    }; // Never hold the heartbeat lane during prepare HTTP or release.
+    publish_and_prepare(
+        i,
+        &plan,
+        prepared.clone(),
+        epoch,
+        before_build_ms,
+        &admission,
+    )?;
     if epoch != i.epoch.load(Ordering::Acquire) {
         return Err("Prepared operation cancelled; release pending".into());
     }
@@ -1441,6 +1445,91 @@ fn prepare_operation(
         .commit(&c, &prepared, &uuid()?)
         .map_err(|e| format!("SDK commit: {e:?}; remaining {}ms", c.remaining_valid_ms()))?;
     apply_proof(i, receipt)
+}
+// Actual production publication/dispatch boundary, also exercised by the fake-owner regression.
+fn publish_and_prepare(
+    i: &Inner,
+    plan: &kernel::Plan,
+    prepared: Arc<PreparedOperation>,
+    epoch: u64,
+    before_build_ms: u64,
+    admission: &ContextLease,
+) -> Result<(), String> {
+    let stop_client = Arc::new(i.client.stop_handle(&prepared).map_err(error)?);
+    let stop_event = uuid()?;
+    let native = kernel::Operation {
+        key: plan.key().clone(),
+        id: prepared.key().operation_id.clone(),
+        body_digest: prepared.key().body_digest,
+    };
+    let reservation = Reservation::acquire()?;
+    {
+        let mut s = lock(&i.state)?;
+        if epoch != i.epoch.load(Ordering::Acquire) {
+            OPERATION_HELD.store(false, Ordering::Release);
+            return Err("Preparation cancelled".into());
+        }
+        if let Err(e) = s.coordinator.as_mut().ok_or("Coordinator retired")?.bind(
+            plan,
+            native.clone(),
+            Instant::now(),
+        ) {
+            OPERATION_HELD.store(false, Ordering::Release);
+            return Err(error(e));
+        }
+        *lock(&i.active)? = Some(Active {
+            stop_client,
+            query_ready: false,
+            prepare_error: None,
+            operation: prepared.clone(),
+            native: Some(native),
+            stop_event,
+            start_delivered: false,
+            terminal: false,
+        });
+    }
+    reservation.published();
+    let before_dispatch_ms = admission.remaining_valid_ms();
+    let result = i.client.prepare_with_context(admission, &prepared);
+    let receipt = match result {
+        Ok(receipt) => {
+            if let Some(a) = lock(&i.active)?.as_mut() {
+                if a.operation.key() == prepared.key() {
+                    a.query_ready = true;
+                }
+            }
+            receipt
+        }
+        Err(e) => {
+            let reason = format!("SDK prepare dispatch: {e:?}; body admission {before_build_ms}ms, dispatch {before_dispatch_ms}ms");
+            // The exclusive initial send has returned. Only a false conservative
+            // SDK dispatch marker permits local cancellation; transport uncertainty
+            // retains the exact operation and its independent Stop path.
+            let mut s = lock(&i.state)?;
+            let mut active = lock(&i.active)?;
+            if let Some(a) = active
+                .as_mut()
+                .filter(|a| a.operation.key() == prepared.key())
+            {
+                a.prepare_error = Some(reason.clone());
+                if !prepared.initial_dispatch_attempted() {
+                    if let (Some(c), Some(native)) = (s.coordinator.as_mut(), a.native.as_ref()) {
+                        if c.stop_handle().release().map_err(error)?.as_deref() == Some(native) {
+                            c.discard_not_dispatched(native).map_err(error)?;
+                        }
+                    }
+                    *active = None;
+                    OPERATION_HELD.store(false, Ordering::Release);
+                } else {
+                    a.query_ready = true;
+                }
+            }
+            s.reason = reason.clone();
+            return Err(reason);
+        }
+    };
+    apply_proof(i, receipt)?;
+    Ok(())
 }
 fn start_tune(i: &Arc<Inner>, epoch: u64) -> Result<(), String> {
     let c = i.current()?;
@@ -1472,6 +1561,7 @@ fn start_tune(i: &Arc<Inner>, epoch: u64) -> Result<(), String> {
     *lock(&i.active)? = Some(Active {
         stop_client,
         query_ready: false,
+        prepare_error: None,
         operation: op.clone(),
         native: None,
         stop_event,
