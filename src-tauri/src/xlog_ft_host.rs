@@ -383,6 +383,29 @@ impl Inner {
         }
         Ok(c)
     }
+    // Called under context_lane by an explicit operator action. A cached view
+    // is not authority for refusing an operator intent: read the owner now.
+    fn action_context(&self) -> Result<Arc<ContextLease>, String> {
+        if !self.connected.load(Ordering::Acquire) {
+            return Err("FT connection retired".into());
+        }
+        let c = Arc::new(self.client.context().map_err(error)?);
+        let mut s = lock(&self.state)?;
+        if s.context.as_ref().is_some_and(|old| {
+            old.context().binding != c.context().binding
+                || old.context().identity != c.context().identity
+                || old.context().route != c.context().route
+        }) {
+            self.request_stop();
+            s.retain_log();
+            s.coordinator = None;
+            s.key = None;
+            s.receive = None;
+            s.retained.clear();
+        }
+        s.context = Some(c.clone());
+        Ok(c)
+    }
 }
 impl Host {
     pub(crate) fn attach(
@@ -611,7 +634,6 @@ impl Host {
             }
         }
         let epoch = self.inner.epoch.load(Ordering::Acquire);
-        let lease = self.inner.current()?;
         let arms = matches!(
             action,
             Action::Cq { .. }
@@ -627,6 +649,7 @@ impl Host {
         }
         if arms {
             let _lane = lock(&self.inner.context_lane)?;
+            let lease = self.inner.action_context()?;
             let enabled = self
                 .inner
                 .client
@@ -642,6 +665,9 @@ impl Host {
             // Publish the requested latch before releasing the context command lane.
             // Heartbeat must not undo an enable between HTTP and local intent admission.
             self.inner.future_disarmed.store(false, Ordering::Release);
+        } else {
+            let _lane = lock(&self.inner.context_lane)?;
+            self.inner.action_context()?;
         }
         if matches!(action, Action::Tune { enabled: true }) {
             start_tune(&self.inner, epoch)?;
@@ -712,7 +738,7 @@ impl Host {
                     .receive
                     .as_ref()
                     .ok_or("No current native decoded period")?;
-                if !current_rx(&self.inner, r) {
+                if !current_work_route(&self.inner, r) {
                     return Err("Selected decode authority expired".into());
                 }
                 if s.rx_epoch != self.inner.rx_epoch.load(Ordering::Acquire) {
@@ -724,7 +750,11 @@ impl Host {
                     .find(|(id, _, _)| id == &decode_id)
                     .ok_or("Selected decode is no longer retained")?;
                 let period = period.clone();
-                if period.context != r.period.context || period.owner != r.period.owner {
+                let current = s.key.as_ref().ok_or("No current station context")?;
+                let mut selected = current.clone();
+                selected.receive = period.context.clone();
+                selected.owner = period.owner.clone();
+                if !current.same_station(&selected) {
                     return Err("Selected decode context changed".into());
                 }
                 let row = period.rows.get(*n).ok_or("Selected decode unavailable")?;
@@ -935,6 +965,7 @@ fn heartbeat_loop(i: Arc<Inner>) {
             }
             Err(e) => i.fail(format!("TX context unavailable: {e}")),
         }
+        drop(_lane);
         let delay = Duration::from_millis(200).saturating_sub(before.elapsed());
         std::thread::sleep(delay);
     }
@@ -970,6 +1001,12 @@ fn kernel_context(i: &Inner, c: &ContextLease, r: &Receive) -> Result<kernel::Co
     })
 }
 fn consume(i: &Arc<Inner>) -> Result<(), String> {
+    // enable/heartbeat may invalidate the old SDK lease before its replacement
+    // is published. Skip this observation, without dropping the queued period
+    // or cancelling intent. This never blocks the independent Stop/release lane.
+    let Ok(_lane) = i.context_lane.try_lock() else {
+        return Ok(());
+    };
     let incoming = lock(&i.inbox)?.take();
     let now = Instant::now();
     let mut s = lock(&i.state)?;
@@ -1461,14 +1498,17 @@ fn start_tune(i: &Arc<Inner>, epoch: u64) -> Result<(), String> {
     }
 }
 
-fn current_rx(i: &Inner, r: &Receive) -> bool {
+// An explicit Work gesture selects retained message data, not a new decoded
+// period. A repaired sample stream must still belong to the same physical route.
+fn current_work_route(i: &Inner, r: &Receive) -> bool {
     lock(&i.rx_authority).is_ok_and(|a| {
         a.as_ref()
-            .is_some_and(|a| a.is_fresh() && rx_route_matches(a, r, true))
+            .is_some_and(|a| a.is_fresh() && rx_route_matches(a, r, false))
     })
 }
 // A temporary PCM lease gap cannot erase the original Station/QSO. Admission
-// of Work and newly decoded periods still uses current_rx / is_fresh above.
+// of Work still needs fresh physical authority; new periods retain their own
+// exact stream/epoch admission in the decoder and SDK.
 fn same_rx_route(i: &Inner, r: &Receive) -> bool {
     lock(&i.rx_authority).is_ok_and(|a| a.as_ref().is_some_and(|a| rx_route_matches(a, r, false)))
 }

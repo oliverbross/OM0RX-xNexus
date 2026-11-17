@@ -12,6 +12,7 @@ const W: &str = "22222222-2222-4222-8222-222222222222";
 const C: &str = "33333333-3333-4333-8333-333333333333";
 const K: &str = "44444444-4444-4444-8444-444444444444";
 struct FakeState {
+    ready: AtomicBool,
     audio_generation: AtomicU64,
     enabled: AtomicBool,
     receipt: Mutex<Option<Value>>,
@@ -38,6 +39,7 @@ impl Fake {
         listener.set_nonblocking(true).unwrap();
         let url = format!("http://{}", listener.local_addr().unwrap());
         let state = Arc::new(FakeState {
+            ready: AtomicBool::new(true),
             audio_generation: AtomicU64::new(1),
             enabled: AtomicBool::new(false),
             receipt: Mutex::new(None),
@@ -91,7 +93,7 @@ impl Drop for Fake {
     }
 }
 fn context(state: &FakeState) -> Value {
-    json!({"schema_version":1,"binding":{"server_instance":S,"workspace_id":W,"context_id":C,"clock_epoch":K},"ready":true,"reason":null,"local_enabled":true,"client_enabled":state.enabled.load(Ordering::Acquire),"identity":{"mycall":"K1ABC","mygrid":"FN42","worker_generation":1,"settings_revision":1,"identity_epoch":C,"identity_revision":1},"route":{"radio_id":"radio","receiver_id":"A","transmit_slice":"A","device_id":"synthetic-output","route_epoch":K,"sample_rate_hz":48000,"channels":2,"selected_channels":[0],"frequency_hz":14074000,"radio_mode":"DIGU"},"generated_at_unix_ms":wall_us().unwrap()/1000,"max_age_ms":1000,"heartbeat_interval_ms":200,"heartbeat_timeout_ms":1000,"max_prepare_bytes":4194304,"min_offset_hz":100,"max_offset_hz":5000,"max_abs_sample_f32_bits":0.95f32.to_bits()})
+    json!({"schema_version":1,"binding":{"server_instance":S,"workspace_id":W,"context_id":C,"clock_epoch":K},"ready":state.ready.load(Ordering::Acquire),"reason":if state.ready.load(Ordering::Acquire){None}else{Some("not_ready")},"local_enabled":true,"client_enabled":state.enabled.load(Ordering::Acquire),"identity":{"mycall":"K1ABC","mygrid":"FN42","worker_generation":1,"settings_revision":1,"identity_epoch":C,"identity_revision":1},"route":{"radio_id":"radio","receiver_id":"A","transmit_slice":"A","device_id":"synthetic-output","route_epoch":K,"sample_rate_hz":48000,"channels":2,"selected_channels":[0],"frequency_hz":14074000,"radio_mode":"DIGU"},"generated_at_unix_ms":wall_us().unwrap()/1000,"max_age_ms":1000,"heartbeat_interval_ms":200,"heartbeat_timeout_ms":1000,"max_prepare_bytes":4194304,"min_offset_hz":100,"max_offset_hz":5000,"max_abs_sample_f32_bits":0.95f32.to_bits()})
 }
 fn serve(mut stream: TcpStream, state: &FakeState) {
     stream.set_nonblocking(false).unwrap();
@@ -467,7 +469,7 @@ fn temporary_audio_expiry_preserves_qso_but_not_work_admission() {
     assert!(lock(&host.inner.state).unwrap().coordinator.is_none());
 }
 #[test]
-fn capture_repair_preserves_qso_log_and_exact_pending_release_but_not_old_work() {
+fn capture_repair_preserves_qso_log_and_rejects_work_while_release_is_pending() {
     let (fake, _bridge, host, mut audio) = setup();
     let original = accepted(&host, &mut audio);
     host.action(Action::Work {
@@ -533,6 +535,141 @@ fn capture_repair_preserves_qso_log_and_exact_pending_release_but_not_old_work()
         operation.key.context.owner.capture_id,
         repaired.owner.capture_id
     );
+}
+#[test]
+fn explicit_work_selects_retained_message_after_stream_repair_not_other_station() {
+    let (fake, _bridge, host, mut audio) = setup();
+    let original = accepted(&host, &mut audio);
+    fake.state.audio_generation.store(2, Ordering::Release);
+    let repaired = accepted_generation(
+        &host,
+        &mut audio,
+        2,
+        Some(original.host_period_start_unix_us + 7_500_000),
+    );
+    assert_ne!(original.owner.capture_id, repaired.owner.capture_id);
+    assert_ne!(original.owner.epoch, repaired.owner.epoch);
+    assert_ne!(
+        original.owner.mapping_generation,
+        repaired.owner.mapping_generation
+    );
+    host.action(Action::Work {
+        decode_id: "native-row".into(),
+    })
+    .unwrap();
+    assert_eq!(host.view().unwrap().dx_call.as_deref(), Some("W9XYZ"));
+    assert!(host.view().unwrap().armed);
+    assert_eq!(host.view().unwrap().tx_count, 0);
+    assert!(host.view().unwrap().operation_id.is_none());
+    assert_eq!(
+        lock(&host.inner.state)
+            .unwrap()
+            .key
+            .as_ref()
+            .unwrap()
+            .receive,
+        repaired.context
+    );
+
+    // The selected record is never published again as a decoded period, nor
+    // allowed to borrow current authority for another physical station/mode.
+    for change in 0..6 {
+        let mut row = NativeDecodedPeriod {
+            context: original.context.clone(),
+            owner: original.owner.clone(),
+            host_period_start_unix_us: original.host_period_start_unix_us,
+            frame_time_ms: original.frame_time_ms,
+            clock: original.clock.clone(),
+            rows: original.rows.clone(),
+        };
+        match change {
+            0 => {
+                row.context.dial_hz += 1000;
+                row.owner.frequency_hz += 1000;
+            }
+            1 => row.context.mode = DecoderMode::Ft8,
+            2 => row.owner.workspace_id = C.into(),
+            3 => row.owner.device_id = "different-input".into(),
+            4 => {
+                row.context.radio_id = "another-radio".into();
+                row.owner.radio_id = "another-radio".into();
+            }
+            _ => {
+                row.context.receiver_id = "B".into();
+                row.owner.receiver_id = "B".into();
+            }
+        }
+        lock(&host.inner.state).unwrap().retained.push_back((
+            "other-station".into(),
+            Arc::new(row),
+            0,
+        ));
+        assert_eq!(
+            host.action(Action::Work {
+                decode_id: "other-station".into()
+            })
+            .unwrap_err(),
+            "Selected decode context changed"
+        );
+        lock(&host.inner.state).unwrap().retained.pop_back();
+    }
+    assert_eq!(host.view().unwrap().dx_call.as_deref(), Some("W9XYZ"));
+    host.feed().retire();
+    assert!(host
+        .action(Action::Work {
+            decode_id: "native-row".into()
+        })
+        .is_err());
+}
+#[test]
+fn enable_context_publication_does_not_cancel_operator_intent() {
+    let (_fake, _bridge, host, mut audio) = setup();
+    accepted(&host, &mut audio);
+    let epoch = host.inner.epoch.load(Ordering::Acquire);
+    let lane = lock(&host.inner.context_lane).unwrap();
+    let old = host.inner.current().unwrap();
+    let enabled = host
+        .inner
+        .client
+        .enable(&old, &uuid().unwrap(), true)
+        .unwrap();
+    assert!(!old.is_fresh(), "actual SDK retires the old disabled lease");
+    assert!(enabled.is_fresh());
+    consume(&host.inner).unwrap();
+    assert_eq!(host.inner.epoch.load(Ordering::Acquire), epoch);
+    assert!(!host.inner.stop_requested.load(Ordering::Acquire));
+    lock(&host.inner.state).unwrap().context = Some(Arc::new(enabled));
+    drop(lane);
+    consume(&host.inner).unwrap();
+    assert_eq!(host.inner.epoch.load(Ordering::Acquire), epoch);
+    host.action(Action::Enable { enabled: true }).unwrap();
+    assert!(host.view().unwrap().armed);
+    assert!(!host.view().unwrap().keyed);
+    assert!(host.view().unwrap().operation_id.is_none());
+}
+#[test]
+fn explicit_enable_fetches_current_owner_context_after_cached_view_expires() {
+    let (fake, _bridge, host, mut audio) = setup();
+    accepted(&host, &mut audio);
+    fake.state.ready.store(false, Ordering::Release);
+    let unavailable = Arc::new(host.inner.client.context().unwrap());
+    assert!(unavailable.is_fresh());
+    assert!(!unavailable.context().ready);
+    lock(&host.inner.state).unwrap().context = Some(unavailable);
+    assert!(!host.view().unwrap().available);
+    fake.state.ready.store(true, Ordering::Release);
+    host.action(Action::Enable { enabled: true }).unwrap();
+    assert!(host.view().unwrap().armed);
+    let old = host.inner.current().unwrap();
+    thread::sleep(Duration::from_millis(1050));
+    assert!(!old.is_fresh());
+    assert!(!host.view().unwrap().available);
+    host.action(Action::Enable { enabled: true }).unwrap();
+    assert!(!old.is_fresh(), "old observation was not extended");
+    assert!(host.view().unwrap().armed);
+    assert!(host.view().unwrap().available);
+    assert!(!host.view().unwrap().keyed);
+    assert!(host.view().unwrap().operation_id.is_none());
 }
 #[test]
 fn native_record_mailbox_work_auto_parity_hold_and_retirement() {
