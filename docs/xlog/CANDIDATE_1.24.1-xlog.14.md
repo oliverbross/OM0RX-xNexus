@@ -48,3 +48,50 @@ package supplies TypeScript/native integration checks, followed by current stati
 artifact audit and independent non-overwriting retention. Installation and normal
 operator verification remain pending. No live TX, on-air success, complete product
 acceptance or public release is claimed; earlier candidates and receipts remain.
+
+## Package, installation and pending live acceptance
+
+Canonical Nexus `.14` built exact source
+`2dbbdb2d23718437f6f51473eeb32a54b497bcd3`; paired Owner `.55` uses
+`a8541523bbf3d3dc792c712408ee08a55a7a6d1f`. TypeScript/Vite and optimized native
+compilation passed; native compilation took 49m20s. The unchanged 7 GiB job cap,
+14/13.25 GiB admission, 6/6 GiB runtime floors, jobs1/noLTO/codegen16 profile
+retired naturally at 2026-11-17 06:07:42 UTC: root/effective0, final active0,
+17ms drain, no forced cleanup or resource flags. Peak was 6,309,142,528 bytes.
+The earlier no-child admission hold and unused 13.0 GiB proposal remain preserved;
+the successful attempt used the original profile. Two known NSIS WixMode warnings
+were retained without a template change.
+
+Static artifact audit passed without launching the application. Independent,
+non-overwriting retention contains 49 files / 739,198,633 bytes at
+`.build/xnexus-worktrees/release/target/retained-candidates/1.24.1-xlog.14`
+in the xLog workspace. Prior `.13` receipt and file metadata remained intact.
+
+| Artifact/evidence | SHA256 |
+| --- | --- |
+| Installer, 285,518,141 bytes | `0F29A2230C276EAD5AEEFB4156E2B413BFE205F7D4502992D7D669FF4504CDC2` |
+| Installed payload executable, 181,252,864 bytes | `8BB137D7D00BFE90DB32766B2E26B30A803A37409E8DC1E1A4F19596A207654A` |
+| Standalone executable (different bundle marker) | `268946C30785D6CDFD97587B8CF10B4AD24E6C0124B4A4C5A83E2980F4BCB5EF` |
+| Build receipt | `D5448A814AE45CD9102433C9573F36485CADEB03BC5F9753D8772E3A9DDA6DF7` |
+| Natural build guard | `2FA4D319FDDF431E757A15CF8AFBB361021AEA2F3773D26E20D6BD608BA24FA7` |
+| Static audit | `2A0CCF8136A5E8B0D51361CDE61342CD05FFD24572C4B85CAFF27262E3291B24` |
+| Retention receipt | `962535FBDA4A4A228C1DBA43531130AC2AEA24E1AC63700EEBE140460B259C2D` |
+| Original owned CLI/module evidence | `8765212D005EFB6DCD66DC52371E1D389D0CFEB21ADB35CE9856106AAE32BB3C` |
+| Lossless CLI audit alias | `5941C8AB7842DCF3BFAAB9CAE97B532A6BD47F3EEF3523B7B987D98A7C41ACC7` |
+
+Both current-user installers exited0 during 06:12:17–06:13:10 UTC, with initial
+and final application process counts0. No forced closure, app autorun or radio
+command occurred during installation. Registry/version and installed executable
+hashes matched the expected payloads. Installation receipt:
+`.build/releases/1.6.55/install-20261117-071217/installation.json`, SHA256
+`F7FB7CE59B2B491BB6A3307BF293B3E32D11356EC160DA85C6845B001E48B64F`.
+This later installation does not rewrite the retained artifacts' uninstalled-at-
+creation receipts.
+
+Root subsequently verified normal production launches: Owner18636/Worker23320,
+Nexus24064/browser6896, with per-process read-only CDP9784 and no proxy or mouse
+helper. Nexus paired automatically. At that observation the owner reported
+`radio.connected=false`: FT waited for the saved FLEX slot and RX waited with
+zero rows. Native/DOM classification and operator Work acceptance therefore
+remain pending radio connection; the operator was asked only to use normal radio
+Connect. No on-air success or complete functional acceptance is claimed.
