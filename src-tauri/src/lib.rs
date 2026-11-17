@@ -39228,7 +39228,7 @@ mod icom_lan_password_tests {
     #[test]
     fn each_radio_profile_has_its_own_keychain_entry() {
         assert_eq!(icom_lan_account(3), "icom-lan-3");
-        assert_eq!(LOTW_KEYCHAIN_SERVICE, "tempo");
+        assert_eq!(LOTW_KEYCHAIN_SERVICE, "om0rx-xnexus");
     }
 
     /// ⭐ THE PASSWORD IS IN THE VAULT AND NOWHERE ELSE: a station's saved settings, with the radio
