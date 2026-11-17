@@ -10,7 +10,7 @@ import type { OperateCockpit } from '../components/OperateCockpit'
 import { rxOff } from './rxApi'
 import type { View } from './api'
 
-const control = vi.hoisted(() => ({ ftAction: vi.fn(async () => {}), ftLog: vi.fn(async () => {}), fresh: true, mode: 'FT8' as 'FT8' | 'FT4' | null, cockpit: null as unknown, receive: vi.fn(), receiverScope: vi.fn(), suspend: vi.fn(), command: vi.fn(), connection: vi.fn() }))
+const control = vi.hoisted(() => ({ ftAction: vi.fn(async () => {}), ftLog: vi.fn(async () => {}), fresh: true, reason: '', phase: 'armed', releasePending: false, mode: 'FT8' as 'FT8' | 'FT4' | null, cockpit: null as unknown, receive: vi.fn(), receiverScope: vi.fn(), suspend: vi.fn(), command: vi.fn(), connection: vi.fn() }))
 const view: View = {
   paired: true, connected: true, connection_token: 'connection-1', endpoint: null,
   hello: { application: 'OM0RX-xLog', protocol_version: 1, server_instance: 'server', workspace_id: 'workspace', capabilities: ['audio.rx', 'cluster.read', 'rotor.stop', 'logbook.classify', 'digital.tx', 'logbook.write'] },
@@ -37,14 +37,14 @@ vi.mock('../components/StationList', () => ({ StationList: () => null }))
 vi.mock('../components/OperateCockpit', () => ({ OperateCockpit: (props: ComponentProps<typeof OperateCockpit>) => { control.cockpit = props; return <section data-testid="cockpit" /> } }))
 vi.mock('./useOwnerTransmitter', () => ({ useOwnerTransmitter: () => ({
   view: { ...ftOff, connection_token: 'connection-1', available: control.fresh, remaining_valid_ms: control.fresh ? 1000 : 0,
-    armed: true, mode: control.mode, qso_state: 'CallingCq', cq_running: true, operation_id: 'retained-operation', release_pending: !control.fresh },
+    armed: true, mode: control.mode, qso_state: 'CallingCq', cq_running: true, operation_id: 'retained-operation', release_pending: control.releasePending || !control.fresh, reason: control.reason, phase: control.phase },
   fresh: control.fresh, action: control.ftAction, log: control.ftLog, error: '', busy: false, logNotice: '',
 }) }))
 vi.mock('../api', async original => ({ ...await original<typeof import('../api')>(),
   getDxccEntityLocations: vi.fn(async () => { throw new Error('Independent centroid read forbidden') }),
   setPounceSpotterFilter: vi.fn(async () => { throw new Error('Independent feed mutation forbidden') }),
 }))
-beforeEach(() => { view.paired = true; localStorage.clear(); sessionStorage.clear(); vi.clearAllMocks(); lease.deadline = 1000; control.fresh = true; control.mode = 'FT8'; control.command.mockResolvedValue(undefined); vi.spyOn(performance, 'now').mockReturnValue(100) })
+beforeEach(() => { view.paired = true; localStorage.clear(); sessionStorage.clear(); vi.clearAllMocks(); lease.deadline = 1000; control.fresh = true; control.reason = ''; control.phase = 'armed'; control.releasePending = false; control.mode = 'FT8'; control.command.mockResolvedValue(undefined); vi.spyOn(performance, 'now').mockReturnValue(100) })
 afterEach(() => { cleanup(); vi.restoreAllMocks() })
 
 const cockpit = () => control.cockpit as ComponentProps<typeof OperateCockpit>
@@ -64,6 +64,13 @@ describe('original host FT control bindings', () => {
     expect(cockpit().services!.actions.has('stopTransmit')).toBe(true)
     cockpit().onHaltTx()
     expect(control.ftAction).toHaveBeenLastCalledWith({ kind: 'stop' })
+  })
+  it('shows an asynchronous native TX failure instead of hiding it behind the RX message', () => {
+    control.reason = 'Owner receipt missing; exact release remains pending'
+    control.phase = 'stopped'; control.releasePending = true
+    const mounted = render(<OriginalHost />)
+    expect(mounted.getByText(control.reason)).toBeTruthy()
+    expect(cockpit().services!.actions.has('stopTransmit')).toBe(true)
   })
   it('does not enable ordinary TX after explicit unpairing, while retaining exact Stop', () => {
     view.paired = false

@@ -159,6 +159,7 @@ export function OriginalHost({ api = bridge, receiver = rxApi, spectrumTransport
     needByCall={NO_NATIVE_NEEDS} onSelect={selectCall} onCall={workCall}
     conversations={[]} onArchive={denied} bandActive={false} bandUnread={0} onSelectBand={denied}
     dropAfterCycles={3} grip="stations" />
+  const txFailure = ft.view.release_pending || ft.view.phase === 'error' ? ft.view.reason : ''
   const status = <div className="now-bar now-bar-inbar" aria-label="xLog connection and receiver">
     <button className="op-btn" onClick={() => setConnectionOpen(true)}>{view.connected ? 'xLog connected' : 'Connecting to xLog…'}</button>
     <button className="op-btn" onClick={manualCreate.open}>{t('logbook.ownerCreate.title')}</button>
@@ -167,7 +168,7 @@ export function OriginalHost({ api = bridge, receiver = rxApi, spectrumTransport
       onClick={() => receive(true)}>Start receiving</button>
     <button className="op-btn" disabled={!rx.view.enabled && !rx.pending} onClick={() => receive(false)}>Stop receiving</button>
     <RotorStrip external={{ ...rotor, bearing: bearing.presentation }} />
-    <span role="status">{ft.error || rx.pollError || rx.actionError || connection.actionError || connection.pollError || notice || ft.logNotice ||
+    <span role="status">{ft.error || txFailure || rx.pollError || rx.actionError || connection.actionError || connection.pollError || notice || ft.logNotice ||
       (connection.receipt ? `xLog control: ${connection.receipt.status}${connection.receipt.message ? ` — ${connection.receipt.message}` : ''}` : rx.view.reason)}</span>
   </div>
   return <OperateServices adapter={services}><LogSourceProvider source={logSource}>
