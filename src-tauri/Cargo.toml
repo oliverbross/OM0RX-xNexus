@@ -217,6 +217,10 @@ tauri = { version = "2", features = ["protocol-asset", "test"] }
 # The same again: `test-util`, the client core's test hooks (a stand-in headset, a hold on the audio
 # road's sender, the off halves' arguments), which this crate's tests reach the roads through.
 tempo-client = { path = "../crates/tempo-client", features = ["test-util"] }
+# The standalone FT preparer, for `xlog_ft_runtime_tests` only: it checks the owner encoder's
+# source PCM against this independent preparer. Test-only, so the unwired prototype still cannot
+# enable an operating path in a shipped build.
+xnexus-tx-prepare = { path = "../integrations/xlog-tx-prepare" }
 
 [features]
 # FT-710 waterfall over the radio's internal FT4222 USB→SPI bridge. OFF by default: it links
