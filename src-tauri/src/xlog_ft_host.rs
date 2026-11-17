@@ -1137,8 +1137,20 @@ fn apply_proof(i: &Inner, proof: ValidatedReceipt) -> Result<(), String> {
     }
     let r = proof.receipt();
     let terminal = matches!(r.phase, wire::Phase::Terminal);
-    if a.native.is_some() {
-        if let Some(c) = s.coordinator.as_mut() {
+    if let Some(native) = a.native.clone() {
+        // Owner events go only to the coordinator that bound this operation. `consume` replaces
+        // the coordinator on a route, receive-epoch or station change while the operation is
+        // still retained; the replacement holds no release, so `owner_event` would refuse with
+        // WrongOperation and this function would return before retiring `active` and
+        // OPERATION_HELD below, locking every later prepare and Tune out until restart.
+        let bound = s.coordinator.as_mut().filter(|c| {
+            c.stop_handle()
+                .release()
+                .ok()
+                .flatten()
+                .is_some_and(|held| *held == native)
+        });
+        if let Some(c) = bound {
             if !a.start_delivered {
                 if let Some(at) = r.actual_start_unix_us {
                     // Cancelled/context-retired coordinators cannot advance from late facts.

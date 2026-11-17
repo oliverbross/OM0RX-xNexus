@@ -778,6 +778,66 @@ fn terminal_first_sealed_proof_accounts_start_once_then_release_and_stable_log()
 }
 
 #[test]
+fn release_proof_retires_an_operation_whose_coordinator_was_replaced() {
+    let (_fake, _bridge, host, mut audio) = setup();
+    accepted(&host, &mut audio);
+    host.action(Action::Work {
+        decode_id: "native-row".into(),
+    })
+    .unwrap();
+    let worker = host.inner.clone();
+    let heartbeat = thread::spawn(move || heartbeat_loop(worker));
+    let wall = wall_us().unwrap();
+    let mut slot = (wall / 7_500_000 + 2) * 7_500_000;
+    let (plan, cfg, c, epoch) = {
+        let mut s = lock(&host.inner.state).unwrap();
+        let cfg = s.config.clone();
+        if slot / 7_500_000 % 2 != u64::from(!cfg.even) {
+            slot += 7_500_000;
+        }
+        let plan = s
+            .coordinator
+            .as_mut()
+            .unwrap()
+            .plan(slot, slot + 50_000, wall, Instant::now())
+            .unwrap();
+        (
+            plan,
+            cfg,
+            s.context.clone().unwrap(),
+            host.inner.epoch.load(Ordering::Acquire),
+        )
+    };
+    prepare_operation(&host.inner, plan, c, cfg, epoch).unwrap();
+    assert!(lock(&host.inner.active)
+        .unwrap()
+        .as_ref()
+        .is_some_and(|a| a.native.is_some()));
+    // The receive epoch changes while the operation is still retained: `consume` drops the
+    // coordinator, and the next accepted period builds a replacement that holds no release.
+    host.inner.rx_epoch.fetch_add(1, Ordering::AcqRel);
+    accepted_generation(&host, &mut audio, 2, None);
+    assert!(lock(&host.inner.state)
+        .unwrap()
+        .coordinator
+        .as_ref()
+        .is_some_and(|c| c.stop_handle().release().unwrap().is_none()));
+    let (stop, event) = lock(&host.inner.active)
+        .unwrap()
+        .as_ref()
+        .map(|a| (a.stop_client.clone(), a.stop_event.clone()))
+        .unwrap();
+    host.stop();
+    // The owner's terminal proof must retire the operation even though the coordinator that
+    // bound it is gone; otherwise OPERATION_HELD refuses every later prepare and Tune.
+    apply_proof(&host.inner, stop.stop(&event).unwrap()).unwrap();
+    assert!(lock(&host.inner.active).unwrap().is_none());
+    assert!(!OPERATION_HELD.load(Ordering::Acquire));
+    host.revoke();
+    heartbeat.join().unwrap();
+}
+
+#[test]
 fn duplicate_terminal_proof_never_stops_or_releases_a_replacement() {
     let (_fake, _bridge, host, _audio) = setup();
     host.action(Action::Tune { enabled: true }).unwrap();
