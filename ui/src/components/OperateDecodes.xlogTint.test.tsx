@@ -39,6 +39,31 @@ describe("xLog's classification on a companion row", () => {
       expect(get(id).classList.contains('cq')).toBe(true)
     }
   })
+  it("lists xLog's CS and DS as two columns after the frequency, in xLog's codes and colours", () => {
+    const get = rendered([row('nb-c', 'New Call', 'C/New Band'), row('u', 'Unknown', 'Unknown')])
+    const r = get('nb-c')
+    expect(r.classList.contains('xlog-cols')).toBe(true)
+    const cells = [...r.children].map(c => c.className.split(' ')[0])
+    const freq = cells.indexOf('decode-freq')
+    expect(cells.slice(freq, freq + 4)).toEqual(['decode-freq', 'decode-xlog', 'decode-xlog', 'decode-msg'])
+    const cs = r.querySelector<HTMLElement>('.decode-cs')!
+    const ds = r.querySelector<HTMLElement>('.decode-ds')!
+    expect(cs.textContent).toBe('NC')
+    expect(ds.textContent).toBe('NB/C')
+    expect(cs.style.color).not.toBe('')
+    expect(ds.getAttribute('aria-label')).toBe('DS C/New Band')
+    // No chip left in the message for the columns to duplicate.
+    expect(r.querySelector('.decode-msg .need-chip')).toBeNull()
+    // An unclassified row keeps both cells, as "?", so the columns stay aligned.
+    expect(get('u').querySelector('.decode-cs')!.textContent).toBe('?')
+    expect(get('u').querySelector('.decode-ds')!.textContent).toBe('?')
+  })
+  it('adds no xLog columns to an ordinary (non-companion) decode list', () => {
+    const { container } = render(<OperateDecodes decodes={[]} slot={4} rxOffsetHz={1500} band="20m" tier="FT8"
+      harqRescues={null} onCall={vi.fn()} />)
+    expect(container.querySelector('.decode-row.xlog-cols')).toBeNull()
+    expect(container.querySelector('.decode-xlog')).toBeNull()
+  })
   it('never outranks a message directed to me', () => {
     const get = rendered([row('to-me', 'New Call', 'ATNO', { isCq: false, directedToMe: true })])
     expect(get('to-me').classList.contains('directed')).toBe(true)

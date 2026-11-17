@@ -19256,6 +19256,21 @@ button.recall-avatar:focus-visible .recall-avatar-qrz {
   color: var(--text-faint);
   text-align: right;
 }
+/* XLOG'S CS AND DS COLUMNS (operator, 2026-11-17: "2 extra columns for cs and ds like in xlog"). On the
+   companion feed every row carries xLog's Call status and DXCC status after the frequency, as xLog's
+   cluster lists them: the short code in xLog's status colour (ui/src/xlog/xlogStatus.ts). The widths
+   fit the longest codes (NB+M; NB+NM/C) at the row's mono size, so the message column never moves. */
+.decode-row.xlog-cols {
+  /* tier · UTC · dB · DT · Freq · CS · DS · message · work */
+  grid-template-columns: auto 52px 34px 38px 42px 4.5ch 7.5ch minmax(0, 1fr) auto;
+}
+.decode-xlog {
+  font-family: var(--font-mono);
+  font-size: calc(11px * var(--text-scale));
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+}
 .decode-msg {
   min-width: 0;
   overflow: hidden;

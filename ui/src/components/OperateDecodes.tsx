@@ -1,4 +1,4 @@
-import { OwnerNeedBadge } from './OwnerNeedBadge'
+import { XlogStatusCell } from './OwnerNeedBadge'
 // ⚠️ THIS FILE IS ON THE MIGRATED LIST (i18n/hardcoded-strings.test.ts). Every reading in this
 // pane is DATA and stays in the code: the callsign, the decoded message, the SNR and dB, the
 // DT in seconds, the audio offset in Hz, the UTC stamp, the band, the tier and the country.
@@ -1107,6 +1107,7 @@ export function OperateDecodes({
                 actions={rowActions}
                 watchColor={watchOf({ call: d.from, entity: d.country, grid: d.grid })?.color}
                 menuOpen={menu?.id === d.id}
+                xlogColumns={external != null}
               />
             </Fragment>
           )
@@ -1152,6 +1153,8 @@ interface DecodeRowViewProps {
   watchColor?: WatchColor
   /** #346 — this row's menu is open: the row draws its anchor. */
   menuOpen?: boolean
+  /** The list is xLog's companion feed: every row carries xLog's CS and DS columns. */
+  xlogColumns?: boolean
 }
 
 /**
@@ -1176,6 +1179,7 @@ const DecodeRowView = memo(function DecodeRowView({
   actions,
   watchColor,
   menuOpen,
+  xlogColumns = false,
 }: DecodeRowViewProps) {
   const { api: { openQrzPage } } = useOperateServices()
   const hlStyle = hlEntry
@@ -1209,7 +1213,7 @@ const DecodeRowView = memo(function DecodeRowView({
   const azText = azimuthLabel(az)
   return (
       <div
-        className={`decode-row ${rowClass(d, needs.rowNeed, xlogNeed)}${selected ? ' selected' : ''}${ignored ? ' ignored' : ''}${d.refilled ? ' refilled' : ''}`}
+        className={`decode-row ${rowClass(d, needs.rowNeed, xlogNeed)}${xlogColumns ? ' xlog-cols' : ''}${selected ? ' selected' : ''}${ignored ? ' ignored' : ''}${d.refilled ? ' refilled' : ''}`}
         role="option"
         data-pin-key={d.id}
         aria-selected={selected}
@@ -1287,6 +1291,10 @@ const DecodeRowView = memo(function DecodeRowView({
           {fmtDt(d.dtSec)}
         </span>
         <span className="decode-freq">{Math.round(d.freqHz)}</span>
+        {xlogColumns && <>
+          <XlogStatusCell kind="CS" facts={'external' in d ? d.external : undefined} />
+          <XlogStatusCell kind="DS" facts={'external' in d ? d.external : undefined} />
+        </>}
         <span className="decode-msg" title={d.country ? `${d.message} · ${d.country}` : d.message}>
           {menuOpen && d.from && (
             <CallRowMenu call={d.from} band={d.heard?.band ?? band} country={d.country} onClose={actions.closeMenu} />
@@ -1340,7 +1348,6 @@ const DecodeRowView = memo(function DecodeRowView({
               )}
             </span>
           )}
-          {'external' in d && <OwnerNeedBadge facts={d.external} />}
           {!('external' in d) && d.worked && (
             <span
               className={`b4-chip${d.workedBand ? ' b4-band' : ''}`}

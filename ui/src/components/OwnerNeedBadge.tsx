@@ -11,16 +11,41 @@ import { xlogStatusCode, xlogStatusColor } from '../xlog/xlogStatus'
  * Never turn a missing answer into an unworked callsign. The chip keeps Nexus's chip treatment
  * (the word in the theme's ink, the status colour on the border and tint) so it reads in every
  * theme; only the colour is xLog's. */
+function factsTitle(facts: ExternalDecodeEntry['external']): string {
+  return ['xLog',
+    `CS ${facts.callStatus ?? 'Unknown'}`, `DS ${facts.dxccStatus ?? 'Unknown'}`,
+    [facts.band, facts.classificationMode].filter(Boolean).join(' '),
+    facts.score != null ? `score ${facts.score}` : '', ...facts.reasons,
+    facts.status === 'unknown' ? unknownReason(facts.reason) : facts.reason].filter(Boolean).join(' · ')
+}
+
+/** One of the decode list's two xLog columns, CS or DS, as xLog's cluster draws it: the short code
+ * in the status colour. A row xLog has not classified (or a row of our own) leaves the cell empty
+ * or "?", so the columns stay aligned and a missing answer never reads as unworked. */
+export function XlogStatusCell({ kind, facts }: { kind: 'CS' | 'DS'; facts?: ExternalDecodeEntry['external'] }) {
+  const cls = `decode-xlog decode-${kind.toLowerCase()}`
+  if (!facts) return <span className={cls} />
+  const raw = kind === 'CS' ? facts.callStatus : facts.dxccStatus
+  const status = raw && raw !== 'Unknown' ? raw : null
+  return (
+    <span
+      className={cls}
+      data-xlog-status={status ?? 'Unknown'}
+      style={{ color: xlogStatusColor(status) }}
+      title={factsTitle(facts)}
+      aria-label={`${kind} ${status ?? 'Unknown'}`}
+    >
+      {xlogStatusCode(status)}
+    </span>
+  )
+}
+
 export function OwnerNeedBadge({ facts }: { facts: ExternalDecodeEntry['external'] }) {
   const call = facts.callStatus && facts.callStatus !== 'Unknown' ? facts.callStatus : null
   const dxcc = facts.dxccStatus && facts.dxccStatus !== 'Unknown' ? facts.dxccStatus : null
   const fallback = facts.status === 'needed' ? t('xlog.need.needed')
     : facts.status === 'worked' ? t('xlog.need.worked') : t('xlog.need.unknown')
-  const title = ['xLog',
-    `CS ${facts.callStatus ?? 'Unknown'}`, `DS ${facts.dxccStatus ?? 'Unknown'}`,
-    [facts.band, facts.classificationMode].filter(Boolean).join(' '),
-    facts.score != null ? `score ${facts.score}` : '', ...facts.reasons,
-    facts.status === 'unknown' ? unknownReason(facts.reason) : facts.reason].filter(Boolean).join(' · ')
+  const title = factsTitle(facts)
   if (!call && !dxcc) {
     return <span className="need-chip" title={title}>{fallback}</span>
   }
