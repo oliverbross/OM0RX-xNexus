@@ -95,3 +95,19 @@ helper. Nexus paired automatically. At that observation the owner reported
 zero rows. Native/DOM classification and operator Work acceptance therefore
 remain pending radio connection; the operator was asked only to use normal radio
 Connect. No on-air success or complete functional acceptance is claimed.
+
+## Live classification observation after operator Connect
+
+On 2026-11-17, the operator connected FLEX. Nexus24064/browser6896 remained;
+Owner restarted as21396/worker12212 and automatic re-pair required no new file.
+At06:59:38 UTC native polling showed radio1 connected at10.136MHz DIGU; RX had
+56 rows:28 needed,24 worked,4 unknown, with rendered NewBand/Confirmed/Worked/NewCall.
+At07:02:03 UTC RX had200 rows:96 needed,92 worked,12 unknown; unknown reasons were
+only `native_not_literal_sender` / `country_ambiguous`. Actual rendered labels
+were populated. At07:04:20 UTC history remained200 rows and reception continued.
+Evidence: `.build/nexus14-runtime-diagnostic/` process verification after user
+Connect, read-status/read-poll and trace JSONs in the xLog workspace.
+Native FT remained available in FT8, armedfalse/txcount0. The passive120-second
+trace contained only the initial off event: no operator Work had occurred.
+Classification/display acceptance is observed; TX/on-air acceptance remains
+pending the operator's double-click. Installed application source remains `2dbbdb2d23718437f6f51473eeb32a54b497bcd3`.
