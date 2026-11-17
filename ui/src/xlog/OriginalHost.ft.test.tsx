@@ -37,19 +37,19 @@ vi.mock('../components/StationList', () => ({ StationList: () => null }))
 vi.mock('../components/OperateCockpit', () => ({ OperateCockpit: (props: ComponentProps<typeof OperateCockpit>) => { control.cockpit = props; return <section data-testid="cockpit" /> } }))
 vi.mock('./useOwnerTransmitter', () => ({ useOwnerTransmitter: () => ({
   view: { ...ftOff, connection_token: 'connection-1', available: control.fresh, remaining_valid_ms: control.fresh ? 1000 : 0,
-    mode: control.mode, qso_state: 'CallingCq', cq_running: true, operation_id: 'retained-operation', release_pending: !control.fresh },
+    armed: true, mode: control.mode, qso_state: 'CallingCq', cq_running: true, operation_id: 'retained-operation', release_pending: !control.fresh },
   fresh: control.fresh, action: control.ftAction, log: control.ftLog, error: '', busy: false, logNotice: '',
 }) }))
 vi.mock('../api', async original => ({ ...await original<typeof import('../api')>(),
   getDxccEntityLocations: vi.fn(async () => { throw new Error('Independent centroid read forbidden') }),
   setPounceSpotterFilter: vi.fn(async () => { throw new Error('Independent feed mutation forbidden') }),
 }))
-beforeEach(() => { localStorage.clear(); sessionStorage.clear(); vi.clearAllMocks(); lease.deadline = 1000; control.fresh = true; control.mode = 'FT8'; control.command.mockResolvedValue(undefined); vi.spyOn(performance, 'now').mockReturnValue(100) })
+beforeEach(() => { view.paired = true; localStorage.clear(); sessionStorage.clear(); vi.clearAllMocks(); lease.deadline = 1000; control.fresh = true; control.mode = 'FT8'; control.command.mockResolvedValue(undefined); vi.spyOn(performance, 'now').mockReturnValue(100) })
 afterEach(() => { cleanup(); vi.restoreAllMocks() })
 
 const cockpit = () => control.cockpit as ComponentProps<typeof OperateCockpit>
 describe('original host FT control bindings', () => {
-  it('uses fresh TX context while ordinary station snapshot is expired, then retains Stop after TX expiry', () => {
+  it('keeps explicit TX controls available through cached status expiry and retains Stop', () => {
     lease.deadline = 0
     const mounted = render(<OriginalHost />)
     expect(cockpit().services!.actions.has('transmit')).toBe(true)
@@ -58,11 +58,19 @@ describe('original host FT control bindings', () => {
     expect(control.ftAction).toHaveBeenCalledExactlyOnceWith({ kind: 'enable', enabled: true })
     control.fresh = false
     mounted.rerender(<OriginalHost />)
-    expect(cockpit().services!.actions.has('transmit')).toBe(false)
-    expect(cockpit().snap.radio.txAllowed).toBe(false)
+    expect(cockpit().snap.radio.txEnabled).toBe(true)
+    expect(cockpit().services!.actions.has('transmit')).toBe(true)
+    expect(cockpit().snap.radio.txAllowed).toBe(true)
     expect(cockpit().services!.actions.has('stopTransmit')).toBe(true)
     cockpit().onHaltTx()
     expect(control.ftAction).toHaveBeenLastCalledWith({ kind: 'stop' })
+  })
+  it('does not enable ordinary TX after explicit unpairing, while retaining exact Stop', () => {
+    view.paired = false
+    render(<OriginalHost />)
+    expect(cockpit().services!.actions.has('transmit')).toBe(false)
+    expect(cockpit().snap.radio.txAllowed).toBe(false)
+    expect(cockpit().services!.actions.has('stopTransmit')).toBe(true)
   })
   it('forwards directed CQ and exact native decode identities', async () => {
     render(<OriginalHost />)
@@ -85,13 +93,13 @@ describe('original host FT control bindings', () => {
     cockpit().onSetTune!(true)
     expect(control.ftAction).toHaveBeenCalledExactlyOnceWith({ kind: 'tune', enabled: true })
   })
-  it('refuses an observed decoder mode mismatch', () => {
+  it('does not use a cached decoder mode picture to gate the operator command', () => {
     control.mode = 'FT4'; render(<OriginalHost />)
-    expect(cockpit().services!.actions.has('transmit')).toBe(false)
+    expect(cockpit().services!.actions.has('transmit')).toBe(true)
   })
-  it('retains Stop independently when TX context is unavailable', () => {
+  it('keeps native dispatch and Stop callable while TX status is unavailable', () => {
     control.fresh = false; render(<OriginalHost />)
-    expect(cockpit().services!.actions.has('transmit')).toBe(false)
+    expect(cockpit().services!.actions.has('transmit')).toBe(true)
     expect(cockpit().services!.actions.has('stopTransmit')).toBe(true)
     cockpit().onHaltTx()
     expect(control.ftAction).toHaveBeenCalledExactlyOnceWith({ kind: 'stop' })

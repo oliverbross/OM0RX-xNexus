@@ -57,7 +57,8 @@ export function OriginalHost({ api = bridge, receiver = rxApi, spectrumTransport
   } : null
   const fresh = !!connection.lease && view.connected && connection.lease.deadline > now
   const capabilities = view.hello?.capabilities ?? []
-  const ft = useOwnerTransmitter({ session, connectionToken: view.connection_token ?? null, connected: view.connected, capable: capabilities.includes('digital.tx') }, transmitter)
+  const operatorTx = view.paired && !!view.connection_token && capabilities.includes('digital.tx')
+  const ft = useOwnerTransmitter({ session, connectionToken: view.connection_token ?? null, connected: view.connected, capable: operatorTx }, transmitter)
   const rx = useOwnerReceiver({ session, owner, connected: view.connected, fresh,
     audioCapable: capabilities.includes('audio.rx'), needsCapable: capabilities.includes('logbook.classify'), autoStart: true }, receiver)
   const spectrum = useOwnerSpectrum({ session, owner: view, receiver, view: rx.view, pending: rx.pending, observation: rx.observation }, spectrumTransport)
@@ -86,7 +87,7 @@ export function OriginalHost({ api = bridge, receiver = rxApi, spectrumTransport
   const entries = ownerDecodeEntries({ view: rx.view, owner, leases: rx.leases, now: rx.now,
     needsAvailable: capabilities.includes('logbook.classify'),
     mycall: model.identity?.mycall ?? null })
-  const snap = ownerFtPresentation(ownerCockpitPresentation(model, selectedCall), ft.view, ft.fresh)
+  const snap = ownerFtPresentation(ownerCockpitPresentation(model, selectedCall), ft.view, ft.fresh, operatorTx)
   snap.stations = ownerRoster(entries)
   const history = useOwnerHistory(view, session, selectedCall ? { callsign: selectedCall,
     ...(snap.radio.band ? { band: snap.radio.band, exactMode: rx.mode } : {}) } : null, historyTransport)
@@ -109,7 +110,7 @@ export function OriginalHost({ api = bridge, receiver = rxApi, spectrumTransport
     callsign:selectedCall,poll:connection.poll,pointEvidence:connection.pointEvidence,
     observedPoint:connection.observedPoint,retirePointObservation:connection.retirePointObservation },bearingTransport)
   selectionRetire.current = bearing.retire
-  const canTransmit = ft.fresh && ft.view.available && (ft.view.mode == null || ft.view.mode === rx.mode)
+  const canTransmit = operatorTx
   const canLog = fresh && capabilities.includes('logbook.write') && !!ft.view.dx_call
   const canStopTransmit = capabilities.includes('digital.tx') || !!ft.view.operation_id || ft.view.release_pending
   const ftCurrent = useRef(ft); ftCurrent.current = ft

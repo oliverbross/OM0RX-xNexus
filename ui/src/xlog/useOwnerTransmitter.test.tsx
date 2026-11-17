@@ -23,11 +23,18 @@ describe('native owner FT controls', () => {
     await act(async () => { await result.current.action({ kind: 'cq' }) })
     expect(transport.status).not.toHaveBeenCalled(); expect(transport.action).not.toHaveBeenCalled()
   })
-  it('rejects mismatched connection evidence instead of authorizing a start', async () => {
+  it('dispatches the operator command with the paired token despite an unusable status picture', async () => {
     const transport = api(); vi.mocked(transport.status).mockResolvedValue(view('foreign'))
     const { result } = renderHook(() => useOwnerTransmitter(scope, transport)); await flush()
     await act(async () => { await result.current.action({ kind: 'cq' }) })
-    expect(result.current.fresh).toBe(false); expect(transport.action).not.toHaveBeenCalled()
+    expect(transport.action).toHaveBeenCalledExactlyOnceWith('one', { kind: 'cq' })
+  })
+  it('sends Work even before a status read succeeds and while passive connectivity is stale', async () => {
+    const transport = api(); vi.mocked(transport.status).mockRejectedValue(new Error('status busy'))
+    const { result } = renderHook(() => useOwnerTransmitter({ ...scope, connected: false }, transport)); await flush()
+    expect(result.current.fresh).toBe(false)
+    await act(async () => { await result.current.action({ kind: 'work', decode_id: 'selected-row' }) })
+    expect(transport.action).toHaveBeenCalledExactlyOnceWith('one', { kind: 'work', decode_id: 'selected-row' })
   })
   it('keeps exact Stop callable after evidence expiry and while an ordinary action is pending', async () => {
     const transport = api(), pending = deferred<FtView>()
@@ -40,13 +47,16 @@ describe('native owner FT controls', () => {
     await act(async () => { pending.resolve({ ...view(), armed: true }); await pending.promise })
     expect(result.current.view.armed).toBe(false)
   })
-  it('retains the release obligation on failed polls and refuses a fresh start', async () => {
+  it('retains failed-poll receipts and lets native dispatch decide an explicit start', async () => {
     const transport = api(); vi.mocked(transport.status).mockResolvedValueOnce({ ...view(), operation_id: 'retained', release_pending: true }).mockRejectedValue(new Error('offline'))
     const { result } = renderHook(() => useOwnerTransmitter(scope, transport)); await flush()
     await act(async () => { clock += 300; await vi.advanceTimersByTimeAsync(250) })
     expect(result.current.fresh).toBe(false); expect(result.current.view.operation_id).toBe('retained')
-    await act(async () => { await result.current.action({ kind: 'cq' }) }); expect(transport.action).not.toHaveBeenCalled()
-    await act(async () => { await result.current.action({ kind: 'stop' }) }); expect(transport.action).toHaveBeenCalledOnce()
+    vi.mocked(transport.action).mockRejectedValueOnce(new Error('Previous operation release is pending'))
+    await act(async () => { await result.current.action({ kind: 'cq' }) })
+    expect(transport.action).toHaveBeenCalledExactlyOnceWith('one', { kind: 'cq' })
+    expect(result.current.view.operation_id).toBe('retained')
+    await act(async () => { await result.current.action({ kind: 'stop' }) }); expect(transport.action).toHaveBeenCalledTimes(2)
   })
   it('cannot restore an old action after the connection changes', async () => {
     const transport = api(), pending = deferred<FtView>(); vi.mocked(transport.action).mockReturnValue(pending.promise)

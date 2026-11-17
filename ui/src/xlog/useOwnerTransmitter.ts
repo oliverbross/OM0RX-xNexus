@@ -17,7 +17,6 @@ export function useOwnerTransmitter(scope: FtScope, api: FtApi = ftApi) {
   const [pollError, setPollError] = useState('')
   const [busy, setBusy] = useState(false)
   const [logNotice, setLogNotice] = useState('')
-  const heldRef = useRef(held); heldRef.current = held
   const current = useRef({ key, scope, api }); current.current = { key, scope, api }
   const generation = useRef(0), actionSequence = useRef(0), ordinaryBusy = useRef(false)
   const visible = held.key === key && held.api === api && held.view.connection_token === scope.connectionToken
@@ -57,10 +56,10 @@ export function useOwnerTransmitter(scope: FtScope, api: FtApi = ftApi) {
     if (!connectionToken) return
     const stopping = release(intent)
     if (!stopping) {
-      const observed = heldRef.current
-      if (!captured.scope.connected || !captured.scope.capable || observed.key !== captured.key ||
-        observed.api !== captured.api || observed.deadline <= performance.now() || !observed.view.available) {
-        setError('A current xLog transmit context is required.'); return
+      // A cached status picture is display data, not permission for an explicit
+      // operator command. Native dispatch obtains the current owner context.
+      if (!captured.scope.capable) {
+        setError('This xLog connection does not provide transmit control.'); return
       }
       if (ordinaryBusy.current) { setError('A transmit control request is pending.'); return }
     }
