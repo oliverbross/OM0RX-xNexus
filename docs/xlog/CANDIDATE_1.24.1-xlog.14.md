@@ -111,3 +111,23 @@ Native FT remained available in FT8, armedfalse/txcount0. The passive120-second
 trace contained only the initial off event: no operator Work had occurred.
 Classification/display acceptance is observed; TX/on-air acceptance remains
 pending the operator's double-click. Installed application source remains `2dbbdb2d23718437f6f51473eeb32a54b497bcd3`.
+
+## Live classification with Owner 1.6.56 — 2026-11-17
+
+Only Owner was updated to source `9d4073746e4e1dd0ddd4f077a988ead081b05038`.
+Nexus remains the same installed `.14` source `2dbbdb2d23718437f6f51473eeb32a54b497bcd3`,
+payload SHA256 `8BB137D7D00BFE90DB32766B2E26B30A803A37409E8DC1E1A4F19596A207654A`;
+there was no Nexus rebuild, update or UI change. The earlier Owner .55 failure remains
+preserved: operator Work reached prepare but returned HTTP409 at 07:29:20 UTC,
+before commit, with the generic PTT admission refusal.
+
+Normal-profile processes were verified as Owner23804/Worker18464 and Nexus21516/browser10692;
+no relay was used, only process-local CDP. Pairing and the FLEX radio connected automatically.
+At 08:21:44 UTC RX contained197 rows:137 needed,60 worked,0 unknown, with actual rendered
+NewCall/NewBand/Confirmed/Worked/DXCC labels. At 08:25:24 UTC reception continued and history
+held200 rows:131 needed,69 worked,0 unknown. Evidence is retained under
+`.build/nexus14-owner56-runtime/` in the xLog workspace, including process verification,
+status JSONs and the passive trace. FT was available in FT8, armedfalse/txcount0/dxCallnull;
+the120-second passive trace contained only its initial off event. The operator subsequently
+reported clicking after the double-click request; no resulting TX/on-air acceptance is
+claimed here. Operator Work and on-air acceptance remain pending.
