@@ -393,6 +393,67 @@ fn network_client(
     let n = b.needs_handle().unwrap();
     (b, n, server)
 }
+
+#[test]
+fn main_poll_readiness_probe_preserves_worker_handle_and_cached_facts() {
+    let now = now_ms().unwrap();
+    let mut hello = crate::tests::hello();
+    hello["capabilities"] = json!(["snapshot.read", "logbook.classify"]);
+    let mut snapshot = crate::tests::snapshot();
+    snapshot["needs"] = serde_json::to_value(metadata(Readiness::Ready, now)).unwrap();
+    let reply = crate::tests::json_response(wire(Readiness::Ready, now));
+    let (mut bridge, server) = crate::tests::server(vec![
+        crate::tests::json_response(hello),
+        crate::tests::json_response(snapshot.clone()),
+        reply.clone(),
+        crate::tests::json_response(snapshot.clone()),
+        crate::tests::json_response(snapshot),
+        reply,
+    ]);
+    assert_eq!(bridge.needs_remaining_authority_ms(), 0);
+    bridge.connect().unwrap();
+    assert_eq!(bridge.needs_remaining_authority_ms(), 0);
+    bridge.poll().unwrap();
+    let mut worker_handle = bridge.needs_handle().unwrap();
+    let cached = worker_handle.query(&queries()).unwrap();
+    assert!(cached.is_fresh());
+    for _ in 0..2 {
+        let original_remaining = cached.remaining_valid_ms();
+        bridge.poll().unwrap();
+        // The main poll must inspect authority without an owning temporary.
+        let accepted = bridge.needs_remaining_authority_ms() > 0;
+        assert!(accepted);
+        assert!(
+            worker_handle.remaining_authority_ms() > 0,
+            "main-poll readiness inspection revoked the retained worker handle"
+        );
+        assert!(cached.is_fresh());
+        assert!(cached.display().is_ok());
+        assert!(cached.remaining_valid_ms() <= original_remaining);
+    }
+    let second = worker_handle.query(&queries()).unwrap();
+    assert!(second.is_fresh());
+    bridge.disconnect();
+    assert_eq!(bridge.needs_remaining_authority_ms(), 0);
+    assert_eq!(worker_handle.remaining_authority_ms(), 0);
+    assert!(!cached.is_fresh());
+    assert!(cached.display().is_err());
+    assert!(second.display().is_err());
+    assert!(matches!(
+        worker_handle.query(&queries()),
+        Err(Error::Disconnected)
+    ));
+    let requests = server.join().unwrap();
+    assert_eq!(requests.len(), 6);
+    assert_eq!(
+        requests
+            .iter()
+            .filter(|r| r.starts_with("POST /xlog/v1/needs/query "))
+            .count(),
+        2
+    );
+}
+
 #[test]
 fn post_is_readonly_bounded_and_auth_revocation_is_terminal() {
     let reply = crate::tests::json_response(wire(Readiness::Ready, now_ms().unwrap()));
