@@ -619,9 +619,7 @@ async fn xlog_poll(state: State<'_, Shared>) -> Result<View, String> {
             let result = client.poll().cloned();
             // The base DTO may retain rejected optional metadata. Wake only
             // for an actually accepted SDK authority; no extra HTTP request.
-            let valid = client
-                .needs_handle()
-                .is_ok_and(|needs| needs.remaining_authority_ms() > 0);
+            let valid = client.needs_remaining_authority_ms() > 0;
             let stamp = valid
                 .then(|| {
                     result

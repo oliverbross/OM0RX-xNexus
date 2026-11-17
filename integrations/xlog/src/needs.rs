@@ -475,6 +475,28 @@ pub struct NeedsClient {
     last_response: Option<(u64, Instant)>,
 }
 impl BridgeClient {
+    /// Inspect accepted needs authority without creating an owning handle.
+    /// Dropping a NeedsClient revokes shared authority; polling must not do so.
+    pub fn needs_remaining_authority_ms(&self) -> u64 {
+        let Some(hello) = self.hello() else {
+            return 0;
+        };
+        if !hello.capabilities.iter().any(|s| s == "logbook.classify") {
+            return 0;
+        }
+        let Ok(state) = self.needs_authority.lock() else {
+            return 0;
+        };
+        let Ok(lease) = state.lease() else {
+            return 0;
+        };
+        lease
+            .expires
+            .saturating_duration_since(Instant::now())
+            .as_millis()
+            .min(2000) as u64
+    }
+
     pub fn needs_handle(&self) -> Result<NeedsClient, Error> {
         let hello = self.hello().ok_or(Error::Disconnected)?;
         if !hello.capabilities.iter().any(|s| s == "logbook.classify") {
