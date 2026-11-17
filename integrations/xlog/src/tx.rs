@@ -80,6 +80,12 @@ struct OperationState {
 #[derive(Clone)]
 pub struct PreparedOperation(Arc<OperationState>);
 impl PreparedOperation {
+    /// Conservative initial-dispatch marker. True is set before transport and
+    /// remains true even when transport fails. False is useful only after the
+    /// caller's exclusive initial send has returned; it does not authorize a retry.
+    pub fn initial_dispatch_attempted(&self) -> bool {
+        self.0.dispatched.load(Ordering::Acquire)
+    }
     pub fn key(&self) -> &OperationKey {
         &self.0.key
     }
@@ -468,8 +474,16 @@ impl TxClient {
         op: &PreparedOperation,
         binary: bool,
     ) -> Result<ValidatedReceipt, Error> {
+        self.send_initial_with_context(op, binary, &op.0.context)
+    }
+    fn send_initial_with_context(
+        &self,
+        op: &PreparedOperation,
+        binary: bool,
+        admission: &ContextLease,
+    ) -> Result<ValidatedReceipt, Error> {
         self.check_operation(op)?;
-        self.admission(&op.0.context, true)?;
+        self.admission(admission, true)?;
         if self
             .ordinary_busy
             .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
@@ -502,6 +516,23 @@ impl TxClient {
     }
     pub fn prepare(&self, op: &PreparedOperation) -> Result<ValidatedReceipt, Error> {
         self.send_initial(op, true)
+    }
+    /// First dispatch of the same immutable body after expensive construction.
+    /// This authentic observation replaces admission only, never the operation's
+    /// source, validated limits, slot, identity or once-only dispatch state.
+    pub fn prepare_with_context(
+        &self,
+        current: &ContextLease,
+        op: &PreparedOperation,
+    ) -> Result<ValidatedReceipt, Error> {
+        self.check_operation(op)?;
+        self.admission(current, true)?;
+        let mut captured = op.0.context.context.clone();
+        captured.generated_at_unix_ms = current.context.generated_at_unix_ms;
+        if captured != current.context {
+            return Err(Error::Stale);
+        }
+        self.send_initial_with_context(op, true, current)
     }
     pub fn tune(&self, op: &PreparedOperation) -> Result<ValidatedReceipt, Error> {
         self.send_initial(op, false)

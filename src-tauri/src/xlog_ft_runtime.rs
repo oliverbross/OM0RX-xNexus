@@ -745,6 +745,46 @@ impl Coordinator {
         s.started = false;
         Ok(())
     }
+    /// The native SDK adapter established that its exclusive initial send returned
+    /// without dispatch. This is local cancellation, never fabricated owner proof.
+    /// Preserve slot high-water and Station accounting; no retry or replay follows.
+    pub(crate) fn discard_not_dispatched(&mut self, operation: &Operation) -> Result<(), Error> {
+        let mut s = self.stop.0.lock().map_err(|_| Error::Unknown)?;
+        if s.release.as_deref() != Some(operation)
+            || s.started
+            || self
+                .pending
+                .as_ref()
+                .is_some_and(|p| p.plan.key != operation.key || p.started.is_some())
+        {
+            return Err(Error::WrongOperation);
+        }
+        s.armed = false;
+        s.cancelled = true;
+        s.release = None;
+        self.pending = None;
+        self.halt = Some(Halt::Stop);
+        Ok(())
+    }
+    /// Encoding/admission failed before any operation was bound. Cancel only this
+    /// exact unbound plan; an unrelated or possibly dispatched release is untouched.
+    pub(crate) fn discard_unbound(&mut self, plan: &Plan) -> Result<bool, Error> {
+        let mut s = self.stop.0.lock().map_err(|_| Error::Unknown)?;
+        if s.release.is_some()
+            || s.started
+            || !self
+                .pending
+                .as_ref()
+                .is_some_and(|p| p.plan.key == plan.key && p.started.is_none())
+        {
+            return Ok(false);
+        }
+        s.armed = false;
+        s.cancelled = true;
+        self.pending = None;
+        self.halt = Some(Halt::Stop);
+        Ok(true)
+    }
     /// Verification happens outside the independent Stop lock. Its result is
     /// re-fenced under that lock before Station accounting or release retirement.
     pub(crate) fn owner_event(

@@ -13,6 +13,8 @@ const C: &str = "33333333-3333-4333-8333-333333333333";
 const K: &str = "44444444-4444-4444-8444-444444444444";
 struct FakeState {
     ready: AtomicBool,
+    fail_context: AtomicBool,
+    failed_context_requests: AtomicU64,
     audio_generation: AtomicU64,
     enabled: AtomicBool,
     receipt: Mutex<Option<Value>>,
@@ -22,6 +24,10 @@ struct FakeState {
     slot: AtomicU64,
     prepare_blocked: AtomicBool,
     prepare_entered: AtomicBool,
+    prepare_requests: AtomicU64,
+    drop_prepare_response: AtomicBool,
+    max_prepare_bytes: AtomicU64,
+    changed_tx_route: AtomicBool,
     tune_count: AtomicU64,
     tune_gain: AtomicU64,
     stop_blocked: AtomicBool,
@@ -40,6 +46,8 @@ impl Fake {
         let url = format!("http://{}", listener.local_addr().unwrap());
         let state = Arc::new(FakeState {
             ready: AtomicBool::new(true),
+            fail_context: AtomicBool::new(false),
+            failed_context_requests: AtomicU64::new(0),
             audio_generation: AtomicU64::new(1),
             enabled: AtomicBool::new(false),
             receipt: Mutex::new(None),
@@ -49,6 +57,10 @@ impl Fake {
             slot: AtomicU64::new(0),
             prepare_blocked: AtomicBool::new(false),
             prepare_entered: AtomicBool::new(false),
+            prepare_requests: AtomicU64::new(0),
+            drop_prepare_response: AtomicBool::new(false),
+            max_prepare_bytes: AtomicU64::new(4194304),
+            changed_tx_route: AtomicBool::new(false),
             tune_count: AtomicU64::new(0),
             tune_gain: AtomicU64::new(0),
             stop_blocked: AtomicBool::new(false),
@@ -93,7 +105,7 @@ impl Drop for Fake {
     }
 }
 fn context(state: &FakeState) -> Value {
-    json!({"schema_version":1,"binding":{"server_instance":S,"workspace_id":W,"context_id":C,"clock_epoch":K},"ready":state.ready.load(Ordering::Acquire),"reason":if state.ready.load(Ordering::Acquire){None}else{Some("not_ready")},"local_enabled":true,"client_enabled":state.enabled.load(Ordering::Acquire),"identity":{"mycall":"K1ABC","mygrid":"FN42","worker_generation":1,"settings_revision":1,"identity_epoch":C,"identity_revision":1},"route":{"radio_id":"radio","receiver_id":"A","transmit_slice":"A","device_id":"synthetic-output","route_epoch":K,"sample_rate_hz":48000,"channels":2,"selected_channels":[0],"frequency_hz":14074000,"radio_mode":"DIGU"},"generated_at_unix_ms":wall_us().unwrap()/1000,"max_age_ms":1000,"heartbeat_interval_ms":200,"heartbeat_timeout_ms":1000,"max_prepare_bytes":4194304,"min_offset_hz":100,"max_offset_hz":5000,"max_abs_sample_f32_bits":0.95f32.to_bits()})
+    json!({"schema_version":1,"binding":{"server_instance":S,"workspace_id":W,"context_id":C,"clock_epoch":K},"ready":state.ready.load(Ordering::Acquire),"reason":if state.ready.load(Ordering::Acquire){None}else{Some("not_ready")},"local_enabled":true,"client_enabled":state.enabled.load(Ordering::Acquire),"identity":{"mycall":"K1ABC","mygrid":"FN42","worker_generation":1,"settings_revision":1,"identity_epoch":C,"identity_revision":1},"route":{"radio_id":"radio","receiver_id":"A","transmit_slice":"A","device_id":if state.changed_tx_route.load(Ordering::Acquire){"other-output"}else{"synthetic-output"},"route_epoch":K,"sample_rate_hz":48000,"channels":2,"selected_channels":[0],"frequency_hz":14074000,"radio_mode":"DIGU"},"generated_at_unix_ms":wall_us().unwrap()/1000,"max_age_ms":1000,"heartbeat_interval_ms":200,"heartbeat_timeout_ms":1000,"max_prepare_bytes":state.max_prepare_bytes.load(Ordering::Acquire),"min_offset_hz":100,"max_offset_hz":5000,"max_abs_sample_f32_bits":0.95f32.to_bits()})
 }
 fn serve(mut stream: TcpStream, state: &FakeState) {
     stream.set_nonblocking(false).unwrap();
@@ -156,6 +168,16 @@ fn serve(mut stream: TcpStream, state: &FakeState) {
         };
         json!({"protocol_version":1,"server_instance":S,"workspace_id":W,"generated_at_unix_ms":wall_us().unwrap()/1000,"max_age_ms":1000,"state":"running","reason":null,"descriptor":{"capture_id":capture,"epoch":epoch,"radio_id":"radio","receiver_id":"A","mapping_generation":generation,"device_id":"synthetic-input","slice":"A","dax_channel":1,"frequency_hz":14074000,"mode":"DIGU","source_channels":1,"selected_channel":0,"sample_rate":12000,"sample_format":"s16le","timestamp_basis":"windows_endpoint_capture","remote_rf_latency_us":null,"utc_sync_accuracy_us":null},"oldest_sequence":after+1,"next_sequence":after+2,"gap":false,"chunks":[{"sequence":after+1,"first_frame":after,"frame_count":1,"sample0_unix_us":wall_us().unwrap(),"calibration_uncertainty_us":10,"pcm_base64":"AAA="}]})
     } else if path.ends_with("/context") {
+        if state.fail_context.load(Ordering::Acquire) {
+            state.failed_context_requests.fetch_add(1, Ordering::AcqRel);
+            stream
+                .write_all(
+                    b"HTTP/1.1 503 Unavailable\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}",
+                )
+                .unwrap();
+            return;
+        }
+
         context(state)
     } else if path.ends_with("/heartbeat") {
         state.heartbeats.fetch_add(1, Ordering::AcqRel);
@@ -167,6 +189,12 @@ fn serve(mut stream: TcpStream, state: &FakeState) {
             .store(b["enabled"].as_bool().unwrap(), Ordering::Release);
         context(state)
     } else if path.ends_with("/prepare") || path.ends_with("/tune") {
+        if path.ends_with("/prepare") {
+            state.prepare_requests.fetch_add(1, Ordering::AcqRel);
+            if state.drop_prepare_response.load(Ordering::Acquire) {
+                return;
+            }
+        }
         let (d, digest) = if path.ends_with("/prepare") {
             let n = u32::from_le_bytes(body[..4].try_into().unwrap()) as usize;
             (
@@ -938,4 +966,264 @@ fn manual_log_current_unkeyed_target_is_stable_and_never_previous_qso() {
     assert_ne!(second.0, first.0);
     host.action(Action::Cq { direction: None }).unwrap();
     assert!(host.log_draft().is_err());
+}
+
+// Exercise the same publication/SDK dispatch function used by prepare_operation,
+// with actual immutable encoder output and the actual SDK's captured context lease.
+fn dispatch_fixture(host: &Host) -> (kernel::Plan, Arc<PreparedOperation>, Arc<ContextLease>) {
+    let wall = wall_us().unwrap();
+    let mut slot = (wall / 7_500_000 + 2) * 7_500_000;
+    let (plan, cfg) = {
+        let mut s = lock(&host.inner.state).unwrap();
+        let cfg = s.config.clone();
+        if slot / 7_500_000 % 2 != u64::from(!cfg.even) {
+            slot += 7_500_000;
+        }
+        let p = s
+            .coordinator
+            .as_mut()
+            .unwrap()
+            .plan(slot, slot + 50_000, wall, Instant::now())
+            .unwrap();
+        (p, cfg)
+    };
+    let source = plan.prepare(cfg.offset).unwrap();
+    let output = xlog_ft_output::prepare(&source, cfg.gain, plan.deadline()).unwrap();
+    let c = Arc::new(host.inner.client.context().unwrap());
+    let d = wire::Prepare {
+        schema_version: 2,
+        binding: c.context().binding.clone(),
+        client_id: host.inner.client_id.clone(),
+        operation_id: uuid().unwrap(),
+        event_id: uuid().unwrap(),
+        slot_start_unix_us: plan.key().slot_start_us,
+        latest_start_unix_us: plan.key().latest_start_us,
+        manifest: serde_json::from_slice(output.manifest()).unwrap(),
+    };
+    let op = Arc::new(
+        host.inner
+            .client
+            .build_prepared(&c, d, output.pcm())
+            .unwrap(),
+    );
+    (plan, op, c)
+}
+fn refresh_dispatch_fixture(host: &Host) {
+    let current = Arc::new(host.inner.client.context().unwrap());
+    let mut s = lock(&host.inner.state).unwrap();
+    let key = s.key.clone().unwrap();
+    s.coordinator
+        .as_mut()
+        .unwrap()
+        .refresh(
+            &key,
+            Instant::now() + Duration::from_millis(current.remaining_valid_ms()),
+            Instant::now(),
+        )
+        .unwrap();
+    s.context = Some(current);
+}
+#[test]
+fn never_dispatched_prepare_does_not_retain_release_or_replay_slot() {
+    let (fake, _bridge, host, mut audio) = setup();
+    accepted(&host, &mut audio);
+    host.action(Action::Work {
+        decode_id: "native-row".into(),
+    })
+    .unwrap();
+    let (plan, op, original) = dispatch_fixture(&host);
+    thread::sleep(Duration::from_millis(original.remaining_valid_ms() + 25));
+    assert!(!original.is_fresh());
+    refresh_dispatch_fixture(&host); // Fresh current authority does not renew the old operation's lease.
+    let epoch = host.inner.epoch.load(Ordering::Acquire);
+    let reason =
+        publish_and_prepare(&host.inner, &plan, op.clone(), epoch, 1000, &original).unwrap_err();
+    assert!(reason.contains("Stale"));
+    assert!(!op.initial_dispatch_attempted());
+    assert_eq!(fake.state.prepare_requests.load(Ordering::Acquire), 0);
+    host.inner.fail(reason.clone());
+    assert!(
+        !host.view().unwrap().release_pending,
+        "never-sent prepare must not invent an owner release obligation"
+    );
+    assert_eq!(host.view().unwrap().reason, reason);
+    assert!(!OPERATION_HELD.load(Ordering::Acquire));
+    let mut s = lock(&host.inner.state).unwrap();
+    let c = s.coordinator.as_mut().unwrap();
+    assert!(c.stop_handle().release().unwrap().is_none());
+    assert_eq!(c.view().unwrap().tx_count, 0);
+    c.apply(kernel::Intent::Enable(true), Instant::now())
+        .unwrap();
+    assert!(matches!(
+        c.plan(
+            plan.key().slot_start_us,
+            plan.key().latest_start_us,
+            wall_us().unwrap(),
+            Instant::now()
+        ),
+        Err(kernel::Error::SlotUsed)
+    ));
+}
+#[test]
+fn dispatched_prepare_failure_retains_exact_release_and_first_reason() {
+    let (fake, _bridge, host, mut audio) = setup();
+    accepted(&host, &mut audio);
+    host.action(Action::Work {
+        decode_id: "native-row".into(),
+    })
+    .unwrap();
+    let (plan, op, original) = dispatch_fixture(&host);
+    refresh_dispatch_fixture(&host);
+    fake.state
+        .drop_prepare_response
+        .store(true, Ordering::Release);
+    let epoch = host.inner.epoch.load(Ordering::Acquire);
+    let reason = publish_and_prepare(
+        &host.inner,
+        &plan,
+        op.clone(),
+        epoch,
+        original.remaining_valid_ms(),
+        &host.inner.current().unwrap(),
+    )
+    .unwrap_err();
+    assert!(reason.contains("OutcomeUnknown"));
+    assert!(op.initial_dispatch_attempted());
+    assert_eq!(fake.state.prepare_requests.load(Ordering::Acquire), 1);
+    host.inner.fail(reason.clone());
+    host.inner
+        .fail("Owner receipt missing; exact release remains pending".into());
+    assert!(host.view().unwrap().release_pending);
+    assert_eq!(
+        host.view().unwrap().reason,
+        reason,
+        "generic polling must not erase the original prepare failure"
+    );
+    let active = lock(&host.inner.active).unwrap();
+    let a = active.as_ref().unwrap();
+    assert_eq!(a.operation.key(), op.key());
+    assert!(a.query_ready);
+    assert_eq!(a.native.as_ref().unwrap().id, op.key().operation_id);
+    drop(active);
+    // Test-process teardown only: no owner terminal receipt or RF outcome is fabricated.
+    *lock(&host.inner.active).unwrap() = None;
+    OPERATION_HELD.store(false, Ordering::Release);
+}
+
+#[test]
+fn fresh_matching_admission_dispatches_immutable_body_once_after_original_expires() {
+    let (fake, _bridge, host, mut audio) = setup();
+    accepted(&host, &mut audio);
+    host.action(Action::Work {
+        decode_id: "native-row".into(),
+    })
+    .unwrap();
+    let (plan, op, original) = dispatch_fixture(&host);
+    let original_body = op.body().to_vec();
+    thread::sleep(Duration::from_millis(original.remaining_valid_ms() + 25));
+    assert!(matches!(
+        host.inner.client.prepare(&op),
+        Err(xnexus_xlog_client::Error::Stale)
+    ));
+    assert_eq!(fake.state.prepare_requests.load(Ordering::Acquire), 0);
+    assert!(!op.initial_dispatch_attempted());
+    fake.state
+        .max_prepare_bytes
+        .store(4194303, Ordering::Release);
+    let changed = host.inner.client.context().unwrap();
+    assert!(host
+        .inner
+        .client
+        .prepare_with_context(&changed, &op)
+        .is_err());
+    fake.state
+        .max_prepare_bytes
+        .store(4194304, Ordering::Release);
+    fake.state.changed_tx_route.store(true, Ordering::Release);
+    let changed = host.inner.client.context().unwrap();
+    assert!(host
+        .inner
+        .client
+        .prepare_with_context(&changed, &op)
+        .is_err());
+    assert_eq!(fake.state.prepare_requests.load(Ordering::Acquire), 0);
+    assert!(!op.initial_dispatch_attempted());
+    fake.state.changed_tx_route.store(false, Ordering::Release);
+    refresh_dispatch_fixture(&host);
+    let current = host.inner.current().unwrap();
+    assert!(current.is_fresh());
+    let epoch = host.inner.epoch.load(Ordering::Acquire);
+    publish_and_prepare(&host.inner, &plan, op.clone(), epoch, 1000, &current).unwrap();
+    assert_eq!(op.body(), original_body);
+    assert!(op.initial_dispatch_attempted());
+    assert_eq!(fake.state.prepare_requests.load(Ordering::Acquire), 1);
+    assert!(host
+        .inner
+        .client
+        .prepare_with_context(&current, &op)
+        .is_err());
+    assert_eq!(fake.state.prepare_requests.load(Ordering::Acquire), 1);
+    assert_eq!(host.view().unwrap().tx_count, 0); // Prepared is not actual start.
+    let (stop, event) = lock(&host.inner.active)
+        .unwrap()
+        .as_ref()
+        .map(|a| (a.stop_client.clone(), a.stop_event.clone()))
+        .unwrap();
+    apply_proof(&host.inner, stop.stop(&event).unwrap()).unwrap();
+    assert!(!host.view().unwrap().release_pending);
+    assert!(!OPERATION_HELD.load(Ordering::Acquire));
+}
+
+#[test]
+fn failed_post_body_context_cancels_only_unbound_plan() {
+    let (fake, _bridge, host, mut audio) = setup();
+    accepted(&host, &mut audio);
+    host.action(Action::Work {
+        decode_id: "native-row".into(),
+    })
+    .unwrap();
+    let wall = wall_us().unwrap();
+    let mut slot = (wall / 7_500_000 + 2) * 7_500_000;
+    let (plan, cfg, context, epoch) = {
+        let mut s = lock(&host.inner.state).unwrap();
+        let cfg = s.config.clone();
+        if slot / 7_500_000 % 2 != u64::from(!cfg.even) {
+            slot += 7_500_000;
+        }
+        let p = s
+            .coordinator
+            .as_mut()
+            .unwrap()
+            .plan(slot, slot + 50_000, wall, Instant::now())
+            .unwrap();
+        (
+            p,
+            cfg,
+            s.context.clone().unwrap(),
+            host.inner.epoch.load(Ordering::Acquire),
+        )
+    };
+    fake.state.fail_context.store(true, Ordering::Release);
+    let reason = prepare_operation(&host.inner, plan, context, cfg, epoch).unwrap_err();
+    assert_eq!(
+        fake.state.failed_context_requests.load(Ordering::Acquire),
+        1,
+        "actual fresh GET after body construction must have failed"
+    );
+    assert_eq!(fake.state.prepare_requests.load(Ordering::Acquire), 0);
+    host.inner.fail(reason);
+    assert!(!host.view().unwrap().release_pending);
+    assert!(!OPERATION_HELD.load(Ordering::Acquire));
+    fake.state.fail_context.store(false, Ordering::Release);
+    audio = _bridge.audio_handle().unwrap();
+    host.feed().touch(Arc::new(audio.poll().unwrap()));
+    host.action(Action::Work {
+        decode_id: "native-row".into(),
+    })
+    .unwrap();
+    assert!(
+        host.view().unwrap().armed,
+        "a new explicit operator intent is not stuck Busy"
+    );
+    assert_eq!(host.view().unwrap().tx_count, 0);
 }
