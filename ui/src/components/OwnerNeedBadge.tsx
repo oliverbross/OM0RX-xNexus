@@ -1,26 +1,42 @@
 // SPDX-License-Identifier: GPL-3.0-only
+import type { CSSProperties } from 'react'
 import type { ExternalDecodeEntry } from '../decodeHistory'
 import { t } from '../i18n'
 import { unknownReason } from '../xlog/rxNeeds'
+import { xlogStatusCode, xlogStatusColor } from '../xlog/xlogStatus'
 
-/** Classifications are owner data, independently useful when entity resolution
- * is unknown. Never turn a missing answer into an unworked callsign. */
+/** xLog's two cluster columns for this station: CS (Call status) and DS (DXCC status), each in
+ * xLog's own short code and colour, so a station reads the same here as in xLog's cluster.
+ * Classifications are owner data, independently useful when entity resolution is unknown.
+ * Never turn a missing answer into an unworked callsign. The chip keeps Nexus's chip treatment
+ * (the word in the theme's ink, the status colour on the border and tint) so it reads in every
+ * theme; only the colour is xLog's. */
 export function OwnerNeedBadge({ facts }: { facts: ExternalDecodeEntry['external'] }) {
   const call = facts.callStatus && facts.callStatus !== 'Unknown' ? facts.callStatus : null
   const dxcc = facts.dxccStatus && facts.dxccStatus !== 'Unknown' ? facts.dxccStatus : null
   const fallback = facts.status === 'needed' ? t('xlog.need.needed')
     : facts.status === 'worked' ? t('xlog.need.worked') : t('xlog.need.unknown')
-  const title = ['xLog', call, facts.dxccStatus && `DXCC ${facts.dxccStatus}`,
-    [facts.band, facts.classificationMode].filter(Boolean).join(' '), ...facts.reasons,
+  const title = ['xLog',
+    `CS ${facts.callStatus ?? 'Unknown'}`, `DS ${facts.dxccStatus ?? 'Unknown'}`,
+    [facts.band, facts.classificationMode].filter(Boolean).join(' '),
+    facts.score != null ? `score ${facts.score}` : '', ...facts.reasons,
     facts.status === 'unknown' ? unknownReason(facts.reason) : facts.reason].filter(Boolean).join(' · ')
-  const color = call === 'New Band' ? 'need-band' : call === 'New Mode' ? 'need-mode'
-    : facts.status === 'needed' ? 'need-entity' : ''
-  return <>
-    <span className={`need-chip ${color}`} title={title}>
-      {call ?? fallback}{facts.score != null ? ` · ${facts.score}` : ''}
+  if (!call && !dxcc) {
+    return <span className="need-chip" title={title}>{fallback}</span>
+  }
+  const chip = (kind: 'CS' | 'DS', status: string | null) => (
+    <span
+      className="need-chip xlog-status"
+      data-xlog-status={status ?? 'Unknown'}
+      style={{ '--need-color': xlogStatusColor(status) } as CSSProperties}
+      title={title}
+      aria-label={`${kind} ${status ?? 'Unknown'}`}
+    >
+      {xlogStatusCode(status)}
     </span>
-    {dxcc && dxcc !== call && <span className={`need-chip ${dxcc === 'ATNO' ? 'need-entity' : ''}`} title={title}>
-      {`DXCC ${dxcc}`}
-    </span>}
+  )
+  return <>
+    {chip('CS', call)}
+    {chip('DS', dxcc)}
   </>
 }

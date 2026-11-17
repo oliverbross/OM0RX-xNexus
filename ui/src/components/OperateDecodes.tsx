@@ -4,7 +4,7 @@ import { OwnerNeedBadge } from './OwnerNeedBadge'
 // DT in seconds, the audio offset in Hz, the UTC stamp, the band, the tier and the country.
 // So do the TOKENS the pane is built out of — gathered in DECODE_TOKENS below so a translator
 // can see the whole set at once. What moved is the prose around them.
-import { Fragment, memo, useEffect, useId, useMemo, useRef, useState } from 'react'
+import { Fragment, memo, useEffect, useId, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { getLocale, t } from '../i18n'
 import { PaneCloseButton } from './panes/PaneCloseButton'
 import { useRovingList } from '../useRovingList'
@@ -44,6 +44,7 @@ import { useEntityCentroids } from '../features/entityCentroids'
 import { callCardTrigger, qrzPageOf } from './CallCard'
 import { CallRowMenu, isMenuKey, useMenuFocusReturn } from './CallRowMenu'
 import { useWatchMatch, watchColorStyle, type WatchColor } from '../watchlist'
+import { isXlogNeed, xlogOpportunityStatus, xlogStatusColor } from '../xlog/xlogStatus'
 
 /**
  * The pane's invariant vocabulary — never translated, never locale-formatted.
@@ -1186,7 +1187,15 @@ const DecodeRowView = memo(function DecodeRowView({
   // #299 — re-points --need-watch on this row only; it repaints nothing unless the row carries a
   // watch mark. Alongside the UDP highlight, which still wins the row's own colours.
   const watchStyle = watchColorStyle(watchColor)
-  const rowStyle = hlStyle || watchStyle ? { ...watchStyle, ...hlStyle } : undefined
+  // An xLog-classified row takes the colour xLog's band map gives the station (a needed entity
+  // first, then a needed call), so the stations worth working stand out as they do in xLog.
+  const xlogStatus = 'external' in d
+    ? xlogOpportunityStatus(d.external.callStatus, d.external.dxccStatus) : null
+  const xlogNeed = isXlogNeed(xlogStatus) ? xlogStatus : null
+  const xlogStyle = xlogNeed
+    ? ({ '--xlog-need-color': xlogStatusColor(xlogNeed) } as CSSProperties) : undefined
+  const rowStyle = hlStyle || watchStyle || xlogStyle
+    ? { ...xlogStyle, ...watchStyle, ...hlStyle } : undefined
   // Tooltip suffix for highlighted rows so the operator knows why the color appeared.
   // An appended CLAUSE carrying its own separator, interpolated whole.
   const hlTip = hlEntry ? t('operate.decodes.row.highlighted') : ''
@@ -1200,7 +1209,7 @@ const DecodeRowView = memo(function DecodeRowView({
   const azText = azimuthLabel(az)
   return (
       <div
-        className={`decode-row ${rowClass(d, needs.rowNeed)}${selected ? ' selected' : ''}${ignored ? ' ignored' : ''}${d.refilled ? ' refilled' : ''}`}
+        className={`decode-row ${rowClass(d, needs.rowNeed, xlogNeed)}${selected ? ' selected' : ''}${ignored ? ' ignored' : ''}${d.refilled ? ' refilled' : ''}`}
         role="option"
         data-pin-key={d.id}
         aria-selected={selected}
@@ -1460,9 +1469,11 @@ function dtClass(dt: number): string {
  * new. `rowNeed` is the resolved need colour class (or null); `dxped/pota/sota` are
  * icon-only and never reach here. Falls back to the decode's own flags when no
  * NeedAlerts are supplied (Tempo rail / detached panel). */
-function rowClass(d: DisplayDecodeEntry, rowNeed: string | null): string {
+function rowClass(d: DisplayDecodeEntry, rowNeed: string | null, xlogNeed: string | null = null): string {
   if (d.mine) return 'mine own-tx' // our own transmitted message — WSJT-X yellow
   if (d.directedToMe) return 'directed'
+  // xLog's answer for a companion row, which carries no Nexus need of its own (rowNeed is null).
+  if (xlogNeed) return 'xlog-need'
   if (isAwardNeed(rowNeed)) return rowNeed as string // need-entity/zone/band/mode/grid
   if (d.isCq) return 'cq'
   if (rowNeed === 'need-confirm') return 'need-confirm' // worked, needs a QSL

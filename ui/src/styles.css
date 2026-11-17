@@ -19179,6 +19179,18 @@ button.recall-avatar:focus-visible .recall-avatar-qrz {
   border-left: 3px solid var(--need-pota);
   background: color-mix(in srgb, var(--need-pota) 22%, transparent);
 }
+/* XLOG'S CLASSIFICATION ON A COMPANION ROW. With xLog as the logbook, a row xLog calls needed (ATNO, a
+   C/ or W/ "New …" entity, or a "New …" call) takes the colour xLog's band map gives it
+   (`--xlog-need-color`, set on the row from ui/src/xlog/xlogStatus.ts), so the stations worth working
+   stand out as they do in xLog's cluster. Its CS/DS chips are outlines on that row (the row carries the
+   tint), as a need's lead chip is on its own row below. */
+.decode-row.xlog-need {
+  border-left: 3px solid var(--xlog-need-color);
+  background: color-mix(in srgb, var(--xlog-need-color) 18%, transparent);
+}
+.decode-row.xlog-need .need-chip.xlog-status {
+  background: transparent;
+}
 /* THE LEAD CHIP ON ITS OWN ROW (operator, 2026-09-30: "Chip drops its tint there"). A row tinted in a need's colour
    leads with that need's chip. With the word in the ink, the chip's own tint stacked on the row's, and in the night
    modes, whose ink is dimmer than the bright need colours, WATCH on a watched station's row read 3.12:1 in Chrome. So
