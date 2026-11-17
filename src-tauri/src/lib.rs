@@ -3406,6 +3406,7 @@ fn choose_radio(app: tauri::AppHandle, radio_id: u32) -> Result<(), String> {
     // last change here must be on the disk before it reads.
     flush_settings();
     tempo_core::process::command(exe)
+        .args(xlog_mode::relaunch_mode_args())
         .arg("--profile")
         .arg(radio_profile_key(radio_id))
         .spawn()
@@ -3608,6 +3609,7 @@ fn radio_picker_timed_out(
                     continue; // already open in another window
                 }
                 tempo_core::process::command(&exe)
+                    .args(xlog_mode::relaunch_mode_args())
                     .arg("--profile")
                     .arg(key)
                     .spawn()

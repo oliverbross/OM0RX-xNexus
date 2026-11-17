@@ -2524,6 +2524,10 @@ pub(crate) fn start_again<R: Runtime>(app: &tauri::AppHandle<R>, mut args: Vec<S
     if let Some(profile) = crate::active_profile() {
         args.splice(0..0, ["--profile".to_string(), profile.to_string()]);
     }
+    // The operating mode goes along too: without it an independent-mode Nexus would
+    // start again as xLog's companion (companion mode is the default).
+    let mode = crate::xlog_mode::relaunch_mode_args();
+    args.splice(0..0, mode.iter().map(|a| a.to_string()));
     *lock(&AGAIN_WITH) = Some(args);
     match app.get_webview_window("main") {
         Some(main) => {

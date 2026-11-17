@@ -856,6 +856,9 @@ const MAY_REACH: &[&str] = &[
     // Where the sign-in times are, beside it; and this computer's name. They open nothing.
     "crate::lan_client::signed_path",
     "crate::lan_client::computer_name",
+    // The operating-mode flag a restart carries: it reads this process's own command line and
+    // starts nothing.
+    "crate::xlog_mode::relaunch_mode_args",
     // Signing in again for the station this launch drives: the system browser, this computer's
     // own requests to the Remote service and its issuer, and its enrolment on a connection of
     // its own to the station, which keeps it. It keys nothing and starts nothing of a station.

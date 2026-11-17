@@ -938,6 +938,22 @@ pub(crate) fn requested() -> bool {
         .any(|arg| arg == "--independent-mode")
 }
 
+/// The mode argument a relaunch of this process must carry so it comes back in the
+/// same operating mode. Companion mode is the default, so an independent-mode
+/// process that relaunched itself without the flag (radio picker, client/station
+/// switch) would silently come back as xLog's companion instead.
+pub(crate) fn relaunch_mode_args() -> &'static [&'static str] {
+    mode_args(requested())
+}
+
+fn mode_args(companion: bool) -> &'static [&'static str] {
+    if companion {
+        &[]
+    } else {
+        &["--independent-mode"]
+    }
+}
+
 fn startup_failure(reason: &str) -> ! {
     eprintln!("OM0RX-xNexus could not start: {reason}");
     #[cfg(windows)]
@@ -1059,6 +1075,13 @@ pub(crate) fn run() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn a_relaunch_keeps_independent_mode_and_companion_mode_adds_nothing() {
+        assert_eq!(mode_args(false), ["--independent-mode"]);
+        assert!(mode_args(true).is_empty());
+        // The flag a relaunch carries is exactly the one `requested` reads.
+        assert!(mode_args(false).iter().all(|a| *a == "--independent-mode"));
+    }
     #[test]
     fn explicit_private_root_is_shared_and_never_falls_back() {
         let fallback = std::env::temp_dir().join("xnexus-fallback");
