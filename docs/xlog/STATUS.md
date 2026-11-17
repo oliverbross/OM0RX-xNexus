@@ -1,4 +1,21 @@
-# Execution ledger — 15 November 2026
+# Execution ledger — 17 November 2026
+
+## Current installed checkpoint — xLog 1.6.54 and Nexus .13
+
+[Nexus `.13`](CANDIDATE_1.24.1-xlog.13.md) is built, statically audited,
+independently retained and installed from exact source
+`326f6d658e5c2ba18f4072563d986e33363756a8`, paired with installed xLog 1.6.54
+source `2085c521dec5901babb6b9d5699eb5edb44e90c4`. Both installers exited 0 and
+the installed executable identities were verified. Both applications were
+opened normally; one established local connection was observed. In the bounded
+read-only 32-call query, two pending responses were followed by two ready batches
+(19 needed, 13 worked, zero unknown); metadata and owner TX context were ready
+in all four observations. This does not verify native GUI badges/Work gestures
+or physical/on-air TX. Operator acceptance and broader qualification remain open.
+The candidate record contains exact receipts and the observation interval.
+
+Entries below preserve earlier source/acceptance checkpoints as history; their
+then-current installed/source-only statements do not supersede this checkpoint.
 
 ## 16 November — decoded logbook facts
 
@@ -27,7 +44,7 @@ this source change. TX and decoded worked/needed fixes are separate active work.
 The integration remains in qualification. Source, synthetic tests, packaged
 binaries and physical station acceptance are separate evidence levels.
 
-## Current source checkpoint
+## Historical source checkpoint — 15 November
 
 Windows [`.5` built, passed static audit and was independently retained](WINDOWS_BUILD_1.24.1-xlog.5.md)
 from exact clean `75a59f786ee1f437e7ab14a147bb3ca0ceed1c49`. It is **internal
