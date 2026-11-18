@@ -94,6 +94,7 @@ fn period(c: &Context, start: u64, text: &str) -> NativeDecodedPeriod {
             rv: None,
             mode: Some(c.mode()),
             raw: None,
+            unchecked: false,
         }],
     }
 }

@@ -5432,6 +5432,7 @@ dependencies = [
  "webview2-com",
  "windows-core 0.61.2",
  "windows-sys 0.59.0",
+ "xnexus-tx-prepare",
  "xnexus-xlog-client",
  "xnexus-xlog-rx",
 ]
@@ -7269,6 +7270,14 @@ checksum = "32e45ad4206f6d2479085147f02bc2ef834ac85886624a23575ae137c8aa8156"
 dependencies = [
  "libc",
  "rustix",
+]
+
+[[package]]
+name = "xnexus-tx-prepare"
+version = "0.1.0"
+dependencies = [
+ "modes",
+ "sha2",
 ]
 
 [[package]]

@@ -95,7 +95,9 @@ fn main() {
         // Native GNU Windows builds must be as portable as the cross-release path:
         // never rely on the builder's MSYS2 runtime DLLs being installed at the station.
         let fc = env::var("FC").unwrap_or_else(|_| "gfortran".into());
-        for name in ["gfortran", "quadmath", "stdc++", "fftw3f", "winpthread"] {
+        // gomp: the FT8 decoder is built with -fopenmp (see link_openmp()); before winpthread,
+        // which it depends on.
+        for name in ["gfortran", "quadmath", "stdc++", "fftw3f", "gomp", "winpthread"] {
             let output = Command::new(&fc)
                 .arg(format!("-print-file-name=lib{name}.a"))
                 .output()

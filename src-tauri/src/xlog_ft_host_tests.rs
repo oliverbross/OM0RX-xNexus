@@ -461,6 +461,7 @@ fn accepted_generation(
             rv: None,
             mode: Some(tempo_core::modes::ModeKind::Ft4),
             raw: None,
+            unchecked: false,
         }],
     });
     host.feed().publish(
