@@ -364,6 +364,11 @@ const DUPE_POLICY: &[(&str, bool)] = &[
     ("cqww_rtty", true),
     ("cqwpx_cw", true),
     ("cqwpx_ssb", true),
+    // The WAE DX Contest's rules (DARC, "Rules 2025") say nothing about removing or keeping
+    // dupes: no evidence, so older builds refuse and this one logs it.
+    ("waedc_cw", false),
+    ("waedc_ssb", false),
+    ("waedc_rtty", false),
 ];
 
 /// The LOADER end: every shipped ruleset logs its dupes in this build, whatever the seed
@@ -439,6 +444,7 @@ fn dec(text: &str) -> modes::Decode {
         qual: 1.0,
         rv: None,
         raw: None,
+        unchecked: false,
         mode: None,
     }
 }
@@ -474,7 +480,7 @@ fn next(st: &FieldDayStation) -> String {
 /// with `section` in its exchange. Every over this station sent, in order; the station is back
 /// to listening after it.
 fn picked_contact(st: &mut FieldDayStation, event: &str, section: &str, slot: u64) -> Vec<String> {
-    st.answer_cq("W9XYZ", "EN37");
+    st.answer_cq("W9XYZ", "EN37", -10);
     finished(st, event, section, slot)
 }
 

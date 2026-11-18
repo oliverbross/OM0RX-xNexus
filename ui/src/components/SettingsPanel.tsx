@@ -13,6 +13,7 @@ import { js8CqTextRefused } from '../js8Compose'
 import { confirmDialog } from '../confirm'
 import { Js8FrequencySettings } from './Js8FrequencySettings'
 import { DraftNumberInput } from './DraftNumberInput'
+import { JtdxDecoderFields } from './JtdxDecoderFields'
 import { checkRigForm, blocks, netRigctlSerialPort, dataModePickerShown, APRS_DATA_FM_MODELS, ICOM_LAN_MODELS, NATIVE_CIV_MODELS, NO_CAT_PTT_TRANSCEIVERS, nativeCivBlockedReason, type RigCheck } from '../rigFormChecks'
 import {
   confirmSatUplink,
@@ -69,6 +70,7 @@ import {
   getAllRigModels,
   getPortlessRigModels,
   getCatCwUnprovenRigModels,
+  getCatCwNoMorseRigModels,
   getPttMicDataRigModels,
   getAudioDevices,
   getBandPlan,
@@ -87,6 +89,7 @@ import {
   setQrzLogbookKey,
   setQrzPassword,
   uploadBacklog,
+  AT_SHACK_ONLY,
   setRepeaterbookToken,
   setRxGain,
   setSettings,
@@ -169,6 +172,25 @@ const SERVICE_TESTS: Record<string, () => Promise<string>> = {
   clublog: () => clublogTestConnection(),
 }
 
+// A failed N3FJP Test, worded. The failures the backend can explain arrive as a CODE and the
+// words (and what to do next) are ours, so they read in the operator's language. Any other
+// failure shows the backend's own text, because an unknown failure must not be dressed up as a
+// known one.
+function n3fjpTestFailure(said: string): string {
+  switch (said) {
+    case 'n3fjpNoHost':
+      return t('settings.n3fjp.test.noHost')
+    case 'n3fjpRefused':
+      return t('settings.n3fjp.test.refused')
+    case 'n3fjpUnreachable':
+      return t('settings.n3fjp.test.unreachable')
+    case 'n3fjpHostNotFound':
+      return t('settings.n3fjp.test.hostNotFound')
+    default:
+      return said
+  }
+}
+
 /** The Cabrillo `CATEGORY-OPERATOR` tokens, in the order a sponsor's template lists
  *  them. INVARIANT: each goes into the file verbatim, so none is ever translated and
  *  none is ever locale-formatted. Mirrors `contest::OperatorCategory`; a token this
@@ -246,11 +268,12 @@ import { tleRefreshMessage } from '../features/tleMessages'
 import { elementBandParts } from '../features/elementBands'
 import { discoverFlex } from '../api'
 import { civDiagnosticLog, civDiagnosticStatus } from '../api'
+import { catTrace, catTraceStatus } from '../api'
 import { allTxtLocation, diagLogLocation, recordingsLocation, revealAllTxt, revealDiagLog, revealRecordings } from '../api'
 import { drivesAnotherStation } from '../features/durableStore'
 import { ShackFilesSave } from './ShackFilesSave'
 import { getCloudlogStations, type CloudlogStation } from '../api'
-import { findDaxDevices, isDaxPaired } from '../features/dax'
+import { findDaxDevices, flexDaxAudioMissing, isDaxPaired } from '../features/dax'
 import { sayExportLacks } from '../features/exportLacks'
 import type { AssistanceEvent, ClubFirewall, ClubLink, ConnEvent, CredStatus, FieldDayStatus, FreedvState, ParsecPresence } from '../types'
 import { parsecStatusText, parsecSwitchPlacement } from '../features/parsecPresence'
@@ -278,6 +301,8 @@ import { SettingsSearch } from './SettingsSearch'
 import { SettingsLicenses } from './SettingsLicenses'
 import { ContestOverDialog, contestOverOffer, hasOffer, type ContestOverOffer } from './ContestOverDialog'
 import { ContestSetupWizard, SETUP_KEYS } from './ContestSetupWizard'
+import { CustomContestActions } from './CustomContestBuilder'
+import { customContest, enteredSlotLabel, enteredTyped, reloadCustomContests, useCustomContests } from '../features/customContests'
 import { contestSummaryText } from './ContestView'
 import { blockerText, startBlocker } from '../features/contestStart'
 import { Js8HeartbeatSettings } from './Js8HeartbeatSettings'
@@ -324,6 +349,7 @@ import { ampPortIsNetwork, joinAmpAddress, KPA_NET_PORT, splitAmpAddress } from 
 import { normaliseTyped, upperTyped } from '../typedInput'
 import { IotaListSettings } from './Iota'
 import { setTxMeterStyle, useTxMeterStyle } from '../txMeterStyle'
+import { SLIDER_MAX, levelText, levelToSlider, sliderToLevel } from './listeningLevel'
 
 /** The call a running contest entry is operated under, when saving `form` over `saved` would
  *  change the station's call (`mycall`) while the entry runs (the live snapshot, `fieldDay`) and
@@ -1293,6 +1319,10 @@ export function SettingsPanel({
       savedRef.current = fresh
       onSaved?.()
       pushToast(t('settings.backup.restore.done'), 'success')
+      // ⛔ A restore keeps the licence class and the transmit safety as this station has them
+      // (`STATION_TX_SAFETY` in the backend), whatever the file says: said every time, so an
+      // operator restoring onto a new computer knows to set them here.
+      pushToast(t('settings.backup.restore.keptSafety'), 'info')
     }, t('settings.backup.restore.failed'))
   }
 
@@ -1488,6 +1518,9 @@ export function SettingsPanel({
   /** Models whose CAT CW keyer is unproven and cannot report its own failure, from the backend.
    *  Empty = rule unread, and no caution is shown. Notice only — never blocks a save. */
   const [catCwUnprovenModels, setCatCwUnprovenModels] = useState<number[]>([])
+  /** Rig models whose Hamlib has no send_morse, so the CAT keyer can never key them, from the
+   *  backend. Empty = rule unread, and no notice is shown. Notice only — never blocks a save. */
+  const [catCwNoMorseModels, setCatCwNoMorseModels] = useState<number[]>([])
   /** Models whose CAT PTT can key the radio's MIC or DATA input (#381), from the backend. Empty =
    *  rule unread, and no radio is offered "Transmit audio source", so every one keys Front/Mic. */
   const [pttMicDataModels, setPttMicDataModels] = useState<number[]>([])
@@ -1511,6 +1544,27 @@ export function SettingsPanel({
   // backend keeps logging while Settings is closed (so the operator can go transmit), so the
   // toggle reads its real state on mount instead of resetting to "off" on every return here.
   const [civLogPath, setCivLogPath] = useState<string | null>(null)
+  // Record CAT traffic: the seconds the backend's trace has left, 0 = off. Not a setting (off at
+  // every launch); read on mount and, while on, every 15 s so the minutes left count down and a
+  // trace that turned itself off reads as off.
+  const [catTraceLeft, setCatTraceLeft] = useState(0)
+  const catTraceOn = catTraceLeft > 0
+  useEffect(() => {
+    let alive = true
+    const read = () => {
+      catTraceStatus()
+        .then((secs) => {
+          if (alive) setCatTraceLeft(secs)
+        })
+        .catch(() => {})
+    }
+    read()
+    const timer = catTraceOn ? window.setInterval(read, 15_000) : undefined
+    return () => {
+      alive = false
+      if (timer !== undefined) window.clearInterval(timer)
+    }
+  }, [catTraceOn])
   useEffect(() => {
     let alive = true
     civDiagnosticStatus()
@@ -1684,7 +1738,7 @@ export function SettingsPanel({
     setN3fjpTest({ state: 'testing', msg: t('settings.connections.test.testing') })
     n3fjpTestConnection()
       .then((msg) => setN3fjpTest({ state: 'ok', msg }))
-      .catch((e) => setN3fjpTest({ state: 'fail', msg: String(e) }))
+      .catch((e) => setN3fjpTest({ state: 'fail', msg: n3fjpTestFailure(String(e)) }))
   }
   useEffect(() => {
     if (status !== 'saved') return
@@ -1702,7 +1756,12 @@ export function SettingsPanel({
   useEffect(() => {
     let live = true
     const load = () => {
-      getConnectionLog().then((l) => live && setConnLog(l)).catch(() => {})
+      // Refused while a stream watches this screen (its lines have carried keys): none is shown.
+      getConnectionLog()
+        .then((l) => live && setConnLog(l))
+        .catch((e: unknown) => {
+          if (live && (e as { code?: unknown } | null)?.code === AT_SHACK_ONLY) setConnLog([])
+        })
       getClusterNodes().then((n) => live && setClusterNodes(n)).catch(() => {})
       getAssistanceJournal().then((l) => live && setAssistLog(l ?? [])).catch(() => {})
     }
@@ -1793,13 +1852,21 @@ export function SettingsPanel({
   const watchedSeen = useRef(watched)
   useEffect(() => {
     if (watched) setClublogKeyShown(false)
+    // The Connections log goes too: the station does not send it while watched.
+    if (watched) setConnLog([])
     if (watchedSeen.current === watched) return
     watchedSeen.current = watched
     let live = true
     void getSettings()
       .then((s) => {
         if (!live) return
-        const keys = { clublogApiKey: s.clublogApiKey, secretsSavedAtStation: s.secretsSavedAtStation }
+        // ...and, while watched, the addresses those keys go to are the station's: the read names
+        // them, and the form shows each read-only.
+        const keys = {
+          clublogApiKey: s.clublogApiKey,
+          secretsSavedAtStation: s.secretsSavedAtStation,
+          stationOnlySettings: s.stationOnlySettings,
+        }
         setForm((prev) => (prev ? { ...prev, ...keys } : prev))
         if (savedRef.current) savedRef.current = { ...savedRef.current, ...keys }
       })
@@ -2102,6 +2169,10 @@ export function SettingsPanel({
     getCatCwUnprovenRigModels()
       .then((m) => mounted && Array.isArray(m) && setCatCwUnprovenModels(m))
       .catch(() => {})
+    // The backend's "this rig model's Hamlib cannot send Morse" rule, fetched once, the same way.
+    getCatCwNoMorseRigModels()
+      .then((m) => mounted && Array.isArray(m) && setCatCwNoMorseModels(m))
+      .catch(() => {})
     // The backend's "this radio's CAT PTT can choose MIC or DATA" rule (#381), fetched once. On
     // failure it stays empty and the choice is not offered: the radio keys as it always has.
     getPttMicDataRigModels()
@@ -2258,8 +2329,16 @@ export function SettingsPanel({
   // while Stop contest… does (`overVia`), whose Turn off is its own save of the mode alone.
   const [overOffer, setOverOffer] = useState<ContestOverOffer | null>(null)
   const [overVia, setOverVia] = useState<'save' | 'stop'>('save')
-  // The contest setup (ContestSetupWizard.tsx), opened by Start contest….
+  // The contest setup (ContestSetupWizard.tsx), opened by Start contest…, or by Edit… on one of the
+  // operator's own contests (`setupEdit`, its id), which opens it on the builder.
   const [setupOpen, setSetupOpen] = useState(false)
+  const [setupEdit, setSetupEdit] = useState<string | undefined>(undefined)
+  // The operator's own contests, for the picker, and a line saying what Export or Delete did.
+  const ownContests = useCustomContests()
+  const [ownNote, setOwnNote] = useState<{ text: string; bad?: boolean } | null>(null)
+  useEffect(() => {
+    void reloadCustomContests()
+  }, [])
   /** Marks the position-name box when a save is refused for it — the callsign refusal has
    *  always marked ITS field, and a refusal that routes you to a tab without saying which box
    *  is the problem is only half an answer. Cleared as soon as the operator types. */
@@ -3456,6 +3535,8 @@ export function SettingsPanel({
     // Every save moves whatever the backend derives from the saved settings — today the
     // contest role preview, which is why it reads this rather than the form.
     setSavedTick((n) => n + 1)
+    // What this Save changes, against the form as it was read: asked again below, of the station.
+    const changed = changedSince(savedRef.current, next) as Record<string, unknown>
     if (editingRadioId != null && editingRadioId !== next.activeRadio) {
       // `withActiveRadioConfig` puts the ACTIVE radio's own config back in the flat fields, so
       // the backend's flat→active fold is a no-op and the edited radio's ports/model/audio
@@ -3481,15 +3562,31 @@ export function SettingsPanel({
     // re-opened for Edit, and the operating radio's went back at the next save of the other one.
     // The station's record of the TX cards, too: the "" a pick put there asked for one read, at this
     // Save, and must not ride a later save, when the cards may have been renumbered since.
-    const { radios, txCardModels } = await getSettings()
-    setForm((prev) => (prev ? { ...prev, radios, txCardModels } : prev))
+    const read = await getSettings()
+    const { radios, txCardModels } = read
+    // …and the radio on the form's "Data modes use plain SSB" as the station now holds it: the save
+    // that gives a radio its first model starts it ON for a radio with no DATA mode (a TS-480), so
+    // the switch shows what that radio will be commanded in.
+    const shown = radios?.find((r) => r.id === (editingRadioId ?? next.activeRadio))
+    const plainSsb = shown ? { dataModesPlainSsb: shown.dataModesPlainSsb } : {}
+    // A setting this Save changed that the station keeps as it has it (set at the station only:
+    // from afar, or while its screen is streamed; its field was locked after it was typed in) shows
+    // the station's value now, a radio's from that radio, never the one typed, and says so.
+    const kept: Record<string, unknown> = {}
+    for (const key of read.stationOnlySettings ?? []) {
+      if (!(key in changed)) continue
+      const from = (shown && key in shown ? shown : read) as unknown as Record<string, unknown>
+      if (from[key] !== (next as unknown as Record<string, unknown>)[key]) kept[key] = from[key]
+    }
+    if (Object.keys(kept).length > 0) pushToast(t('settings.stationOnly.kept'), 'info')
+    setForm((prev) => (prev ? { ...prev, radios, txCardModels, ...plainSsb, ...kept } : prev))
     // The baseline the next Save is diffed against (`saveForm`) holds the radio fields as the form
     // now holds them: the radio on the form, whichever it is, so only the operator's next edit of it
     // reads as a change. (The station-wide save of a form showing another radio leaves the radio
     // fields out, so the radio in use's drive and gain, moved in the cockpit since, are not sent.)
     // Test CAT and Auto-test save through here too, so the radio fields move here for every caller;
     // `commitSave` then takes the whole of what this returns.
-    const saved = { ...next, radios, txCardModels }
+    const saved = { ...next, radios, txCardModels, ...plainSsb, ...kept }
     if (savedRef.current) savedRef.current = { ...savedRef.current, ...radioPatch(saved), radios, txCardModels }
     return saved
   }
@@ -3750,7 +3847,10 @@ export function SettingsPanel({
     let owed: number | null
     try {
       owed = await uploadBacklog(service)
-    } catch {
+    } catch (err) {
+      // Refused through a stream: the save stops here. It would go out after this await, when the
+      // stream's press is over and nothing is left to refuse it by. Matched by its code.
+      if ((err as { code?: unknown } | null)?.code === AT_SHACK_ONLY) throw err
       return undefined
     }
     if (owed == null) return undefined
@@ -3765,8 +3865,8 @@ export function SettingsPanel({
 
   const onSaveEqslPassword = async () => {
     if (!eqslPw) return
-    const sendOld = await askSendOld('eqsl', 'eQSL')
     const ok = await withErrorToast(async () => {
+      const sendOld = await askSendOld('eqsl', 'eQSL')
       await setEqslPassword(eqslPw, sendOld)
       return true
     }, t('settings.connections.eqsl.password.saveFailed'))
@@ -3897,8 +3997,8 @@ export function SettingsPanel({
 
   const onSaveQrzLogbookKey = async () => {
     if (!qrzKey) return
-    const sendOld = await askSendOld('qrz', 'QRZ Logbook')
     const ok = await withErrorToast(async () => {
+      const sendOld = await askSendOld('qrz', 'QRZ Logbook')
       await setQrzLogbookKey(qrzKey, sendOld)
       return true
     }, t('settings.connections.qrz.key.saveFailed'))
@@ -3948,8 +4048,8 @@ export function SettingsPanel({
 
   const onSaveClublogPassword = async () => {
     if (!clublogPw) return
-    const sendOld = await askSendOld('clublog', 'ClubLog')
     const ok = await withErrorToast(async () => {
+      const sendOld = await askSendOld('clublog', 'ClubLog')
       await setClublogPassword(clublogPw, sendOld)
       return true
     }, t('settings.connections.clublog.password.saveFailed'))
@@ -4573,7 +4673,11 @@ export function SettingsPanel({
           initial={Object.fromEntries(
             Object.entries(changedSince(savedRef.current, form)).filter(([k]) => SETUP_KEYS.includes(k as keyof Settings)),
           )}
-          onClose={() => setSetupOpen(false)}
+          editCustom={setupEdit}
+          onClose={() => {
+            setSetupOpen(false)
+            setSetupEdit(undefined)
+          }}
           onSaved={(written) => {
             adoptSaved(written)
             onSaved?.()
@@ -7721,6 +7825,25 @@ export function SettingsPanel({
                 </div>
                 {useInstead('audioIn', 'input')}
                 <span className="settings-hint">{t('settings.audio.input.hint')}</span>
+                {/* #522: with Nexus's own Flex client on, the radio's native DAX audio is a separate
+                    switch, off as it ships, so the waterfall hears this input. Said here, where the
+                    operator looks, until the audio comes from the radio (`flexDaxAudioMissing`). */}
+                {flexDaxAudioMissing(form) && (
+                  <span className="settings-hint">
+                    <T
+                      k="settings.audio.flexDax.note"
+                      tags={{
+                        link: (
+                          <button
+                            type="button"
+                            className="settings-linkbtn"
+                            onClick={() => setOpenTarget('rig-advanced')}
+                          />
+                        ),
+                      }}
+                    />
+                  </span>
+                )}
               </label>
 
               <label className="settings-field">
@@ -7958,16 +8081,17 @@ export function SettingsPanel({
               <label className="settings-field">
                 <span className="settings-label">
                   {t('settings.headphoneMonitor.level.label')}{' '}
-                  <span className="settings-value">{Math.round((form.monitorLevel ?? 0.5) * 100)}%</span>
+                  {/* #480: past 100% the level is a boost, shown in dB (listeningLevel). */}
+                  <span className="settings-value">{levelText(form.monitorLevel ?? 0.5)}</span>
                 </span>
                 <input
                   className="settings-slider"
                   type="range"
                   min="0"
-                  max="1"
+                  max={String(SLIDER_MAX)}
                   step="0.01"
-                  value={String(form.monitorLevel ?? 0.5)}
-                  onChange={(e) => updateNum('monitorLevel', Number(e.target.value))}
+                  value={String(Math.round(levelToSlider(form.monitorLevel ?? 0.5) * 100) / 100)}
+                  onChange={(e) => updateNum('monitorLevel', sliderToLevel(Number(e.target.value)))}
                   disabled={!form.monitorEnabled}
                   aria-label={t('settings.headphoneMonitor.level.aria')}
                 />
@@ -9626,6 +9750,7 @@ export function SettingsPanel({
             <div className="settings-featgroup">
               <span className="settings-featgroup-title">{t('settings.digital.decoder.title')}</span>
               <div className="settings-grid">
+                <JtdxDecoderFields form={form} setForm={setForm} markDirty={markDirty} locked={locked} />
                 <div className="settings-field">
                   <span className="settings-label">{t('settings.digital.decodeDepth.label')}</span>
                   {/* The chip row is a radio group whose accessible name IS the field label —
@@ -10289,6 +10414,21 @@ export function SettingsPanel({
                 {(form.cwKeyer ?? 'cat') === 'cat' && catCwUnprovenModels.includes(form.rigModel) && (
                   <span className="settings-warn" role="status">
                     ⚠ <T k="settings.cw.keyer.unproven" tags={{ b: <strong /> }} />
+                  </span>
+                )}
+                {/* THIS RIG MODEL'S HAMLIB CANNOT SEND MORSE (every Xiegu model, many older rigs):
+                    its `b` is refused every time, so the CAT keyer can never key it. Measured from
+                    the bundled Hamlib (`rigmodels::CAT_CW_NO_MORSE_RIGS`). Worded about the rig
+                    MODEL, never the radio: the radio may key from another model's driver. A
+                    notice, not a block, and only while the CAT keyer is the one chosen. Only on a
+                    connection Hamlib's rigctld serves: on OmniRig, TCI or the Icom network client
+                    the driver answering is not Hamlib's, so the sentence would not be true there
+                    (the radio loop's CW error makes the same split). */}
+                {(form.cwKeyer ?? 'cat') === 'cat' &&
+                  !['omnirig', 'tci', 'icomlan'].includes(form.rigConn ?? 'serial') &&
+                  catCwNoMorseModels.includes(form.rigModel) && (
+                  <span className="settings-warn" role="status">
+                    ⚠ <T k="settings.cw.keyer.noMorse" tags={{ b: <strong /> }} />
                   </span>
                 )}
                 {/* A FLEX OVER SMARTSDR CAT (model 2036) HAS NO DOCUMENTED CW STOP: Esc stops Nexus,
@@ -12932,7 +13072,11 @@ export function SettingsPanel({
                 // From a computer driving a station the log is never read (it stays at the station),
                 // so empty there is not "no events yet".
                 <p className="conn-log-empty">
-                  {drivesAnotherStation() ? t('settings.connections.log.atStation') : t('settings.connections.log.empty')}
+                  {drivesAnotherStation()
+                    ? t('settings.connections.log.atStation')
+                    : watched
+                      ? t('settings.connections.log.watched')
+                      : t('settings.connections.log.empty')}
                 </p>
               ) : (
                 <ul className="conn-log-list">
@@ -12994,6 +13138,24 @@ export function SettingsPanel({
                   />
                   {setAtStation('wsjtxUdpAddr')}
                   <span className="settings-hint">{t('settings.integrations.udpAddr.hint')}</span>
+                  {/* #498: a saved profile carries this address, so loading one replaces it. */}
+                  <span className="settings-hint">
+                    <T
+                      k="settings.integrations.udpAddr.profiles"
+                      tags={{
+                        link: (
+                          <button
+                            type="button"
+                            className="settings-linkbtn"
+                            onClick={() => {
+                              setTab('radio')
+                              setOpenTarget('profiles')
+                            }}
+                          />
+                        ),
+                      }}
+                    />
+                  </span>
                 </label>
 
                 <div className="settings-field">
@@ -13189,10 +13351,41 @@ export function SettingsPanel({
                     </button>
                   </label>
                   <span className="settings-hint">
-                    Records each transmission, per-period decode counts and CAT traffic. Leave
+                    Records when each transmission keys and unkeys, and per-period decode counts. Leave
                     this OFF for normal operating — it is for a session where something is being
                     chased, and the extra volume shortens how far back the log reaches. The log
                     says at the top when it was on.
+                  </span>
+                </div>
+
+                {/* Record CAT traffic: a session switch like the one above, but never a setting.
+                    The backend owns the state (it turns itself off), so the switch shows it. */}
+                <div className="settings-field">
+                  <label className="settings-toggle">
+                    <span className="settings-label">{t('settings.integrations.catTrace.label')}</span>
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={catTraceOn}
+                      className={`toggle${catTraceOn ? ' on' : ''}`}
+                      onClick={() =>
+                        void withErrorToast(
+                          () => catTrace(!catTraceOn),
+                          t('settings.integrations.catTrace.failed'),
+                        ).then((secs) => {
+                          if (secs !== null) setCatTraceLeft(secs) // null: the failure is toasted
+                        })
+                      }
+                    >
+                      <span className="toggle-knob" />
+                    </button>
+                  </label>
+                  <span className="settings-hint">
+                    {catTraceOn
+                      ? t('settings.integrations.catTrace.recording', {
+                          count: Math.ceil(catTraceLeft / 60),
+                        })
+                      : t('settings.integrations.catTrace.hint')}
                   </span>
                 </div>
 
@@ -13616,8 +13809,9 @@ export function SettingsPanel({
                   </button>
                 </div>
                 {n3fjpTest.state !== 'idle' && n3fjpTest.state !== 'testing' && (
-                  // A pass/fail glyph and the answer the connection itself gave — neither is
-                  // this panel's prose, so neither is in the catalog.
+                  // A pass/fail glyph and the answer the connection itself gave. Only the
+                  // failures the backend names by a code are this panel's prose, from the
+                  // catalog (n3fjpTestFailure).
                   <span className={`cat-result ${n3fjpTest.state}`} role="status">
                     {n3fjpTest.state === 'ok' ? '✓ ' : '✗ '}{n3fjpTest.msg}
                   </span>
@@ -13752,7 +13946,7 @@ export function SettingsPanel({
                   <span className="settings-label">
                     {t('settings.confirmations.lotw.sync.label')}
                   </span>
-                  <div className="settings-input-row">
+                  <div className="settings-input-row settings-input-row--wrap">
                     <button
                       type="button"
                       className="settings-refresh"
@@ -14656,7 +14850,49 @@ export function SettingsPanel({
                       {ev.name}
                     </button>
                   ))}
+                  {/* The operator's own contests, by the names they gave them (never translated). */}
+                  {ownContests.map((c) => (
+                    <button
+                      key={c.def.id}
+                      type="button"
+                      className={`theme-chip${(form.fdEvent || 'arrlfd') === c.def.id ? ' active' : ''}`}
+                      aria-pressed={(form.fdEvent || 'arrlfd') === c.def.id}
+                      onClick={() => {
+                        markDirty()
+                        setForm((prev) => prev ? { ...prev, fdEvent: c.def.id } : prev)
+                      }}
+                    >
+                      {c.def.name}
+                    </button>
+                  ))}
                 </div>
+                {/* Edit…, Export… and Delete for the picked one of the operator's own contests. Building
+                    a new one, and importing one, are in the contest setup (Start contest…). */}
+                {(() => {
+                  const own = customContest(form.fdEvent)
+                  return own ? (
+                    <CustomContestActions
+                      contest={own}
+                      onEdit={() => {
+                        setOwnNote(null)
+                        setSetupEdit(own.def.id)
+                        setSetupOpen(true)
+                      }}
+                      onNote={setOwnNote}
+                      onDeleted={(id) => {
+                        // An unsaved pick of the contest just deleted goes back to the saved pick.
+                        setForm((prev) =>
+                          prev && prev.fdEvent === id ? { ...prev, fdEvent: savedRef.current?.fdEvent ?? '' } : prev,
+                        )
+                      }}
+                    />
+                  ) : null
+                })()}
+                {ownNote && (
+                  <span className={ownNote.bad ? 'fd-section-warn' : 'settings-hint'} role={ownNote.bad ? 'alert' : 'status'}>
+                    {ownNote.text}
+                  </span>
+                )}
                 <span className="settings-hint">{t('settings.contestPick.contest.hint')}</span>
                 {/* While a contest runs, saving a different pick ends it and starts the new one
                     at once, as turning Contest mode off and on does (`Engine::save_switches_contest`);
@@ -14957,6 +15193,40 @@ export function SettingsPanel({
                   <span className="settings-hint">{t('settings.contestStation.power.hint')}</span>
                 </label>
                 )}
+
+                {/* ⭐ WHAT AN OWN CONTEST HAS THE OPERATOR TYPE (an age, a name, text), for the picked
+                    one: kept per contest in `contestEntered`, on this computer only — an exported
+                    contest file never carries it. */}
+                {(() => {
+                  const event = (form.fdEvent ?? '').trim()
+                  const slots = customContest(event)?.enteredSlots ?? []
+                  return slots.map((slot) => (
+                    <label className="settings-field" key={slot}>
+                      <span className="settings-label">{enteredSlotLabel(event, slot)}</span>
+                      <input
+                        className="settings-input mono"
+                        type="text"
+                        data-entered={slot}
+                        inputMode={slot === 'AGE' ? 'numeric' : undefined}
+                        maxLength={slot === 'AGE' ? 2 : 12}
+                        value={form.contestEntered?.[event]?.[slot] ?? ''}
+                        onChange={(e) => {
+                          const value = enteredTyped(slot, e.target)
+                          markDirty()
+                          setForm((prev) => {
+                            if (!prev) return prev
+                            const all = prev.contestEntered ?? {}
+                            return { ...prev, contestEntered: { ...all, [event]: { ...(all[event] ?? {}), [slot]: value } } }
+                          })
+                        }}
+                        autoComplete="off"
+                        spellCheck={false}
+                      />
+                      {slot !== 'AGE' && <span className="settings-hint">{t('customContest.entered.oneWord')}</span>}
+                      <span className="settings-hint">{t('customContest.entered.settingsHint', { contest: contestName(event) })}</span>
+                    </label>
+                  ))
+                })()}
               </div>
             </fieldset>
           )}

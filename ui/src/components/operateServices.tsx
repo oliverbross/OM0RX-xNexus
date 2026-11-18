@@ -7,7 +7,7 @@ import type { Tier } from '../types'
 
 const names = [
   'atuBypass', 'atuTune', 'closePanelWindow', 'openPanelWindow', 'getSettings',
-  'notifyErase', 'setSettings', 'setMsk144Period', 'clearDxCall', 'pointRotatorAtCall',
+  'notifyErase', 'setSettings', 'setMsk144Period', 'clearDxCall', 'setDxBox', 'pointRotatorAtCall',
   'redecode', 'startCq', 'startRunning', 'startSearchAndPounce', 'startQsoRecording',
   'stopQsoRecording', 'setDecodeDepth', 'setSkipTx1', 'qrzLookup', 'resolveEntity',
   'getDecodeRefill', 'getSpectrumRow', 'getDeclination',
@@ -35,7 +35,7 @@ const actionFor: Partial<Record<OperateServiceName, OperateAction>> = {
   atuTune: 'transmit', atuBypass: 'radio', startCq: 'transmit', startRunning: 'transmit',
   startSearchAndPounce: 'transmit', clearDxCall: 'stopTransmit', setSkipTx1: 'transmit',
   pointRotatorAtCall: 'rotator', setSettings: 'settings', redecode: 'decoder',
-  setMsk144Period: 'decoder', setDecodeDepth: 'decoder', notifyErase: 'decoder',
+  setMsk144Period: 'decoder', setDecodeDepth: 'decoder', notifyErase: 'decoder', setDxBox: 'decoder',
   openPanelWindow: 'panels', closePanelWindow: 'panels',
   startQsoRecording: 'recording', stopQsoRecording: 'recording',
   stopRotator: 'stopRotator', stopSatTrack: 'stopRotator', setSatTransponder: 'radio',

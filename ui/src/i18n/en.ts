@@ -574,6 +574,9 @@ export const EN = {
   "remote.lan.codeLeft": "Expires in {{time}}",
   "remote.lan.thisStation": "This station: {{address}}, key {{key}}",
   "remote.lan.atShackOnly": "Only at the station itself: this can’t be done through a stream.",
+  "remote.lan.keysLockedWhileStreamed": "Saved keys and passwords are locked while this screen is being streamed. Try again after the stream ends.",
+  "settings.stationOnly.kept": "Some settings are set at the station only and were kept as the station has them.",
+  "settings.connections.log.watched": "Hidden while this screen is being streamed: its lines can carry a service's own words, keys included.",
   "remote.lan.full": "Eight computers are paired already. Remove one to pair another.",
   "remote.lan.vaultFailed": "Nexus could not read or keep this station’s network key and paired computers in your operating system’s credential store. Press Reset network identity under Network identity below. A reset removes every paired computer, so each one has to be paired again.",
   "remote.lan.failed": "Nexus could not do that. Try again.",
@@ -820,7 +823,7 @@ export const EN = {
   "keyConfirm.label": "Saved keys to confirm",
   "keyConfirm.cloudlog": "Use your saved Cloudlog key with {{address}}?",
   "keyConfirm.icomLan": "Use your saved password for {{radio}} with {{address}}?",
-  "keyConfirm.why": "A settings restore set this address, and the saved key may be for another. Nothing is sent with it until you choose.",
+  "keyConfirm.why": "A settings change or restore set this address, and the saved key may be for another. Nothing is sent with it until you choose.",
   "keyConfirm.use": "Use",
   "keyConfirm.remove": "Remove",
   "keyConfirm.notRemoved.cloudlog": "Nexus could not remove your saved Cloudlog key. It is never sent. Try Remove again.",
@@ -2261,6 +2264,9 @@ export const EN = {
   'logbook.row.edit': 'Edit {{call}}',
   'logbook.row.delete': 'Delete {{call}}',
   'logbook.row.more': 'More actions for {{call}}',
+  'logbook.row.menu.callbook': 'Update from callbook',
+  'logbook.row.callbook.title': 'Fill the empty fields (name, QTH, grid…) of this contact with {{call}} from your callbook. Fields it already holds are never changed, and Undo takes it back.',
+  'logbook.row.callbook.looking': 'Looking up {{call}} in the callbook…',
   'logbook.row.menu.spot': 'Spot to the DX cluster',
   'logbook.row.menu.qrz': 'Upload to QRZ Logbook',
   'logbook.row.menu.qrzCorrect': 'Correct on QRZ Logbook',
@@ -2469,7 +2475,8 @@ export const EN = {
   'logbook.tools.callbook.qrzCount': { one: 'QRZ counted {{count}} lookup on your account in the last day.', other: 'QRZ counted {{count}} lookups on your account in the last day.' },
   'logbook.tools.callbook.qrzCountNote': 'That counts every program that uses your QRZ login; only Nexus’s own lookups count toward the limit above.',
   'logbook.tools.callbook.waitingForTx': 'Waiting for the transmission to end before the contacts are changed…',
-  'logbook.tools.callbook.end.refused': 'Stopped: QRZ answered 3 calls in a row with no record, which is how it refuses lookups (a daily limit, a lapsed subscription or a suspended account). What was found is filled in. Check your QRZ account before running it again.',
+  'logbook.tools.callbook.end.refused': 'Stopped: QRZ answered 3 calls in a row with no record, and had no record for your own call either, which is how it refuses lookups (a daily limit, a lapsed subscription or a suspended account). What was found is filled in. Check your QRZ account before running it again. If your own call is not listed on QRZ, Nexus cannot tell unknown calls from a refusal and stops to be safe.',
+  'logbook.tools.callbook.end.refusedUnchecked': 'Stopped: QRZ answered 3 calls in a row with no record. That can be 3 calls QRZ does not know, or QRZ refusing lookups. Nexus tells them apart by looking up your own call, and no station call is set in Settings. What was found is filled in. Set your call and run it again.',
   'logbook.tools.callbook.resume': { one: '{{count}} call not looked up yet: run the update again to continue.', other: '{{count}} calls not looked up yet: run the update again to continue.' },
   'logbook.tools.callbook.unknown': { one: '{{count}} call is not in the callbook:', other: '{{count}} calls are not in the callbook:' },
   'logbook.tools.callbook.rules': 'Only empty fields are filled: a field the contact already holds is never changed. Contest exchanges, calls, countries, upload marks and confirmations are never touched, and nothing is uploaded. The whole update is one change, and Undo takes it back.',
@@ -5450,11 +5457,17 @@ export const EN = {
   'ota.filter.mode.aria': 'Mode filter',
   'ota.filter.mode.label': 'Mode',
   'ota.filter.all': 'All',
+  'ota.filter.continent.aria': 'Continent filter',
+  'ota.filter.continent.label': 'Continent',
+  'ota.filter.country.aria': 'Country filter',
+  'ota.filter.country.label': 'Country',
   // The Connect box's Filter button (its label is the Spots board's own Filter / Filtered).
-  'ota.filter.toggle.title': 'Show or hide the band, mode and sort choices',
+  'ota.filter.toggle.title': 'Show or hide the band, mode, place and sort choices',
   // The sort picker. The <option> VALUES ('value', 'activator' …) are persisted tokens and
   // stay in the code; these are the words beside them.
   'ota.sort.aria': 'Sort spots',
+  // The same row's group name while it also holds the Continent and Country pickers.
+  'ota.sortPlace.aria': 'Sort spots and filter by place',
   'ota.sort.label': 'Sort',
   'ota.sort.title': 'How the spot list is ordered',
   'ota.sort.value': 'Workable now',
@@ -5471,6 +5484,8 @@ export const EN = {
   // name, frequency, mode and band — all data, assembled in the component and never here.
   'ota.loading': 'Loading…',
   'ota.empty.filtered': 'No activators match the current filters.',
+  'ota.empty.place': 'No activators from {{place}} right now.',
+  'ota.empty.place.reset': 'Show everywhere',
   'ota.empty': 'No {{program}} activators spotted right now.',
   'ota.spot.spottedBy': 'Spotted by {{spotter}}',
   'ota.spot.bandOpen.tooltip':
@@ -5640,6 +5655,7 @@ export const EN = {
 
   'fieldDay.score.qsos': 'QSOs',
   'fieldDay.score.sections': 'Sections',
+  'fieldDay.score.points': 'Points',
   // The multiplier tile and line, for a contest whose ruleset declares multipliers. Both
   // Field Day events declare none and show neither: a "× 0 mults" on a Field Day score
   // would be arithmetic that contest does not do.
@@ -5900,6 +5916,136 @@ export const EN = {
   'settings.save.entryCall.action': 'Change the call',
   'contestSetup.nav.back': 'Back',
   'contestSetup.nav.next': 'Next',
+  // Build your own contest (CustomContestBuilder.tsx) and the operator's own contests.
+  'customContest.pick.yours': 'Your contests',
+  'customContest.pick.build': 'Build your own…',
+  'customContest.pick.import': 'Import…',
+  'customContest.action.edit': 'Edit…',
+  'customContest.action.export': 'Export…',
+  'customContest.action.delete': 'Delete',
+  'customContest.delete.ask': 'Delete {{contest}}? Contacts already logged in it stay on this computer.',
+  'customContest.delete.yes': 'Delete it',
+  'customContest.delete.no': 'Keep it',
+  'customContest.deleted': 'Deleted {{contest}}.',
+  'customContest.unusable': '{{contest}} can\'t be used by this version of Nexus: {{why}} It stays in your contests file until you delete it.',
+  'customContest.deleteFailed': '{{contest}} was not deleted: {{error}}',
+  'customContest.exported': 'Saved {{contest}} to {{path}}',
+  'customContest.exportFailed': '{{contest}} was not exported: {{error}}',
+  'customContest.imported': 'Imported {{contest}}, and picked it.',
+  'customContest.importFailed': 'That file was not imported: {{error}}',
+  'customContest.collision': 'You already have this contest: {{contest}}. Replace it with the file, or keep both?',
+  'customContest.collision.replace': 'Replace it',
+  'customContest.collision.keepBoth': 'Keep both',
+  'customContest.saved': 'Saved {{contest}}, and picked it.',
+  'customContest.titleNew': 'Build your own contest',
+  'customContest.titleEdit': 'Edit {{contest}}',
+  'customContest.steps.basics': 'Basics',
+  'customContest.steps.exchange': 'Exchange',
+  'customContest.steps.rules': 'Rules',
+  'customContest.steps.check': 'Check',
+  'customContest.basics.title': 'Name it, and say when it runs',
+  'customContest.basics.titleEdit': '{{contest}}',
+  'customContest.basics.sub': 'The name is yours and is shown as you type it. Nothing is saved until the last step.',
+  'customContest.basics.name': 'Contest name',
+  'customContest.basics.short': 'Short name (optional)',
+  'customContest.basics.token': 'Cabrillo contest name',
+  'customContest.basics.tokenHint': 'The CONTEST: line of your Cabrillo log, and the contest in your ADIF log: capital letters, digits and -, as the sponsor spells it.',
+  'customContest.basics.modes': 'Modes',
+  'customContest.basics.modesHint': 'A reminder only: Nexus logs a contact in any mode.',
+  'customContest.window.title': 'When it runs',
+  'customContest.window.weekend': 'Every year, on a weekend',
+  'customContest.window.once': 'One date',
+  'customContest.window.month': 'Month',
+  'customContest.window.which': 'Weekend',
+  'customContest.window.nth1': '1st full weekend',
+  'customContest.window.nth2': '2nd full weekend',
+  'customContest.window.nth3': '3rd full weekend',
+  'customContest.window.nth4': '4th full weekend',
+  'customContest.window.last': 'Last full weekend',
+  'customContest.window.startHour': 'Starts (hours after 0000Z Saturday)',
+  'customContest.window.startHint': '0 is Saturday 0000Z; 14 is Saturday 1400Z; 24 is Sunday 0000Z.',
+  'customContest.window.date': 'Date (UTC)',
+  'customContest.window.time': 'Start time (UTC)',
+  'customContest.window.hours': 'Length (hours)',
+  'customContest.need.name': 'Give the contest a name.',
+  'customContest.need.token': 'Give the Cabrillo contest name: 1 to 32 capital letters, digits or -.',
+  'customContest.need.modes': 'Tick at least one mode.',
+  'customContest.need.date': 'Pick the date and the start time.',
+  'customContest.need.startHour': 'The start is 0 to 47 hours after 0000Z on the Saturday.',
+  'customContest.need.duration': 'Give a length of 1 to {{max}} hours.',
+  'customContest.need.exchange': 'Add at least one field to the exchange.',
+  'customContest.exchange.title': 'What both stations send',
+  'customContest.exchange.sub': 'Each station sends these fields, in this order. Up to {{max}}.',
+  'customContest.exchange.fieldN': 'Field {{n}}',
+  'customContest.exchange.caption': 'Caption',
+  'customContest.exchange.up': 'Up',
+  'customContest.exchange.down': 'Down',
+  'customContest.exchange.remove': 'Remove',
+  'customContest.exchange.add': 'Add a field',
+  'customContest.exchange.full': 'An exchange has at most {{max}} fields.',
+  'customContest.exchange.typed': 'You type your age, name or text when you set the contest up. They stay on this computer and are never in an exported file.',
+  'customContest.field.rst': 'Signal report (RST)',
+  'customContest.field.serial': 'Serial number',
+  'customContest.field.stateProvince': 'State or province',
+  'customContest.field.fdClass': 'Field Day class',
+  'customContest.field.arrlSection': 'ARRL/RAC section',
+  'customContest.field.cqZone': 'CQ zone',
+  'customContest.field.ituZone': 'ITU zone',
+  'customContest.field.power': 'Power',
+  'customContest.field.grid4': 'Grid (4 characters)',
+  'customContest.field.grid6': 'Grid (6 characters)',
+  'customContest.field.age': 'Age',
+  'customContest.field.name': 'Name',
+  'customContest.field.text': 'Text',
+  'customContest.locked': 'Contacts are logged in this contest, so its exchange and Cabrillo contest name cannot change. Save it as a new contest to change them.',
+  'customContest.saveAsNew': 'Save as a new contest instead',
+  'customContest.asNew': 'This saves a new contest beside the old one. Give it its own Cabrillo contest name.',
+  'customContest.ft.roundup.ask': 'Use RTTY Roundup messages on FT8 (CQ RU)?',
+  'customContest.ft.roundup.no': 'No: standard messages',
+  'customContest.ft.roundup.yes': 'Yes: RTTY Roundup messages',
+  'customContest.ft.cq.label': 'CQ on FT8/FT4',
+  'customContest.ft.cq.none': 'A plain CQ',
+  'customContest.ft.cq.test': 'CQ TEST (NA VHF, ARRL Digi)',
+  'customContest.ft.cq.ww': 'CQ WW (WW Digi)',
+  'customContest.ft.none': 'FT8/FT4: no WSJT-X contest message carries this exchange. Nexus sends standard messages (grid and signal report); your exchange is not sent.',
+  'customContest.ft.standard': 'FT8/FT4: Nexus sends standard messages (grid and signal report); your exchange is not sent.',
+  'customContest.ft.notYet': 'FT8/FT4: this exchange matches WSJT-X\'s {{activity}} message, which this version of Nexus does not send yet. It sends standard messages (grid and signal report); your exchange is not sent.',
+  'customContest.ft.landed': 'FT8/FT4: this exchange is WSJT-X\'s {{activity}} message. Nexus calls {{cq}} and sends {{sends}}. Stations you work need the same contest messages: in WSJT-X, Settings ▸ Advanced ▸ Special operating activity ▸ {{activity}}.',
+  'customContest.ft.limit.rttyRoundup': 'That message carries serials 1 to 7999 and a US state, Canadian province or DC; Nexus refuses anything else (DX included) rather than send it wrong.',
+  'customContest.ft.limit.euVhf': 'That message carries your six-character locator, and sends a serial above 2047 as 2047, as WSJT-X does.',
+  'customContest.rules.title': 'Duplicates and points',
+  'customContest.rules.dupe': 'A station counts',
+  'customContest.rules.dupe.once': 'Once in the contest',
+  'customContest.rules.dupe.band': 'Once per band',
+  'customContest.rules.dupe.bandMode': 'Once per band and mode',
+  'customContest.rules.points': 'Points per contact',
+  'customContest.rules.points.cw': 'CW',
+  'customContest.rules.points.ph': 'Phone',
+  'customContest.rules.points.dig': 'Digital',
+  'customContest.rules.pointsHint': 'No multipliers: the score is the points of every contact added up.',
+  'customContest.check.title': 'Check {{contest}}',
+  'customContest.check.failed': 'The station did not answer the check. Go back a step and try again.',
+  'customContest.check.refused': 'This contest cannot be saved yet:',
+  'customContest.check.sample': 'A contact in your Cabrillo log:',
+  'customContest.check.scoring': 'The score is the contact count and points; there are no multipliers.',
+  'customContest.save': 'Save contest',
+  'customContest.saving': 'Saving…',
+  'customContest.saveFailed': 'Not saved: {{error}}',
+  'customContest.entered.age': 'Your age',
+  'customContest.entered.name': 'Your name',
+  'customContest.entered.text': 'Text {{n}}',
+  'customContest.entered.oneWord': 'One word: letters, digits and / only.',
+  'customContest.entered.hint': 'What you type here is sent in this contest\'s exchange. It stays on this computer and is never in an exported contest file.',
+  'customContest.entered.settingsHint': 'Sent in {{contest}}. Kept on this computer only.',
+  'logEntry.fd.age.label': 'Age',
+  'logEntry.fd.age.title': 'The age the station sent',
+  'logEntry.fd.name.label': 'Name',
+  'logEntry.fd.name.title': 'The name the station sent',
+  'logEntry.fd.power.label': 'Power',
+  'logEntry.fd.power.title': 'The power the station sent',
+  'logEntry.fd.itu.label': 'ITU zone',
+  'logEntry.fd.itu.title': 'The ITU zone the station sent',
+  'fieldDay.club.refused.custom': 'Club sync does not run {{contest}}: it is a contest you built, and every position would need the same definition. This station does not host or join a club event, and each position keeps its own log.',
   'contestSetup.nav.cancel': 'Cancel',
   'contestSetup.nav.close': 'Close',
   'contestSetup.open': 'Set up a contest…',
@@ -6474,6 +6620,7 @@ export const EN = {
   'settings.contestStation.power.label': 'Power sent',
   'settings.contestStation.power.hint': 'The power you send as part of this contest’s exchange, in the sponsor’s own words (KW, 500, 5). It goes on the air exactly as you type it; the power your log declares is Power category, under Your entry.',
   'settings.contestScore.incomplete': 'This score leaves out the bonus points this contest works out from your log — this build does not compute them, so what the sponsor credits you will be higher. Everything the log needs to be accepted is here; the number is not your claimed score.',
+  'settings.contestScore.contactsOnly': 'Nexus does not compute QTCs or the multipliers for this contest, so the number here is your contact count, not your score. Everything the log needs to be accepted is here.',
   'settings.contestCategory.unassisted.label': 'Unassisted entry',
   // Two whole accessible names — the switch does one of two different things, and neither is
   // the other with a word swapped.
@@ -8288,6 +8435,8 @@ export const EN = {
   'settings.backup.restore.done': 'Settings restored — check your radio and Test CAT',
   'settings.backup.restore.failed': 'Restore failed',
   'settings.backup.restore.onAir': 'Finish or stop the transmission first, then restore.',
+  'settings.backup.restore.keptSafety':
+    'Your license class and transmit-safety settings (TX watchdog, tune time limit, SWR stop, power limits) were kept as they were on this computer: a backup never changes them. If you restored onto a new computer, set your license class and these limits in Settings now.',
   // Reset's dialog says what SURVIVES as well as what goes: "reset" reads as total, and the two
   // things operators fear for — the log and their stored passwords — are exactly the two this
   // does not touch. Saying so in the dialog is what makes the confirm answerable.
@@ -8958,6 +9107,10 @@ export const EN = {
   'settings.audio.device.systemDefault': 'System default',
   'settings.audio.input.label': 'Input Device (RX)',
   'settings.audio.input.hint': 'Sound card carrying receive audio.',
+  // #522: under the input device while Nexus's own Flex client runs, its native DAX audio is off and
+  // the input is not a DAX device. The <link> opens the switch it names.
+  'settings.audio.flexDax.note':
+    "Nexus's Flex client is on, but its native DAX audio is off and this input is not a DAX device, so the waterfall hears this sound card, not the radio. Turn on <link>Flex native DAX audio (Beta) in Settings ▸ Radio ▸ Rig & CAT ▸ Advanced</link>, or pick a DAX Audio RX device here.",
   'settings.audio.refresh.action': 'Refresh',
   'settings.audio.refresh.title': 'Re-scan audio devices',
   'settings.audio.output.label': 'Output Device (TX)',
@@ -9030,9 +9183,12 @@ export const EN = {
   'settings.headphoneMonitor.level.aria': 'Receive listening level',
   // #468: the same level as a slider in the top bar, shown while receive audio plays here.
   'topbar.listen.title':
-    'Listening level {{pct}}%: how loud Nexus plays the receive audio on this computer (Settings ▸ Radio ▸ Receive audio on this computer). Click to change.',
+    'Listening level {{pct}}%: how loud Nexus plays the receive audio on this computer (Settings ▸ Radio ▸ Receive audio on this computer). Past 100% it boosts up to +20 dB, for a radio whose USB audio is quiet. Click to change.',
+  // #480: past 100% the listening level is a boost, in dB.
+  'topbar.listen.boostTitle':
+    'Listening level 100% + {{db}} dB of boost, for a radio whose USB audio is quiet: how loud Nexus plays the receive audio on this computer (Settings ▸ Radio ▸ Receive audio on this computer). The decoders hear the radio’s audio unchanged. Click to change.',
   'settings.headphoneMonitor.level.hint':
-    'Headphone listening volume (does not affect TX).',
+    'Headphone listening volume. Past 100% the slider boosts up to +20 dB, for a radio whose USB audio is quiet even with its volume turned up. Only what you hear changes: the decoders and TX are not affected.',
 
   // ── Settings ▸ Radio ▸ Scope source ─────────────────────────────────────────────────
   // SDRconnect, SDRplay, RSP, RSP1, RX OUT, CAT, WebSocket API, 127.0.0.1, 5454, 0 dBm, 100 W and
@@ -9759,6 +9915,45 @@ export const EN = {
   'settings.digital.decodeDepth.fast': 'Fast',
   'settings.digital.decodeDepth.normal': 'Normal',
   'settings.digital.decodeDepth.deep': 'Deep',
+  'settings.digital.ft8Decoder.label': 'FT8 decoder',
+  'settings.digital.ft8Decoder.jtdx': 'JTDX-style (multithreaded)',
+  'settings.digital.ft8Decoder.standard': 'Standard (WSJT-X)',
+  'settings.digital.ft8Decoder.hint': 'JTDX-style is WSJT-X 3.0\'s multithreaded FT8 decoder, its port of the JTDX decoder: more decodes on a busy band. Standard is WSJT-X\'s single-threaded decoder, which WSJT-X recommends for extreme weak-signal work; Decode depth below sets it. The early decode at 11.8 s is the standard decoder either way.',
+  'settings.digital.ft4Decoder.label': 'FT4 decoder',
+  'settings.digital.ft4Decoder.jtdx': 'JTDX-style',
+  'settings.digital.ft4Decoder.standard': 'Standard (WSJT-X)',
+  'settings.digital.ft4Decoder.hint': 'JTDX-style is JTDX\'s own FT4 decoder. Its time search follows the stations you have been decoding, and reaches further under Ludicrous (SWL), so stations whose clocks run late still decode. A doubtful decode it takes from noise is shown marked, and Nexus never answers, logs or uploads it by itself. Like JTDX, it drops a decode whose callsign is not in JTDX\'s list of active callsigns. Standard is WSJT-X\'s FT4 decoder. Decode depth below sets the Standard decoder, and the JTDX-style one under Custom. The early decode is the standard decoder either way.',
+  'settings.digital.jtdxPreset.label': 'JTDX-style preset',
+  'settings.digital.jtdxPreset.easy': 'Easy',
+  'settings.digital.jtdxPreset.keen': 'Keen',
+  'settings.digital.jtdxPreset.ludicrous': 'Ludicrous',
+  'settings.digital.jtdxPreset.custom': 'Custom',
+  'settings.digital.jtdxPreset.hint': 'Easy is a light decode on one core, for a slow computer. Keen is WSJT-X\'s own defaults for this decoder, on several cores. Ludicrous adds JTDX\'s SWL mode and decodes on up to 12 cores. Turning any setting under Advanced makes it Custom. If decoding cannot keep up, Nexus steps down one preset and says so.',
+  'settings.digital.jtdxPreset.ludicrousWarning': 'Ludicrous decodes on up to {{cores}} cores; this computer has {{have}}. On a Raspberry Pi or a small laptop, decodes may arrive too late to answer.',
+  'settings.digital.jtdxPreset.keenWarning': 'Keen decodes on {{cores}} cores (WSJT-X picks the count from this computer); this computer has {{have}}. On a Raspberry Pi or a small laptop, decodes may arrive too late to answer.',
+  'settings.digital.jtdx.advanced': 'Advanced',
+  'settings.digital.jtdx.cycles.label': 'Decoding cycles',
+  'settings.digital.jtdx.cycles.hint': 'More cycles find more signals on a busy band and take more time.',
+  'settings.digital.jtdx.sensitivity.label': 'Sensitivity',
+  'settings.digital.jtdx.sensitivity.minimum': 'Minimum',
+  'settings.digital.jtdx.sensitivity.lowThresholds': 'Low thresholds',
+  'settings.digital.jtdx.sensitivity.subPass': 'Low thresholds + sub-pass',
+  'settings.digital.jtdx.rxSens.label': 'QSO RX-frequency sensitivity',
+  'settings.digital.jtdx.rxSens.low': 'Low',
+  'settings.digital.jtdx.rxSens.medium': 'Medium',
+  'settings.digital.jtdx.rxSens.high': 'High',
+  'settings.digital.jtdx.rxSens.hint': 'How hard the decoder tries for the message it expects from the station you are working, on your RX frequency.',
+  'settings.digital.jtdx.threads.label': 'Threads',
+  'settings.digital.jtdx.threads.auto': 'Auto',
+  'settings.digital.jtdx.threads.hint': 'How many cores decode at once. Auto picks a count from this computer\'s {{have}} cores. More than one makes each decode slightly different from the last.',
+  'settings.digital.jtdx.candThin.label': 'Candidate thinning',
+  'settings.digital.jtdx.candThin.hint': '100% tries every candidate signal; less saves time on a crowded band.',
+  'settings.digital.jtdx.wideDx.label': 'Band-wide DX call search',
+  'settings.digital.jtdx.wideDx.hint': 'Look for the DX call you have entered across the whole band, not only near your RX frequency.',
+  'settings.digital.jtdx.swl.label': 'SWL mode',
+  'settings.digital.jtdx.swl.hint': 'JTDX\'s listening mode: a wider time search (±3.5 s) and lower thresholds. More weak decodes, more time.',
+  'ft8StepDown.stepped': 'FT8 decoding took {{ms}} ms, more than the {{budget}} ms a reply can wait. The JTDX-style decoder now runs {{to}} instead of {{from}} for this session.',
+  'ft8StepDown.floor': 'FT8 decoding took {{ms}} ms on Easy, more than the {{budget}} ms a reply can wait. Easy is the lightest JTDX-style preset; the Standard decoder (Settings ▸ Digital) is lighter still.',
   'settings.digital.decodeDepth.hint':
     'Deep finds the most signals (WSJT-X default); Fast saves CPU on old hardware. All Decoder settings drive the native decoder — on a WSJT-X UDP source (companion mode) decodes arrive already made and none of them apply.',
   // F low / F high name the two edges of the search range. `F` is the frequency symbol and the
@@ -9992,6 +10187,8 @@ export const EN = {
     "How Nexus sends CW. <b>CAT</b> uses the rig's internal keyer, but older rigs (e.g. IC-756PRO III) don't support it. <b>Serial keyline</b> toggles DTR/RTS into the rig's KEY jack (rig in CW, rig shapes the signal — a clean method that needs only a keying cable). <b>WinKeyer</b> drives a K1EL.<b>Soundcard</b> keys an audio tone — a workaround; set drive so ALC reads zero. <b>It takes your radio out of CW</b> into a data mode (DATA-U/DATA-L, so the tone reaches the transmitter instead of the mic jack); pick any other keyer and CW mode comes straight back. Also switchable live from the CW cockpit.",
   'settings.cw.keyer.unproven':
     "CAT CW keying is <b>unproven on this radio</b>. Its Hamlib backend may send a keying command this radio doesn't accept, and it reports success either way — so if nothing is transmitted, Nexus cannot tell you. If CW doesn't go out, use the Serial keyline, WinKeyer, or Soundcard keyer.",
+  'settings.cw.keyer.noMorse':
+    "<b>CW can't be keyed over CAT with this rig model.</b> Its Hamlib driver has no CW keying (send_morse), so the CAT keyer never transmits. Choose the Serial keyline (DTR/RTS) or Soundcard keyer instead.",
   'settings.cw.keyer.flexCatStop':
     "On a Flex over <b>SmartSDR CAT</b>, Esc stops Nexus at once, but the radio may finish the word it is sending: SmartSDR CAT has no documented CW stop, so Nexus hands the radio one word at a time. For a stop that cuts mid-word, choose the <b>WinKeyer</b> keyer on SmartSDR CAT's WinKeyer port, or use the <b>Flex native client</b>.",
   'settings.cw.pitch.label': 'Sidetone pitch (Hz)',
@@ -10080,9 +10277,9 @@ export const EN = {
   'settings.rtty.afskSideband.hint':
     'The sideband the rig runs AFSK on. LSB is the RTTY convention. On USB, Nexus puts the rig in its upper data mode (DATA-U / USB-D / DIGU) and swaps the tones itself, so mark stays high on the air and the decoder still copies — leave Reverse off.',
   'settings.rtty.fskPort.label': 'FSK serial port',
-  'settings.rtty.fskPort.placeholder': "e.g. the FTDX10's USB Enhanced COM",
+  'settings.rtty.fskPort.placeholder': 'blank = use the CAT port',
   'settings.rtty.fskPort.hint':
-    "The port whose control line feeds the rig's FSK input. Empty = the CAT serial port.",
+    "The port whose DTR or RTS line keys the rig's FSK input. Blank = the CAT serial port, right for a one-port interface. A Yaesu with two USB ports (FT-991A, FTDX10) takes CAT on its Enhanced COM port and keys FSK on its Standard COM port, the second of the pair (on Linux usually /dev/ttyUSB1): type that port here, and set the radio's RTTY SHIFT PORT menu to the line chosen below.",
   'settings.rtty.fskLine.label': 'FSK data line',
   'settings.rtty.fskLine.dtr': 'DTR (the common wiring — RTS stays free for PTT)',
   'settings.rtty.fskLine.hint':
@@ -10588,6 +10785,10 @@ export const EN = {
     'for JTAlert / GridTracker / loggers — and FT8 contest scorers. Several at once: separate addresses with a comma.',
   'settings.integrations.udpAddr.label': 'UDP Address',
   'settings.integrations.udpAddr.hint': 'host:port for the UDP feed',
+  // #498: a saved profile carries the UDP address, so loading one replaces it. The <link> opens
+  // the Profiles section.
+  'settings.integrations.udpAddr.profiles':
+    'Each saved profile in <link>Settings ▸ Radio ▸ Profiles</link> keeps its own UDP address; loading a profile puts its address here.',
   'settings.integrations.wsjtxUdpAccept.label': 'Accept requests from other computers',
   'settings.integrations.wsjtxUdpAccept.hint':
     "Off: a program can answer a station, send or fill in free text, or change your grid only if it sends from this computer's 127.0.0.1. Any other program can still stop TX. That includes a program on this computer reached through a multicast address: to keep it without this switch, list one 127.0.0.1 address per program, with commas (127.0.0.1:2237, 127.0.0.1:2238). On: anyone who can reach this computer over the network can turn TX on and send under your call, because a UDP sender's address can be faked. Stop TX and a tripped watchdog still refuse them, but each accepted answer restarts the watchdog's clock, as in WSJT-X.",
@@ -10621,6 +10822,15 @@ export const EN = {
   'settings.integrations.qsoWav.path':
     'Saved in <code>{{path}}</code>, created the first time you record.',
   'settings.integrations.qsoWav.reveal': 'Open recordings folder',
+  'settings.integrations.catTrace.label': 'Record CAT traffic',
+  'settings.integrations.catTrace.hint':
+    "Writes the frequency, mode, split, VFO and PTT commands Nexus asks Hamlib or its own radio connection to carry out, and the radio settings it changes (preamp, attenuator, tuner, levels), with their answers, into the diagnostic log. It does not see the bytes Hamlib then writes to the radio's cable, where Hamlib makes its own VFO swaps: it shows which Nexus command lines up with a click. No callsigns or keyer text, and what the radio is sent does not change. Turns itself off after 30 minutes or 2 MB, and is off whenever Nexus starts.",
+  'settings.integrations.catTrace.recording': {
+    one: 'Recording CAT traffic: {{count}} minute left. Reproduce the problem, then send the diagnostic log.',
+    other:
+      'Recording CAT traffic: {{count}} minutes left. Reproduce the problem, then send the diagnostic log.',
+  },
+  'settings.integrations.catTrace.failed': 'Could not turn Record CAT traffic on or off',
   // The <option> VALUES ('none', 'decodes', 'all') are persisted tokens and stay in the panel.
   'settings.integrations.saveWav.label': 'Save received audio (.wav per period)',
   'settings.integrations.saveWav.none': 'None (default)',
@@ -10746,6 +10956,14 @@ export const EN = {
   'settings.n3fjp.test.action': 'Test N3FJP',
   'settings.n3fjp.test.hint':
     'Run this at the club site before the event starts to confirm the API link works.',
+  'settings.n3fjp.test.noHost':
+    "No N3FJP host is set: enter the master PC's IP address in Settings ▸ Services ▸ N3FJP Integration.",
+  'settings.n3fjp.test.refused':
+    "Connection refused: N3FJP's TCP API is off on that computer, or the port is wrong. In N3FJP, turn on Settings ▸ Application Program Interface ▸ TCP API (port 1100 by default).",
+  'settings.n3fjp.test.unreachable':
+    "That computer can't be reached: check the IP address, that both computers are on the same network, and that Windows Firewall on the master PC allows N3FJP / port 1100.",
+  'settings.n3fjp.test.hostNotFound':
+    "That host name couldn't be found: check the spelling, or enter the master PC's IP address instead.",
 
   // ── Settings ▸ Services ▸ N1MM+ ────────────────────────────────────────
   // ⚠️ The port number 12060 is the contest logger's own broadcast port and stays in the
@@ -11496,6 +11714,9 @@ export const EN = {
   'connect.solar.stale': 'NOAA daily indices not updated since {{date}}',
   'connect.solar.unavailable': '30-day SFI and sunspot trend unavailable.',
   'connect.solar.trend.aria': '{{index}} daily, {{from}} to {{to}}: low {{low}}, high {{high}}',
+  'connect.solar.today': '{{index}} today {{value}} · {{time}}',
+  'connect.solar.today.note': '(so far)',
+  'connect.solar.today.title': 'Today\'s running sunspot count (UTC day), fetched {{time}}. NOAA revises it during the day; the dated value on the SSN line is the last finished day\'s final count.',
   'connect.pane.spacewx.title': 'Space Wx',
   'connect.pane.getout.title': 'Getting Out',
   'connect.pane.bestband.title': 'Bands by region',
@@ -12296,6 +12517,11 @@ export const EN = {
   // it describes what Hound IS, which is what an operator hovering it wants to know.
   'operate.dxped.hound.title':
     "DXpedition hound: calls go out above 1000 Hz, your R+report auto-moves to the Fox's frequency, and the QSO ends on the Fox's RR73 with NO parting 73 — a 73 there is QRM in the Fox's own segment. Click to turn it on and off; a QSO already running keeps the rules it started under. Off again at every launch: turn it on for the DXpedition, not for the day.",
+  // The FT header's chip while the contest switch is on. `{{contest}}` is the contest's own name
+  // (an invariant token); the chip opens the Contest screen.
+  'operate.header.contest.label': 'Contest: {{contest}}',
+  'operate.header.contest.title':
+    'Contest mode is on: {{contest}}. A reply or a click on a CQ works the station in the contest. Click to open the Contest screen.',
   // SuperFox, named before the operator calls. `{{calls}}` is a list of callsigns — data.
   // Deliberately "in this version": the retirement is a licence ruling on the decoder, not a
   // property of the protocol, and it is being re-examined.
@@ -12612,6 +12838,7 @@ export const EN = {
   'operate.decodes.dt.title': 'DT — time offset (s); large = clock/sync skew',
   'operate.decodes.dt.title.msk144': 'T — when in the period the ping landed (s)',
   'operate.decodes.marker.lowConf.title': 'Low-confidence decode',
+  'operate.decodes.marker.unchecked.title': 'Not error-checked: matched to the expected message without LDPC or CRC. Nothing automatic acts on it; double-click to work the station by hand',
   'operate.decodes.marker.ap.title': 'AP-assisted decode',
   'operate.decodes.needs.aria': 'needs',
   'operate.decodes.harqRv.title': 'Recovered by IR-HARQ (RV0–RV{{rv}})',
@@ -15780,7 +16007,7 @@ export const EN = {
   'topbar.tier.msk144.title':
     'MSK144 — meteor scatter. Transmits for nearly the whole period (that is how the mode works). Period in Settings ▸ MSK144',
   'topbar.tier.jt65.title':
-    'JT65 — classic EME, 60 s. Receive only in this build (transmit is disabled pending a fix). Submode in Settings ▸ JT65',
+    'JT65 — classic EME, 60 s. Transmit and receive. Submode in Settings ▸ JT65',
   'topbar.tier.fst4.title': 'FST4 — slow weak-signal QSO mode (LF/MF). Transmit and receive',
   'topbar.tier.fst4w.title':
     'FST4W — LF/MF beacons. Transmits on a schedule; set the transmit % and power in Settings ▸ Beacons (WSPR & FST4W). Hashed calls show as <...>',

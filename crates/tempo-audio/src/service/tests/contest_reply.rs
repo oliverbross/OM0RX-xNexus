@@ -19,7 +19,8 @@ use std::time::Instant;
 /// A store-backed station on FT8 in `mode`, ARRL Field Day picked and Contest mode `on`, whose
 /// contest journal holds a contact an hour old and whose log holds K9NEW, worked half an hour ago.
 /// W1AW's CQ FD has been decoded. "Double-click on call sets Tx enable" is off: a logger's Reply
-/// arms TX whatever it says, as WSJT-X's does.
+/// arms TX whatever it says, deliberately unlike WSJT-X's, which then would not
+/// (`mainwindow.cpp:9450`; `Engine::answer_udp_reply`).
 fn station(tag: &str, on: bool, mode: &str) -> (std::path::PathBuf, Arc<Mutex<Engine>>) {
     static N: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     let nanos = std::time::SystemTime::now()
@@ -60,6 +61,7 @@ fn station(tag: &str, on: bool, mode: &str) -> (std::path::PathBuf, Arc<Mutex<En
     );
     std::fs::write(dir.join("fd.adi"), journal).expect("the journal");
     let mut e = Engine::new("K2DEF", "FN31", 0);
+    super::decode_in_flight::pin_standard_ft8(&mut e);
     e.attach_log_store(store);
     e.set_fd_log_path(dir.join("fd.adi"));
     e.log_qso(rec("K9NEW", now - 1_800));

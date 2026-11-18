@@ -14,9 +14,11 @@ export type Tier = 'TempoFast' | 'TempoDeep' | 'FT8' | 'FT4' | 'FT2' | 'FST4' | 
  * in the `modes` crate — the engine is the enforcement (it refuses to arm TX or
  * start a CQ run on these); this list exists so the UI does not OFFER controls the
  * engine will refuse. Keep the two in step when a mode gains a transmitter. */
-// JS8 is receive-only in this build: the modem and message layer shipped first (B5); the
-// operator-gated transmit batch flips `Js8Mode::capabilities().tx` and removes it here.
-export const RX_ONLY_TIERS: readonly Tier[] = ['JS8']
+// EMPTY — every shipped tier transmits, as the modes crate's `rx_only()` says. JS8 sat here
+// while its modem shipped receive-only, and stayed after `Js8Mode` became transmit-capable,
+// greying out the top bar's TX On and Tune on the JS8 tier. Kept so the next receive-only
+// mode has somewhere to go.
+export const RX_ONLY_TIERS: readonly Tier[] = []
 
 /** BEACON tiers: they transmit, but on a SCHEDULE and with no QSO sequence — the
  * payload is callsign, grid and power. Mirrors `Capabilities { beacon_only: true }`.
@@ -1431,6 +1433,12 @@ export interface OtaSpot {
   /** Those of `states` a contact here would add to Worked All States on this spot's band: the
    *  station's need scorer, from the log. The row lights its state when any is listed. */
   neededStates?: string[]
+  /** Where the activator is: the DXCC entity as cty.dat names it ("Canada" for VE3/KD9TAW, a
+   *  summit by its SOTA association) and its continent code ("NA", "EU", "SA", "AF", "AS", "OC").
+   *  null when the station could not place the spot; absent on a station that does not send it.
+   *  The board's continent and country filters show such a row under All only. */
+  country?: string | null
+  continent?: string | null
 }
 
 /** One activator placed for the Connect map's parks layer (`get_ota_map_spots`).
@@ -1567,6 +1575,19 @@ export interface DailySolarIndex {
  *  arrived, which the Space Wx box says rather than draw a line. */
 export interface DailySolarIndices {
   days: DailySolarIndex[]
+  /** Today's running sunspot count from NOAA's observed-SSN file, or null/absent: no row for the
+   *  current UTC day yet, the file has not arrived, or an older station. Never one of `days`. */
+  today?: SsnToday | null
+}
+
+/** The current UTC day's sunspot count so far. NOAA revises it during the day, so it travels
+ *  with the time the station fetched it. */
+export interface SsnToday {
+  /** 00:00 UTC of the day the count is for, Unix seconds. */
+  dayUnix: number
+  ssn: number
+  /** When the station fetched it, Unix seconds. */
+  fetchedAt: number
 }
 
 /** The operator's current activation state (POTA/SOTA). */
@@ -3220,6 +3241,10 @@ export interface DecodeRow {
   ap?: boolean
   /** WSJT-X '?' marker — low-confidence decode. */
   lowConf?: boolean
+  /** JTDX '^' marker — the JTDX-style FT8 decoder accepted the expected message on correlation,
+   * with no LDPC or CRC check. Shown only: nothing automatic acts on it (the engine's
+   * `error_checked`); a double-click still works the station. */
+  unchecked?: boolean
   /** IR-HARQ redundancy versions combined to recover this decode: 0 = decoded
    * from the initial transmission alone; 1/2 = recovered by joint-combining that
    * many retransmissions; -1 = not applicable. Used to badge HARQ rescues. */
@@ -5241,6 +5266,39 @@ export interface ContestBefore {
   unassistedMode: boolean
 }
 
+/** Which FT8 decoder runs the full pass (`Settings.ft8Decoder`). */
+export type Ft8DecoderStyle = 'jtdx' | 'standard'
+/** The JTDX-style decoder's presets (`Settings.jtdxPreset`). */
+export type JtdxPreset = 'easy' | 'keen' | 'ludicrous' | 'custom'
+/** The JTDX-style decoder's knobs (`Settings.jtdxCustom`; the engine's `JtdxCustom`). */
+export interface JtdxKnobs {
+  /** Decoding cycles 1..3. */
+  cycles: number
+  /** FT8 sensitivity 1..3: minimum, low thresholds, low thresholds + sub-pass. */
+  sensitivity: number
+  /** QSO RX-frequency sensitivity 1..3. */
+  rxFreqSensitivity: number
+  /** Threads: 0 = automatic, 1..12. */
+  threads: number
+  /** The band-wide DX-call search. */
+  wideDxSearch: boolean
+  /** Candidate thinning, percent (100 keeps every candidate). */
+  candThin: number
+  /** JTDX's SWL mode. */
+  swl: boolean
+}
+
+/** The CPU guard stepped the JTDX-style decoder's preset down: a full pass took longer than a
+ *  reply can wait. `to` is null when `from` was Easy, the floor. */
+export interface Ft8StepDown {
+  seq: number
+  chosen: JtdxPreset
+  from: JtdxPreset
+  to: JtdxPreset | null
+  decodeMs: number
+  budgetMs: number
+}
+
 export interface Settings {
   mycall: string
   mygrid: string
@@ -5342,8 +5400,8 @@ export interface Settings {
   /** Which control line carries the FSK data bits: 'dtr' (default) or 'rts'.
    * PTT rides its OWN path (CAT or the PTT serial line) — never this line. */
   rttyFskLine?: string
-  /** Serial port for the FSK keying line (e.g. the FTDX10's USB Enhanced COM).
-   * Empty = the CAT serial port. */
+  /** Serial port for the FSK keying line (on a two-port Yaesu such as the FT-991A or FTDX10, the
+   * Standard COM port; the Enhanced one is CAT). Empty = the CAT serial port. */
   rttyFskPort?: string
   /** RTTY baud rate — true 45.45 by default (never 45); 50 and 75 are the other rates offered. */
   rttyBaud?: number
@@ -6047,6 +6105,9 @@ export interface Settings {
   /** The power I SEND as an exchange field (ARRL DX: `KW`, `500`, `5`) — free text, and
    *  ⚠️ not `fdPowerMult`, which is a scoring tier picked from a legal set. */
   contestPower?: string
+  /** What the operator types for an own contest's exchange (age, name, text), by contest id
+   *  then slot id: `{ custom_club_sprint: { AGE: '42' } }`. Never in the shared definition. */
+  contestEntered?: Record<string, Record<string, string>>
   /** ENTER SENDS MESSAGE in the CW cockpit's contest strip: Enter sends the contact's next
    *  message. OFF by default, and only the operator's own switch turns it on. */
   contestEsmCw?: boolean
@@ -6162,6 +6223,16 @@ export interface Settings {
   workingFrequencies?: { band: string; mode: string; mhz: number }[]
   /** FT8/FT4 decode depth: 1=Fast 2=Normal 3=Deep (stock Deep). */
   decodeDepth?: number
+  /** Which FT8 decoder runs the full pass: the JTDX-style one (WSJT-X 3.0's multithreaded
+   *  decoder, its port of JTDX's; the default) or WSJT-X's standard decoder. */
+  ft8Decoder?: Ft8DecoderStyle
+  /** Which FT4 decoder runs the full pass: JTDX 2.2.159's own FT4 decoder or WSJT-X's (engine
+   *  `Settings::ft4_decoder`). It follows the same preset as FT8's. */
+  ft4Decoder?: Ft8DecoderStyle
+  /** The JTDX-style decoder's preset (default Easy). */
+  jtdxPreset?: JtdxPreset
+  /** The JTDX-style decoder's knobs under Custom. */
+  jtdxCustom?: JtdxKnobs
   /** Decoder passband (Hz) — WSJT-X F Low / F High. */
   decodeFLowHz?: number
   decodeFHighHz?: number
@@ -6377,6 +6448,10 @@ export interface Settings {
   qrzSyncHours: number
   /** Unix seconds of the last successful automatic pull; 0 = never. */
   qrzLastSyncUnix: number
+  /** The AFTERLOGID a whole QRZ logbook download in progress resumes from; 0 = none. */
+  qrzFetchAfterLogid: number
+  /** Unix seconds that download began. */
+  qrzFetchStartedUnix: number
   /** ClubLog account email (not a callsign); app-password is in the keychain. */
   clublogEmail: string
   /** ClubLog logbook callsign to upload into (empty → your callsign). */
@@ -6717,6 +6792,9 @@ export interface AppSnapshot {
   stationProfileLocked?: boolean
   /** The last radio switch Nexus made by itself this session (absent until one happens). */
   autoRadioSwitch?: AutoRadioSwitch
+  /** The JTDX-style FT8 decoder's last CPU-guard step this session (engine `Ft8StepDown`), for
+   *  its notice. Absent until one happens. */
+  ft8StepDown?: Ft8StepDown
   /** Mirror of Settings b4MatchMode — the B4/Dupe scope every surface applies. */
   b4MatchMode?: boolean
   /** AI CW decoder (beta): toggle state, status line, rolling stitched transcript. */
@@ -6846,6 +6924,10 @@ export interface AppSnapshot {
    *  its direction to that Running. Absent everywhere else, from the Remote, and from an older
    *  station. */
   contestCqTyped?: boolean
+  /** The over the contest's sequencer sends next while a contest runs (`Engine::contest_tx_now`):
+   *  the Operate strip's TX line there, as `qso.txNow` is outside one. Absent everywhere else, from
+   *  the Remote, and from an older station. */
+  contestTxNow?: string
   /** FreeDV's own app beside Nexus (`tempo_app::freedv`): its two listeners, the last contact it
    *  logged, the last refusal and the calls it heard. Absent while neither listener is wanted,
    *  from the Remote, and from an older station. */

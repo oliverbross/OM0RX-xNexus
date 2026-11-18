@@ -175,16 +175,38 @@ export const CREDENTIALS_CHANGED = 'nexus-credentials-changed'
 
 /** Commands that add or remove a stored secret. Matched by SHAPE, so a new connector's
  *  `set_x_password` / `clear_x` is covered the day it is added and not the day someone
- *  remembers to extend a list. */
+ *  remembers to extend a list; and the saved-key notice's answer, whose Remove forgets one. */
 function mutatesCredentials(cmd: string): boolean {
   return /^set_[a-z0-9_]+_(password|key|token|code)$/.test(cmd) || /^clear_[a-z0-9_]+$/.test(cmd)
+    || cmd === 'answer_saved_key'
 }
 
-/** Commands that save or forget one stored password, key, token or code: each at the station's
- *  own screen only, never through a stream of it ([`invoke`]). Matched by SHAPE, as
- *  `mutatesCredentials` is, so a new connector's is refused the day it is added. */
-function storesACredential(cmd: string): boolean {
-  return /^(set|clear)_[a-z0-9_]+_(password|key|token|code)$/.test(cmd)
+/** The code of a credential command refused because it came through a stream, or because a stream
+ *  watches the station's screen (the station's own refusal, `nexusClient:atShackOnly`). */
+export const AT_SHACK_ONLY = 'atShackOnly'
+
+/** That refusal, said in the operator's language and matched by its `code`, never by its words.
+ *  The words suit both who can meet it: the operator at the station, while its screen is streamed,
+ *  and whoever presses through the stream: saved keys are locked until the stream ends. */
+export class AtShackOnly extends Error {
+  readonly code = AT_SHACK_ONLY
+  constructor() {
+    super(t('remote.lan.keysLockedWhileStreamed'))
+  }
+}
+
+/** The credential commands whose name has no connector's shape: Use or Remove on a saved key that
+ *  waits (Use lets the key go to an address), and the question a login save asks before it saves. */
+const CREDENTIAL_ANSWERS = new Set(['answer_saved_key', 'upload_backlog'])
+
+/** Commands that save, forget or let go of a stored password, key, token or code: each at the
+ *  station's own screen only, never through a stream of it ([`invoke`]). A connector's save and
+ *  clear are matched by SHAPE, as `mutatesCredentials` is, so a new connector's is refused the day
+ *  it is added. The class table's credential rows (crates/tempo-client/src/classes.rs) are the
+ *  list this must cover; `api.credentialsAtShack.test.ts` reads that table and fails on a row this
+ *  misses. */
+export function refusedThroughStream(cmd: string): boolean {
+  return /^(set|clear)_[a-z0-9_]+_(password|key|token|code)$/.test(cmd) || CREDENTIAL_ANSWERS.has(cmd)
 }
 
 /** The TV entry sets this to its RPC base ('/connect/rpc') before anything invokes.
@@ -213,6 +235,7 @@ async function httpInvoke<T>(base: string, cmd: string, args?: Record<string, un
  *  it came. */
 function worded(error: unknown): never {
   const code = typeof error === 'string' ? /^nexusClient:([A-Za-z]+)$/.exec(error)?.[1] : undefined
+  if (code === AT_SHACK_ONLY) throw new AtShackOnly()
   throw code === undefined ? error : clientWords(code)
 }
 
@@ -221,7 +244,7 @@ function worded(error: unknown): never {
 async function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
   // Only at the station itself: a credential saved or forgotten through a stream is refused, in
   // words its caller shows. Read before anything awaits, while the stream's dispatch is running.
-  if (storesACredential(cmd) && isStreamInput()) throw t('remote.lan.atShackOnly')
+  if (refusedThroughStream(cmd) && isStreamInput()) throw new AtShackOnly()
   const tv = typeof window !== 'undefined' ? window.__NEXUS_TV_RPC__ : undefined
   const out = isTauri() ? ((await bridge()(cmd, args).catch(worded)) as T)
     : tv ? await httpInvoke<T>(tv, cmd, args)
@@ -676,6 +699,135 @@ export interface FdRulesetDto {
   /** The only `CATEGORY-POWER` values the sponsor takes, when it names some (Winter Field Day's
    *  `QRP` and `LOW`). Preview only. */
   powerCategories?: string[]
+  /** The slots of an operator-built contest's exchange the operator TYPES (`AGE`, `NAME`, `TXT1`),
+   *  kept per contest in `Settings.contestEntered`. Preview only; empty for every shipped contest. */
+  enteredSlots?: string[]
+}
+
+/** ⭐ **An operator-built contest, as its definition file holds it** (`CustomDef` in
+ *  `crates/tempo-core/src/fd_rules/custom.rs`, format v1). snake_case keys, on the wire and in the
+ *  file: the struct has no rename, and an unknown key is refused. It never holds a typed value
+ *  (an age, a name): those live in `Settings.contestEntered`, so a shared file carries none. */
+export interface CustomContestDef {
+  format: 'nexus-custom-contest'
+  version: 1
+  /** `custom_<slug>`, made once from the name and stable after: the journals name the contest by it. */
+  id: string
+  name: string
+  short?: string
+  /** The Cabrillo `CONTEST:` token and ADIF `CONTEST_ID`, `[A-Z0-9-]{1,32}`. */
+  cabrillo_contest: string
+  modes: CustomContestMode[]
+  window: CustomContestWindow
+  exchange: CustomContestField[]
+  /** A grid-only exchange's word after CQ on FT8/FT4; none is no contest message. */
+  ft_cq?: 'TEST' | 'WW'
+  /** An RST + serial exchange: the operator asked for WSJT-X's RTTY Roundup messages. Default no. */
+  ft_roundup?: boolean
+  dupe: 'once' | 'band' | 'band_mode'
+  /** Points per contact by mode class, 0-100; an absent one is 1. */
+  points?: { CW?: number; PH?: number; DIG?: number }
+}
+export type CustomContestMode = 'CW' | 'SSB' | 'FM' | 'RTTY' | 'PSK' | 'FT8' | 'FT4'
+export type CustomContestWindow =
+  | { kind: 'weekend'; month: number; weekend: 'nth_full' | 'last_full'; n?: number; start_hour_utc: number; duration_hours: number }
+  | { kind: 'once'; start_utc: string; duration_hours: number }
+export type CustomContestFieldId =
+  | 'rst'
+  | 'serial'
+  | 'state_province'
+  | 'fd_class'
+  | 'arrl_section'
+  | 'cq_zone'
+  | 'itu_zone'
+  | 'power'
+  | 'grid4'
+  | 'grid6'
+  | 'age'
+  | 'name'
+  | 'text'
+/** One exchange field from the fixed menu; `label` is a text field's caption, never sent. */
+export interface CustomContestField {
+  field: CustomContestFieldId
+  label?: string
+}
+
+/** One installed operator-built contest, with what the setup needs for it. */
+export interface CustomContest {
+  def: CustomContestDef
+  /** The slots the operator types a value for (`AGE`, `NAME`, `TXT1`). */
+  enteredSlots: string[]
+  /** The station settings its exchange sends from (Rust names). */
+  sentSettings: string[]
+  /** Contacts are logged under it: its exchange and Cabrillo name can no longer change. */
+  exchangeLocked: boolean
+}
+
+/** The WSJT-X contest message an exchange has the shape of. */
+export type FtActivity = 'field_day' | 'na_vhf' | 'ww_digi' | 'rtty_roundup' | 'eu_vhf'
+
+/** ⭐ **The builder's preview of a definition** — every line rendered in Rust by the real compiler,
+ *  session and Cabrillo exporter, so the builder never re-implements a rule. */
+export interface CustomContestPreview {
+  /** Why the definition cannot be saved, verbatim; `''` when it can (nothing below is filled then). */
+  refusal: string
+  /** What this station would send now, the serial as 1: `599 1`. */
+  youSend: string
+  /** Why the contest could not start with the current settings; `''` when it could. */
+  startProblem: string
+  /** One sample Cabrillo `QSO:` line from the real exporter. */
+  sampleQsoLine: string
+  /** The WSJT-X contest message the exchange has the shape of. */
+  ftShape: FtActivity | null
+  /** That match, when the operator chose it (an RST + serial exchange is asked). */
+  ftActivity: FtActivity | null
+  /** What FT8/FT4 really send in this build: `standard`, or the activity whose messages they send. */
+  ftMessages: 'standard' | FtActivity
+  /** The CQ the contest's Running calls on FT8/FT4 (`CQ RU W9XYZ EN52`); `''` with standard messages. */
+  ftCq: string
+  /** The exchange those messages carry after the calls (`579 0001`); `''` with standard messages. */
+  ftSends: string
+  /** Why those messages cannot carry this station's exchange now, verbatim; `''` when they can. */
+  ftRefusal: string
+  enteredSlots: string[]
+}
+
+/** An entry of the station's contest file this version cannot use (a later version's, or one a newer
+ *  rules download refuses), with why. It stays on disk; Delete removes it. */
+export interface UnusableCustomContest {
+  id: string
+  name: string
+  why: string
+}
+/** The contest file's entries this version cannot use. */
+export async function listUnusableCustomContests(): Promise<UnusableCustomContest[]> {
+  return invoke<UnusableCustomContest[]>('list_unusable_custom_contests')
+}
+
+/** Every operator-built contest installed on the station. */
+export async function listCustomContests(): Promise<CustomContest[]> {
+  return invoke<CustomContest[]>('list_custom_contests')
+}
+/** Preview a definition, saved or not. Read-only. */
+export async function previewCustomContest(def: CustomContestDef): Promise<CustomContestPreview> {
+  return invoke<CustomContestPreview>('preview_custom_contest', { def })
+}
+/** Save a new or edited definition. Rejects with the reason (an exchange edit once contacts are logged). */
+export async function saveCustomContest(def: CustomContestDef): Promise<void> {
+  await invoke<null>('save_custom_contest', { def })
+}
+/** Delete a contest. Rejects while it is the picked one; its logged contacts stay on disk. */
+export async function deleteCustomContest(id: string): Promise<void> {
+  await invoke<null>('delete_custom_contest', { id })
+}
+/** A contest's definition file, as text, for the operator to save where they choose. */
+export async function exportCustomContest(id: string): Promise<string> {
+  return invoke<string>('export_custom_contest', { id })
+}
+/** Import a definition file's text. With `ask`, an id already in use rejects with
+ *  `collision:<the installed contest's name>`; ask again with `replace` or `keep_both`. */
+export async function importCustomContest(text: string, onCollision: 'ask' | 'replace' | 'keep_both'): Promise<CustomContestDef> {
+  return invoke<CustomContestDef>('import_custom_contest', { text, onCollision })
 }
 
 /** The same preview for settings not saved yet: the saved settings with `patch`'s fields over them.
@@ -1558,6 +1710,12 @@ export async function clearDxCall(): Promise<AppSnapshot> {
   return invoke<AppSnapshot>('clear_dx_call', {})
 }
 
+/** The DX Call and DX Grid boxes as they now read. Only the JTDX-style FT8 decoder reads them, as
+ * WSJT-X gives its decoder the DX call whenever the box holds one: nothing is sent, no QSO moves. */
+export async function setDxBox(call: string, grid: string): Promise<void> {
+  return invoke<void>('set_dx_box', { call, grid })
+}
+
 /** Operator in-QSO free text (WSJT-X Tx5): override the next transmission with
  * `text`, directed to the current DX when known. Returns the fresh snapshot. */
 export async function qsoFreetext(text: string): Promise<AppSnapshot> {
@@ -2174,7 +2332,7 @@ export interface CallbookUpdatePreview {
  *  fill's change, undone whole by its run — a fill stopped part-way has one too. `notLookedUp`:
  *  calls a later run picks up. */
 export interface CallbookUpdateEnd {
-  stop: 'done' | 'cancelled' | 'limit' | 'refused' | 'failed'
+  stop: 'done' | 'cancelled' | 'limit' | 'refused' | 'refused-unchecked' | 'failed'
   error: string | null
   /** QRZ's last Message/Error, in its own words (shown, as QRZ asks). */
   qrzSaid: string | null
@@ -5366,6 +5524,15 @@ export async function getCatCwUnprovenRigModels(): Promise<number[]> {
   return invoke<number[]>('get_cat_cw_unproven_rig_models')
 }
 
+/** Rig models whose Hamlib has no `send_morse`, so the CAT keyer can never key them (every Xiegu
+ *  model, and many older rigs). Drives a notice on the CW settings page naming the keyers that
+ *  can. Measured from the bundled Hamlib and kept in Rust (`rigmodels::CAT_CW_NO_MORSE_RIGS`);
+ *  fetched, not copied here. An empty array means the rule could not be read, and no notice is
+ *  shown. */
+export async function getCatCwNoMorseRigModels(): Promise<number[]> {
+  return invoke<number[]>('get_cat_cw_no_morse_rig_models')
+}
+
 /** Models whose Hamlib CAT PTT can choose the radio's MIC or DATA input — the only ones Settings
  *  offers "Transmit audio source (CAT PTT): Rear/Data" on (#381). The set is measured from the
  *  bundled Hamlib and lives in Rust (`rigmodels::PTT_MIC_DATA_RIGS`); fetched, not copied here.
@@ -5638,6 +5805,20 @@ export async function importHuntedParksCsv(csv: string): Promise<number> {
  */
 export async function civDiagnosticLog(enable: boolean): Promise<string> {
   return invoke<string>('civ_diagnostic_log', { enable })
+}
+
+/**
+ * Turn Record CAT traffic on or off: the frequency, mode, split, VFO, PTT and radio-setting
+ * commands Nexus asks the radio link to carry out go into the diagnostic log for at most 30
+ * minutes or 2 MB. Returns the seconds left, 0 when off. Not a setting: off at every launch.
+ */
+export async function catTrace(enable: boolean): Promise<number> {
+  return invoke<number>('cat_trace', { enable })
+}
+
+/** The seconds Record CAT traffic has left, 0 when it is off (or has turned itself off). */
+export async function catTraceStatus(): Promise<number> {
+  return invoke<number>('cat_trace_status', {})
 }
 
 /**
@@ -6037,7 +6218,7 @@ export async function clientStatus(): Promise<ClientStatus | null> {
 }
 
 /** One saved key the station holds back until the operator confirms it for the address it would
- *  go to (a settings restore set that address where the station had none): Cloudlog's
+ *  go to (a settings change or restore set that address): Cloudlog's
  *  (`radioId` null) or a radio's Icom network password. Never the key, nor anything about it. */
 export interface KeyToConfirm {
   radioId: number | null

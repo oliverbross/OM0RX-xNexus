@@ -352,29 +352,12 @@ pub fn heal_tty_twin_with(port: &str, cu_twin_exists: impl Fn(&str) -> bool) -> 
     cu_twin_exists(&cu).then_some(cu)
 }
 
-/// Do two stored port names name the SAME serial port, whatever their spelling? For the keying
-/// decisions that must not be escaped by a spelling: the Hardware-handshake refusal's "RTS keys
-/// this radio" fact compares a CAT port with a CW keyline port and with other radios' PTT ports,
-/// and the same port may be stored as `com5`/`COM5`, `\\.\COM5` (the Win32 device path), or a
-/// mac `/dev/tty.*` and its `/dev/cu.*` callout twin (one is healed at open, the other is not).
-/// Case-insensitive, as every port comparison in Nexus already is; an empty name matches nothing.
-/// Over-matching is the safe direction here: it can only refuse a launch, never key one.
-pub fn same_port(a: &str, b: &str) -> bool {
-    fn norm(p: &str) -> String {
-        let p = p.trim();
-        let p = match p.get(..4) {
-            Some(head) if head.eq_ignore_ascii_case("\\\\.\\") => &p[4..],
-            _ => p,
-        };
-        let p = p.to_ascii_lowercase();
-        match p.strip_prefix("/dev/tty.") {
-            Some(rest) => format!("/dev/cu.{rest}"),
-            None => p,
-        }
-    }
-    let (a, b) = (norm(a), norm(b));
-    !a.is_empty() && a == b
-}
+/// Do two stored port names name the SAME serial port, whatever their spelling (`com5`/`COM5`,
+/// `\\.\COM5`, a mac `/dev/tty.*` and its `/dev/cu.*` twin)? The one rule lives in tempo-app
+/// ([`tempo_app::serial_port::same_port`]) so the engine's keyline guards read ports exactly as
+/// this crate opens and refuses them; re-exported here for the Hardware-handshake refusal and the
+/// shared control-line handle.
+pub use tempo_app::serial_port::same_port;
 
 /// The open-time heal for a STORED serial-port name: on macOS, substitute the `/dev/cu.*`
 /// twin for a saved `/dev/tty.*` when the twin is present ([`heal_tty_twin_with`]); identity
@@ -385,12 +368,12 @@ pub fn same_port(a: &str, b: &str) -> bool {
 /// Logs the substitution once per session (the open path re-runs every settings tick).
 ///
 /// Also expands a leading `~/` to the home directory on macOS and Linux
-/// ([`expand_home_with`]): the path another program gives its virtual port is often written
+/// ([`tempo_app::serial_port::expand_home_with`], the rule [`same_port`] reads ports by too): the path another program gives its virtual port is often written
 /// that way (`~/Downloads/rig-pty1`), and nothing below a shell expands it — rigctld and the
 /// serial open would look for a directory literally named `~`.
 pub fn heal_stored_port(port: String) -> String {
     #[cfg(unix)]
-    let port = expand_home_with(port, std::env::var_os("HOME").as_deref());
+    let port = tempo_app::serial_port::expand_home_with(port, std::env::var_os("HOME").as_deref());
     #[cfg(target_os = "macos")]
     if let Some(cu) = heal_tty_twin_with(&port, |p| std::path::Path::new(p).exists()) {
         static NOTED: std::sync::Once = std::sync::Once::new();
@@ -404,23 +387,6 @@ pub fn heal_stored_port(port: String) -> String {
         return cu;
     }
     port
-}
-
-/// `~/rest` → `<home>/rest`; every other name (and a missing or empty home) is returned as
-/// it came. Only the `~/` form: `~user/` would need the password database, and no program
-/// that makes a virtual port hands out that spelling. The home is a parameter so the rule is
-/// testable without touching the process environment.
-#[cfg_attr(not(unix), allow(dead_code))]
-fn expand_home_with(port: String, home: Option<&std::ffi::OsStr>) -> String {
-    match (
-        port.trim_start().strip_prefix("~/"),
-        home.and_then(|h| h.to_str()),
-    ) {
-        (Some(rest), Some(home)) if !home.is_empty() => {
-            format!("{}/{rest}", home.trim_end_matches('/'))
-        }
-        _ => port,
-    }
 }
 
 /// Is this serial path a VIRTUAL port, with no modem-control lines (RTS, DTR, CTS, DSR, DCD)
@@ -1123,7 +1089,7 @@ mod tests {
     #[test]
     fn a_leading_tilde_slash_is_the_home_directory() {
         let home = Some(std::ffi::OsStr::new("/Users/op"));
-        let x = |p: &str, h| expand_home_with(p.to_string(), h);
+        let x = |p: &str, h| tempo_app::serial_port::expand_home_with(p.to_string(), h);
         assert_eq!(
             x("~/Downloads/rig-pty1", home),
             "/Users/op/Downloads/rig-pty1"

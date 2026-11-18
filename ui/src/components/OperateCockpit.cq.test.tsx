@@ -1,11 +1,11 @@
 // @vitest-environment jsdom
 //
-// #254 — "CQ KD9WES POTA" SILENTLY SENT A PLAIN CQ.
+// #254 — "CQ W9ABC POTA" SILENTLY SENT A PLAIN CQ.
 //
-// The reporter typed his directed CQ with the words the other way round. `cqDirFromText`
+// The reporter typed their directed CQ with the words the other way round. `cqDirFromText`
 // accepts only WSJT-X's grammar (`CQ [TOKEN] MYCALL [GRID4]`), so it returned `undefined`
 // — and `doTx(6)` read that as "fall back to a plain CQ" and called `startCq(null)`. The
-// Tx6 box still showed what he typed. The radio sent something else.
+// Tx6 box still showed what they typed. The radio sent something else.
 //
 // THE INVARIANT, and it is the transmit path's: **never transmit a message different from
 // the one shown.** The operator decision (2026-09-14) is WARN-ONLY — WSJT-X's CQ grammar is
@@ -26,6 +26,7 @@ const startRunning = vi.fn(async (_dir?: string | null): Promise<null> => null)
 const pushToast = vi.fn()
 
 vi.mock('../api', () => ({
+  setDxBox: vi.fn(async () => undefined),
   qrzLookup: vi.fn(async () => null),
   resolveEntity: vi.fn(async () => null),
   getSettings: vi.fn(async () => ({})),
@@ -68,8 +69,9 @@ vi.mock('./OperateDecodes', async (importOriginal) => {
   return { ...real, OperateDecodes: () => <div data-testid="od-pane" /> }
 })
 
-/** The reporter's own callsign, so the malformed text below is his verbatim. */
-const MYCALL = 'KD9WES'
+/** A fictional callsign standing in for the reporter's own; the malformed text is their
+ *  report's word order. */
+const MYCALL = 'W9ABC'
 
 function makeSnap(): AppSnapshot {
   return {
@@ -188,7 +190,7 @@ beforeEach(() => {
 afterEach(cleanup)
 
 describe('#254 — a malformed directed CQ is refused, never quietly replaced', () => {
-  it('"CQ KD9WES POTA" does not key, and says so', async () => {
+  it('"CQ W9ABC POTA" does not key, and says so', async () => {
     renderCockpit()
     callCq(`CQ ${MYCALL} POTA`)
 
@@ -393,5 +395,76 @@ describe('the Tx6 row in a contest WSJT-X has no activity for', () => {
     fireEvent.change(tx6Box(), { target: { value: `CQ QP ${MYCALL} EN61` } })
     fireEvent.click(callCqButton())
     await waitFor(() => expect(startRunning).toHaveBeenCalledWith(null))
+  })
+})
+
+// A LOGGER'S REPLY TO A CQ, WORKED BY THE CONTEST'S S&P (a field report). GridTracker's
+// click on a station whose latest line is a CQ is a WSJT-X Reply, and while a contest runs whose own
+// FT8/FT4 messages apply the engine hands that station to the contest's S&P, as a double-click on the
+// CQ does. The snapshot then carries no `qso`: the contest's sequencer is in `fieldDay`, and the over
+// it sends in `contestTxNow`. With no click on this screen the strip read "TX — listening" and Idle,
+// and DX Call and Tx1–Tx5 stayed blank, while the radio called the station every period. WSJT-X shows the
+// station it calls in its DX Call box and the message in its Tx panel (`processMessage`).
+describe("a logger's Reply worked by the contest's S&P", () => {
+  const worked = () =>
+    ({
+      ...makeSnap(),
+      mode: 'fieldDay',
+      qso: null,
+      fieldDay: { running: false, state: 'AwaitExchange', dxcall: 'W9XYZ' },
+      contestTxNow: `W9XYZ ${MYCALL} EN61`,
+    }) as unknown as AppSnapshot
+  const text = (sel: string) => document.querySelector(sel)?.textContent ?? null
+
+  it('shows the station, the state and the over the contest sends', () => {
+    renderCockpit(worked())
+    expect(text('.cockpit-ftstrip .cq-dx')).toBe('W9XYZ')
+    expect(text('.cockpit-ftstrip .cq-state')).toBe('AwaitExchange')
+    expect(text('.cockpit-ftstrip .cq-now-msg')).toBe(`W9XYZ ${MYCALL} EN61`)
+    expect(
+      (screen.getByTitle('Re-arm and re-send this message') as HTMLButtonElement).disabled,
+      "Resend re-arms the QSO sequencer's step, which the contest's has none of",
+    ).toBe(true)
+  })
+
+  it("leaves Log QSO off: the contest logs its own contact as it closes", () => {
+    renderCockpit(worked())
+    const log = document.querySelector('.cockpit-ftstrip .cq-log') as HTMLButtonElement
+    expect(log.disabled).toBe(true)
+    cleanup()
+    renderCockpit({ ...worked(), logQsoWaiting: 1 } as AppSnapshot)
+    const waiting = document.querySelector('.cockpit-ftstrip .cq-log') as HTMLButtonElement
+    expect(waiting.disabled, 'CONTROL: a contact waiting for Log QSO keeps it live').toBe(false)
+  })
+
+  it('fills DX Call, and Tx 1 is the over on the air', () => {
+    renderCockpit(worked())
+    expect((screen.getByLabelText('DX callsign') as HTMLInputElement).value).toBe('W9XYZ')
+    const rows = Array.from(document.querySelectorAll('.tx-panel .txp-row'))
+    expect(rows).toHaveLength(6)
+    expect(rows[0].textContent).toContain(`W9XYZ ${MYCALL} EN61`)
+    expect(rows.findIndex((r) => r.querySelector('.txp-dot.on')) + 1, 'the dot on Tx 1').toBe(1)
+  })
+
+  it("keeps the grid a click put beside the same station, and clears another station's", () => {
+    const view = renderCockpit()
+    const call = () => screen.getByLabelText('DX callsign') as HTMLInputElement
+    const grid = () => screen.getByLabelText('DX grid locator') as HTMLInputElement
+    // The operator's own click on W9XYZ's CQ fills both boxes before the engine answers.
+    fireEvent.change(call(), { target: { value: 'W9XYZ' } })
+    fireEvent.change(grid(), { target: { value: 'EM12' } })
+    view.rerender(cockpit(worked()))
+    expect(grid().value, "the contest's sequencer names no grid: the click's stays").toBe('EM12')
+    const next = worked()
+    view.rerender(cockpit({ ...next, fieldDay: { ...next.fieldDay, dxcall: 'K1ABC' } } as AppSnapshot))
+    expect(call().value).toBe('K1ABC')
+    expect(grid().value, "W9XYZ's grid is not K1ABC's").toBe('')
+  })
+
+  it('outside a contest nothing new shows: the strip is listening', () => {
+    renderCockpit()
+    expect(text('.cockpit-ftstrip .cq-dx')).toBe(null)
+    expect(text('.cockpit-ftstrip .cq-state')).toBe('Idle')
+    expect(text('.cockpit-ftstrip .cq-now-msg')).toBe('— listening')
   })
 })

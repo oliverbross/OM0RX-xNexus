@@ -129,6 +129,10 @@ const MIGRATED = [
   // Client mode (2026-10-07) — born migrated: the banner of a computer driving another station,
   // and the words for a call it refused or could not make.
   'components/ClientBanner.tsx',
+  // Settings ▸ FT8 decoder (the JTDX-style decoder's style, presets and knobs) and its CPU-guard
+  // notice (2026-11-14), born migrated.
+  'components/JtdxDecoderFields.tsx',
+  'useFt8StepDownNotice.ts',
   'features/clientWords.ts',
   // The words for a restore refused while the radio is keyed (2026-10-29), born migrated.
   'features/restoreWords.ts',
@@ -417,6 +421,12 @@ const MIGRATED = [
   // The contest setup (2026-10-26): born migrated — every string is a catalog key; contest names,
   // Cabrillo tokens and UTC times are invariant tokens.
   'components/ContestSetupWizard.tsx',
+  // Build your own contest (2026-11-14): born migrated — every string is a catalog key; the operator's
+  // contest names and captions are data, mode names and WSJT-X's message names invariant tokens.
+  'components/CustomContestBuilder.tsx',
+  // …and the operator's own contests (2026-11-14): the builder's menu words and the typed values' captions.
+  // WSJT-X's message names are its own, invariant tokens held as a named constant.
+  'features/customContests.ts',
   // The radio setup (2026-10-27): born migrated — every string is a catalog key; radio names,
   // band tokens, model names, ports and the routing mode names are data or invariant tokens.
   'components/RadioSetupWizard.tsx',

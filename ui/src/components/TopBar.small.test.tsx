@@ -346,7 +346,7 @@ describe('the top bar at the small size', () => {
       meter: one(container, 'header.topbar .rx-level'),
       utc: one(container, 'header.topbar .utc-clock'),
       chips: one(container, 'header.topbar > .topbar-chips'),
-      ...Object.fromEntries(q(container, 'header.topbar > .topbar-chips > button').map((b) => [b.textContent!, b])),
+      ...Object.fromEntries(q(container, 'header.topbar > .topbar-chips > button, header.topbar > .op-chip').map((b) => [b.textContent!, b])),
     }
     expect(Object.keys(kept)).toEqual(expect.arrayContaining(['Help', 'Field', 'Set operator']))
     expect(q(container, '.tier-menu-btn'), 'no mode button off the FT screens').toEqual([])
@@ -399,16 +399,18 @@ describe('the mode button', () => {
     fireEvent.pointerDown(menu, { button: 0, ctrlKey: false })
     const items = screen.getAllByRole('menuitem')
     expect(items.map((i) => i.textContent)).toEqual([
-      'TempoFast', 'TempoDeep', 'FT4', 'FT8', 'FT2', 'BCNWSPR', 'Q65', 'MSK144', 'RXJT65', 'FST4', 'BCNFST4W',
+      'TempoFast', 'TempoDeep', 'FT4', 'FT8', 'FT2', 'BCNWSPR', 'Q65', 'MSK144', 'JT65', 'FST4', 'BCNFST4W',
     ])
     fireEvent.click(within(items[6]).getByText('Q65'))
     expect(picked).toEqual(['Q65'])
   })
 
-  it('names an rx-only mode as its pill does', () => {
+  // JT65 transmits, so its mode button carries no receive-only tag or style (it once did, from a
+  // per-pill flag). A tier that really cannot transmit is pinned in TopBar.rxOnlyPill.test.tsx.
+  it('names JT65 as its pill does: no receive-only tag, it transmits', () => {
     const { container } = bar('operate', { tier: 'JT65' })
     const menu = one(container, '.tier-menu-btn')
-    expect(menu.textContent).toBe('RXJT65')
-    expect(menu.classList.contains('rx-only')).toBe(true)
+    expect(menu.textContent).toBe('JT65')
+    expect(menu.classList.contains('rx-only')).toBe(false)
   })
 })

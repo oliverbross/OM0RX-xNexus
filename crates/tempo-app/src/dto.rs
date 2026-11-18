@@ -308,6 +308,11 @@ pub struct DecodeRow {
     /// WSJT-X '?' marker: low-confidence decode (quality below the stock line).
     #[serde(default)]
     pub low_conf: bool,
+    /// JTDX '^' marker: no error check accepted the message (the JTDX-style decoder's FT8S/FT8SD
+    /// and matched filters). Shown; nothing automatic acts on it. Sent only when true, so every
+    /// other decoder's rows are on the wire exactly as before.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub unchecked: bool,
     /// IR-HARQ redundancy versions combined to recover this decode: 0 = decoded
     /// from the initial transmission alone; 1/2 = recovered by joint-combining
     /// that many retransmissions; -1 = not applicable (e.g. DX1). Lets the UI
@@ -5329,6 +5334,26 @@ pub struct AutoRadioSwitch {
     pub refused: bool,
 }
 
+/// The JTDX-style FT8 decoder's CPU guard stepped the preset down ([`AppSnapshot::ft8_step_down`]):
+/// a full pass took longer than a reply can wait, so the decoder runs one preset lower for the
+/// rest of the session (or until the operator picks a preset in Settings).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Ft8StepDown {
+    /// Bumped by each step, so the screen tells each one once.
+    pub seq: u64,
+    /// The preset chosen in Settings.
+    pub chosen: crate::settings::JtdxPreset,
+    /// The preset that ran the late pass.
+    pub from: crate::settings::JtdxPreset,
+    /// The preset the decoder runs now; `None` when `from` was Easy, the floor, which it stays
+    /// on (the standard decoder is never chosen for the operator).
+    pub to: Option<crate::settings::JtdxPreset>,
+    /// How long the late pass took, and the most it may take, milliseconds.
+    pub decode_ms: u32,
+    pub budget_ms: u32,
+}
+
 /// One "My station" profile as the top bar offers it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -5374,6 +5399,10 @@ pub struct AppSnapshot {
     /// until a band or mode the routing hands to another radio has switched one this session.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub auto_radio_switch: Option<AutoRadioSwitch>,
+    /// The JTDX-style FT8 decoder's last CPU-guard step this session, for its notice. Absent
+    /// until one happens.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ft8_step_down: Option<Ft8StepDown>,
     /// Mirror of `Settings::b4_match_mode` so display surfaces (the recall Dupe badge) apply
     /// the same B4/Dupe scope the engine's worked-band sets were built with — two readers of
     /// one setting must never disagree about what "worked before" means.
@@ -5554,6 +5583,14 @@ pub struct AppSnapshot {
     /// receives this field.
     #[serde(default, skip_serializing_if = "is_false")]
     pub contest_cq_typed: bool,
+    /// The over the contest's sequencer sends next, as `plan_tx` keys it, while a contest runs
+    /// ([`crate::engine::Engine::contest_tx_now`]): what the Operate strip's TX line shows there,
+    /// as `qso.tx_now` is outside one. A logger's Reply to a CQ hands the station to the contest's
+    /// S&P, which keys its answer every period; without this the strip read "listening" while it
+    /// did. `None`, and then not sent at all, everywhere else. For the screens on this computer:
+    /// the Remote never receives this field.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub contest_tx_now: Option<String>,
     /// FreeDV's own app beside Nexus ([`crate::freedv`]): its two listeners, the last contact it
     /// logged and the calls it heard. `None`, and then not sent at all, while neither listener is
     /// wanted, so every other snapshot is the one it always was. For the screens on this

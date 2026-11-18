@@ -1424,6 +1424,27 @@ pub(crate) fn show_conf_dump(args: &[&str]) -> Option<String> {
     }
 }
 
+// A door for tests only: a shipped build runs nothing between the capability ask and the launch.
+#[cfg(all(feature = "test-util", not(debug_assertions)))]
+compile_error!("`test-util` is test support: a release build must not turn it on");
+
+/// TESTS ONLY: run once in [`spawn_rigctld`], right after the capability ask returns and before
+/// its answer is read, the binary resolved and the daemon launched
+/// ([`set_after_capability_ask`]).
+#[cfg(feature = "test-util")]
+static AFTER_CAPABILITY_ASK: std::sync::OnceLock<fn()> = std::sync::OnceLock::new();
+
+/// TESTS ONLY (`test-util`): have [`spawn_rigctld`] call `after` each time its capability ask
+/// returns, before anything reads the answer, resolves the binary or launches. The no-tool-
+/// could-start test ends its busy window there, so the ask meets a busy tool on every try and
+/// the launch a free one: a launch that went ahead without the holds would then really start.
+/// Set once per process; a second call is ignored.
+#[cfg(feature = "test-util")]
+#[doc(hidden)]
+pub fn set_after_capability_ask(after: fn()) {
+    let _ = AFTER_CAPABILITY_ASK.set(after);
+}
+
 /// What asking this Hamlib for its `-L` show-conf dump came to.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum ShowConf {
@@ -1495,7 +1516,26 @@ pub(crate) fn ask_show_conf(
         );
         let mut cmd = tempo_core::process::command(bin);
         cmd.args(args).args(["-r", NO_SUCH_RIG]);
-        match run_within(&mut cmd, budget) {
+        // ⚠️ "COULD NOT START RIGHT NOW" IS NOT "MISSING" (`proc_util::runs_ok_within` has the
+        // whole story). ETXTBSY lasts while any process holds the binary open for writing, and a
+        // fork in another thread between a write and its close is enough; EAGAIN and EINTR pass
+        // too. Read as missing, a busy `rigctl` would hand the ask to `rigctld`, which a 4.5.x
+        // Hamlib never exits from. So those three are retried a few times, briefly, as there;
+        // one still busy after that falls through as before.
+        let mut outcome = run_within(&mut cmd, budget);
+        for _ in 0..5 {
+            let Bounded::Unrunnable(
+                std::io::ErrorKind::ExecutableFileBusy
+                | std::io::ErrorKind::WouldBlock
+                | std::io::ErrorKind::Interrupted,
+            ) = outcome
+            else {
+                break;
+            };
+            std::thread::sleep(std::time::Duration::from_millis(50));
+            outcome = run_within(&mut cmd, budget);
+        }
+        match outcome {
             // Missing: the other tool may be there.
             Bounded::Unrunnable(kind) => {
                 unrunnable = kind;
@@ -1871,6 +1911,9 @@ impl ServedRig {
 ///
 /// `output()` drains the pipes while it waits; the bound lives on the receive, so a wedged child
 /// still cannot hold up a rig open (the thread is left to finish on its own).
+///
+/// Unix only, as its one caller, [`daemon_serving_port`], is.
+#[cfg(unix)]
 fn capture_bounded(cmd: &mut Command, timeout: std::time::Duration) -> Option<String> {
     let mut owned = tempo_core::process::command(cmd.get_program());
     owned.args(cmd.get_args());
@@ -1989,7 +2032,12 @@ pub fn spawn_rigctld(
             return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, why));
         }
         let want = holds_for_port(want, virtual_node.is_some());
-        let settable = settable_or_refusal(settable_lines_for(model, ptt_line), &want)?;
+        let conf = settable_lines_for(model, ptt_line);
+        #[cfg(feature = "test-util")]
+        if let Some(after) = AFTER_CAPABILITY_ASK.get() {
+            after();
+        }
+        let settable = settable_or_refusal(conf, &want)?;
         resolve_lines(settable, want, deliberate)
     };
     let opened = virtual_node.as_deref().unwrap_or(addr);
@@ -2219,6 +2267,125 @@ mod tests {
         assert_eq!(
             ask_show_conf(missing.as_os_str(), unstartable.as_os_str(), &args, short),
             ShowConf::Unanswered(std::io::ErrorKind::PermissionDenied)
+        );
+    }
+
+    /// A child process holding `path` open for writing, so every exec of it fails ETXTBSY until
+    /// [`Holder::release`]. The descriptor is opened by the child itself, after its own exec, so
+    /// no fork of the test process carries a copy of it.
+    #[cfg(target_os = "linux")]
+    struct Holder(std::process::Child);
+
+    #[cfg(target_os = "linux")]
+    impl Holder {
+        /// Returns once the child holds `path`.
+        fn new(path: &std::path::Path) -> Self {
+            use std::io::Read;
+            let mut child = Command::new("/bin/sh")
+                .args(["-c", "exec 3>>\"$0\" && echo held && exec sleep 60"])
+                .arg(path)
+                .stdin(Stdio::null())
+                .stdout(Stdio::piped())
+                .spawn()
+                .expect("spawn the holder");
+            let mut held = [0u8; 5];
+            child
+                .stdout
+                .take()
+                .expect("holder stdout")
+                .read_exact(&mut held)
+                .expect("the holder says it holds the file");
+            assert_eq!(&held, b"held\n");
+            Self(child)
+        }
+
+        /// Kill and reap the child: when this returns, its descriptor is closed.
+        fn release(mut self) {
+            let _ = self.0.kill();
+            self.0.wait().expect("reap the holder");
+        }
+    }
+
+    /// ⭐ A BUSY `rigctl` IS NOT A MISSING ONE. While anything holds the binary open for writing,
+    /// its exec fails ETXTBSY; that is a moment, not an answer. Held for the first try and let go
+    /// a moment later, the `rigctl` is asked again and ITS dump is the answer: `rigctld` (here a
+    /// stand-in whose dump says so) is never asked. One busy for good still falls through to
+    /// `rigctld` after a brief, bounded wait. Linux only: macOS does not refuse a busy script.
+    /// And only on a kernel that refuses it: one that runs a file open for writing cannot keep a
+    /// tool busy at all, and then neither leg means anything.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_rigctl_busy_for_a_moment_is_asked_again_not_skipped() {
+        use std::time::{Duration, Instant};
+        let whole = "rig_pathname: x\nasync: x\n";
+        let other = "rig_pathname: x\nasync: x\nfrom_rigctld: x\n";
+        let rigctl = stub_script("busy-rigctl", &format!("#!/bin/sh\nprintf '{whole}'\n"));
+        let rigctld = stub_script(
+            "busy-rigctld",
+            &format!("#!/bin/sh\necho asked >> \"$0.args\"\nprintf '{other}'\n"),
+        );
+        let args = ["-m", "3073", "-L"];
+        let budget = Duration::from_secs(5);
+        // The kernel premise: an exec of the file while it is held fails ETXTBSY.
+        let holder = Holder::new(&rigctl);
+        let ran = Command::new(&rigctl).stdout(Stdio::null()).status();
+        holder.release();
+        if !matches!(&ran, Err(e) if e.kind() == std::io::ErrorKind::ExecutableFileBusy) {
+            eprintln!("skipped: this kernel ran a file open for writing ({ran:?})");
+            return;
+        }
+
+        // Busy for the first try only: the write descriptor goes 30 ms in.
+        //
+        // ⚠️ A MOMENT IS ONLY A MOMENT IF THE RELEASE LANDS INSIDE THE ASK'S RETRIES. The ask naps
+        // 50 ms five times after a busy try, so a hold let go within 250 ms of the ask's start
+        // must be answered by `rigctl`. Two things can stretch the moment past that, and neither
+        // is the code under test: the thread that lets go not getting the CPU for 250 ms on a
+        // loaded machine, and a copy of the write descriptor in a child that another test thread
+        // forked meanwhile. So the descriptor lives in a child of this test's own (no fork of
+        // this process can copy it), the release is that child's death and reaping (once reaped,
+        // its descriptors are closed), and a run whose release came after the window is not a
+        // verdict: it is run again. A release inside the window is held to the answer strictly.
+        let window = Duration::from_millis(250);
+        let mut late = Vec::new();
+        loop {
+            let holder = Holder::new(&rigctl);
+            let started = Instant::now();
+            let release = std::thread::spawn(move || {
+                std::thread::sleep(Duration::from_millis(30));
+                holder.release();
+                started.elapsed()
+            });
+            let answer = ask_show_conf(rigctl.as_os_str(), rigctld.as_os_str(), &args, budget);
+            let released = release.join().unwrap();
+            if released >= window && answer != ShowConf::Dump(whole.to_string()) {
+                late.push(released);
+                assert!(late.len() < 20, "every release came late: {late:?}");
+                let _ = std::fs::remove_file(rigctld.with_extension("args"));
+                continue;
+            }
+            assert_eq!(
+                answer,
+                ShowConf::Dump(whole.to_string()),
+                "released at {released:?}"
+            );
+            break;
+        }
+        assert!(
+            !rigctld.with_extension("args").exists(),
+            "rigctld was asked while rigctl was only busy"
+        );
+
+        // Busy for good: rigctld is asked, and soon.
+        let holder = Holder::new(&rigctl);
+        let started = Instant::now();
+        let answer = ask_show_conf(rigctl.as_os_str(), rigctld.as_os_str(), &args, budget);
+        holder.release();
+        assert_eq!(answer, ShowConf::Dump(other.to_string()));
+        assert!(
+            started.elapsed() < Duration::from_secs(2),
+            "{:?}",
+            started.elapsed()
         );
     }
 
@@ -4378,12 +4545,43 @@ mod tests {
             "`rigctld -l` listed only {}",
             models.len()
         );
+        // THE ASKS RUN IN PARALLEL; THE CHECKS DO NOT. Each ask is a rigctl that spends about half
+        // a second waiting (on Hamlib's open of the missing port) and almost no CPU, and asked
+        // one at a time the ~300 models made this the slowest test in the workspace: 9 to 13
+        // minutes on CI. So a fixed pool of threads asks, more than the runner has cores because
+        // the asks wait rather than compute, and each dump is kept at its model's index. The
+        // loop below then checks every model in the listed order on this thread, exactly as it
+        // did when it asked them itself.
+        const ASKERS: usize = 16;
+        let next = std::sync::atomic::AtomicUsize::new(0);
+        let mut dumps: Vec<Option<std::process::Output>> = models.iter().map(|_| None).collect();
+        std::thread::scope(|s| {
+            let workers: Vec<_> = (0..ASKERS)
+                .map(|_| {
+                    s.spawn(|| {
+                        let mut got = Vec::new();
+                        loop {
+                            let i = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                            let Some(m) = models.get(i) else { break };
+                            // Pointed at no port, as every show-conf ask is (`ask_show_conf`): a
+                            // bare `-L` opens the default serial port on some Hamlibs.
+                            let model = m.to_string();
+                            let args = ["-m", &model, "-L", "-r", NO_SUCH_RIG];
+                            got.push((i, run_bounded(&bin, &args, 10)));
+                        }
+                        got
+                    })
+                })
+                .collect();
+            for w in workers {
+                for (i, out) in w.join().expect("an asking thread panicked") {
+                    dumps[i] = out;
+                }
+            }
+        });
         let mut keyed_by_a_line = Vec::new();
-        for m in models {
-            // Pointed at no port, as every show-conf ask is (`ask_show_conf`): a bare `-L` opens
-            // the default serial port on some Hamlibs.
-            let model = m.to_string();
-            let Some(out) = run_bounded(&bin, &["-m", &model, "-L", "-r", NO_SUCH_RIG], 10) else {
+        for (m, out) in models.into_iter().zip(dumps) {
+            let Some(out) = out else {
                 continue;
             };
             let dump = String::from_utf8_lossy(&out.stdout);

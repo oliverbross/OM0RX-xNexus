@@ -20,6 +20,9 @@ use super::*;
 use crate::dto::Tier;
 use crate::test_util::StoredLog;
 
+/// An operator's own contest in the WSJT-X contest messages its exchange matches, through the
+/// cockpit's verbs.
+mod custom_contest;
 /// A station already in the contest's log, worked again on FT8: logged a dupe, worth nothing.
 mod picked_dupe;
 /// The contest's Running stops after each contact until the operator calls CQ again.
@@ -70,6 +73,12 @@ enum Act {
     FieldDay,
     NaVhf,
     None,
+    /// ARRL RTTY Roundup (`RTTY`), which an operator's own contest asks for
+    /// ([`custom_contest`]): the partner sends `559 0013`.
+    Roundup,
+    /// EU VHF (`EU_VHF`), which an operator's own contest matches: the partner sends
+    /// `570013 EN37AB`, both calls hashed.
+    EuVhf,
 }
 
 fn act_of(contest: &str) -> Act {
@@ -96,6 +105,8 @@ impl Partner {
             Act::FieldDay => format!("CQ FD {DX} {DX_GRID}"),
             Act::NaVhf => format!("CQ TEST {DX} {DX_GRID}"),
             Act::None => format!("CQ {DX} {DX_GRID}"),
+            Act::Roundup => format!("CQ RU {DX} {DX_GRID}"),
+            Act::EuVhf => format!("CQ TEST {DX} {DX_GRID}"),
         });
         Self {
             act,
@@ -106,7 +117,12 @@ impl Partner {
 
     /// What WSJT-X does on decoding `mine`.
     fn hear(&mut self, mine: &str) {
-        let w: Vec<&str> = mine.split_whitespace().collect();
+        // The calls as the partner's decoder prints them, brackets dropped as WSJT-X drops them
+        // (decodedtext.cpp 66): an EU VHF over hashes both.
+        let w: Vec<&str> = mine
+            .split_whitespace()
+            .map(|s| s.trim_start_matches('<').trim_end_matches('>'))
+            .collect();
         let to_me = w.len() >= 3 && w[0] == DX && w[1] == ME;
         let a_cq = w.first() == Some(&"CQ") && w.contains(&ME);
         let is_grid = |s: &str| {
@@ -127,6 +143,9 @@ impl Partner {
             self.next = Some(match self.act {
                 Act::FieldDay => reply("1D WI"),
                 Act::NaVhf | Act::None => reply(DX_GRID),
+                Act::Roundup => reply("559 0013"),
+                // EU VHF keeps Tx1 on (8250-8253): the standard grid answer.
+                Act::EuVhf => reply(DX_GRID),
             });
             return;
         }
@@ -140,6 +159,21 @@ impl Partner {
             Act::NaVhf if w.len() == 3 && is_grid(w[2]) => (reply(&format!("R {DX_GRID}")), false),
             Act::NaVhf if w.len() == 4 && w[2] == "R" && is_grid(w[3]) => (reply("RR73"), true),
             Act::FieldDay | Act::NaVhf if closing => (reply("73"), true),
+            // genStdMsgs 9638-9657 and processMessage 9152-9160: an exchange is rogered with
+            // the partner's own, a rogered one closed with RR73, and RR73 answered with 73.
+            Act::Roundup if w.len() == 4 => (reply("R 559 0013"), false),
+            Act::Roundup if w.len() == 5 && w[2] == "R" => (reply("RR73"), true),
+            Act::Roundup if closing => (reply("73"), true),
+            // processMessage's EU VHF branch (9138-9151): a grid is answered with the exchange,
+            // an exchange rogered with the partner's, a rogered one closed with RR73.
+            Act::EuVhf if w.len() == 3 && is_grid(w[2]) => {
+                (format!("<{ME}> <{DX}> 570013 EN37AB"), false)
+            }
+            Act::EuVhf if w.len() == 4 && w[2].len() == 6 => {
+                (format!("<{ME}> <{DX}> R 570013 EN37AB"), false)
+            }
+            Act::EuVhf if w.len() == 5 && w[2] == "R" => (reply("RR73"), true),
+            Act::EuVhf if closing => (reply("73"), true),
             Act::None if w.len() == 3 && is_grid(w[2]) => (reply(DX_RPT), false),
             Act::None if w.len() == 3 && w[2].starts_with('R') && is_report(&w[2][1..]) => {
                 (reply("RR73"), true)
@@ -175,6 +209,7 @@ fn heard(text: &str) -> modes::Decode {
         qual: 1.0,
         rv: None,
         raw: None,
+        unchecked: false,
         mode: None,
     }
 }
@@ -3458,4 +3493,167 @@ fn the_strips_sp_is_the_running_contests_sp() {
     let r = e.start_search_and_pounce();
     assert!(r.is_err(), "no class: {r:?}");
     assert_eq!(mode_line(&e), monitor, "still FT8 QSO mode");
+}
+
+/// ⭐ **A logger's Reply to a CQ in a contest names the over the contest's S&P sends** (a field
+/// report). GridTracker's click on a station whose latest line is a CQ is a
+/// WSJT-X Reply (`replyToCQ`, `widgets/mainwindow.cpp` 13279-13336), which hands the station to the
+/// contest's S&P as the operator's double-click does. That S&P works the station and keys its
+/// answer every period, but the snapshot carried no `qso` and nothing named the over, so the
+/// Operate screen read "TX — listening", Idle and a blank DX Call while the radio called the station.
+/// WSJT-X shows the station it calls in its DX Call box and the message in its Tx panel
+/// (`processMessage` 9419-9449). The snapshot now names the contest's next over
+/// (`contest_tx_now`), the over `plan_tx` keys, beside its station (`field_day.dxcall`), in each
+/// message set: the standard messages (a QSO party), NA VHF's and Field Day's.
+#[test]
+fn a_loggers_reply_to_a_cq_in_a_contest_names_the_over_it_sends() {
+    for (contest, cq) in [
+        ("txqp", "CQ W9XYZ EN37"),
+        ("arrlvhf_jan", "CQ TEST W9XYZ EN37"),
+        ("arrlfd", "CQ FD W9XYZ EN37"),
+    ] {
+        let mut e = engine_for(contest, MY_GRID);
+        e.set_tier(Tier::Ft8);
+        e.set_mode("qso-monitor").expect("FT8 QSO mode");
+        // Heard in an odd period, decoded at the even boundary after it.
+        e.ingest_decodes_for_test(&[heard(cq)], 2);
+        e.answer_udp_reply(DX, cq, DX_SNR, Some(1234.0))
+            .expect("the Reply is taken");
+        let s = e.snapshot();
+        assert!(s.qso.is_none(), "{contest}: the contest's S&P works it");
+        assert_eq!(
+            s.field_day.and_then(|f| f.dxcall).as_deref(),
+            Some(DX),
+            "{contest}: the station it works"
+        );
+        let sent = keyed(&mut e, 4);
+        assert!(sent.is_some(), "{contest}: control: the answer keys");
+        assert_eq!(
+            s.contest_tx_now, sent,
+            "{contest}: the over named is the over keyed"
+        );
+    }
+    // Outside a contest the QSO strip's own `tx_now` names it, and this is not sent at all.
+    let mut e = engine_for("txqp", MY_GRID);
+    let mut s = e.settings().clone();
+    s.fd_active = false;
+    e.apply_settings(s);
+    e.set_tier(Tier::Ft8);
+    e.set_mode("qso-monitor").expect("FT8 QSO mode");
+    e.ingest_decodes_for_test(&[heard("CQ W9XYZ EN37")], 2);
+    e.answer_udp_reply(DX, "CQ W9XYZ EN37", DX_SNR, None)
+        .expect("the Reply is taken");
+    let s = e.snapshot();
+    assert_eq!(s.contest_tx_now, None);
+    assert_eq!(
+        s.qso.and_then(|q| q.tx_now).as_deref(),
+        Some("W9XYZ K1ABC FN42")
+    );
+}
+
+/// A logger's Reply on a CQ in a contest still hands the station to the contest's S&P and arms
+/// TX, from TX off and with "Double-click on call sets Tx enable" off: the Reply arms on every
+/// station it works ([`Engine::answer_udp_reply`]).
+#[test]
+fn a_loggers_reply_in_a_contest_works_the_station_and_arms() {
+    let mut e = engine_for("txqp", MY_GRID);
+    e.settings.double_click_sets_tx = false;
+    e.set_tier(Tier::Ft8);
+    e.set_mode("fieldday-sp").expect("S&P starts");
+    assert!(!e.tx_enabled(), "premise: TX off");
+    e.ingest_decodes_for_test(&[heard("CQ W9XYZ EN37")], 2);
+    e.answer_udp_reply(DX, "CQ W9XYZ EN37", DX_SNR, Some(1234.0))
+        .expect("the Reply is taken");
+    assert!(e.tx_enabled(), "armed");
+    assert_eq!(
+        e.snapshot().field_day.and_then(|f| f.dxcall).as_deref(),
+        Some(DX),
+        "the contest's S&P works it"
+    );
+    assert_eq!(keyed(&mut e, 4).as_deref(), Some("W9XYZ K1ABC FN42"));
+}
+
+/// ⛔ **Outside a contest, no logger's Reply leaves the station sending while the screen says it
+/// works nobody** (a field report: "TX — listening", Idle, DX Call blank, while
+/// Tx1 went out every period). The Operate strip says Idle only when the snapshot carries no
+/// `qso`, which outside a contest never happens on FT8; and every over keyed after a Reply is the
+/// one the QSO sequencer names (`qso.tx_now`) to the station named (`qso.dxcall`) — or the Reply is
+/// refused and nothing keys. Each path a GridTracker click can meet: a CQ, a line to someone else,
+/// a line to us, from S&P, from a CQ run, with Hold Tx Freq, after a contact with the same station
+/// was logged, after the operator's stop, and with the clicked line aged out. (The Reply's
+/// modifiers, time, delta time and low-confidence fields are read and dropped by the radio loop's
+/// Reply arm; only the text, SNR and audio offset reach the engine, so they cannot pick a route.)
+#[test]
+fn outside_a_contest_every_over_after_a_reply_is_the_one_the_screen_names() {
+    type Setup = fn(&mut Engine);
+    let none: Setup = |_| {};
+    let run: Setup = |e| e.set_mode("qso-run").expect("a CQ run");
+    let hold: Setup = |e| e.set_hold_tx_freq(true);
+    let stopped: Setup = |e| e.halt_tx();
+    let worked_before: Setup = |e| {
+        // A whole contact with the same station, logged, just before the click.
+        click(e, "CQ W9XYZ EN37", 1);
+        e.set_tx_enabled(true);
+        let first = keyed(e, 1).or_else(|| keyed(e, 2));
+        assert_eq!(
+            first.as_deref(),
+            Some("W9XYZ K1ABC FN42"),
+            "control: our grid"
+        );
+        e.ingest_decodes_for_test(&[heard("K1ABC W9XYZ -07")], 3);
+        let roger = keyed(e, 3).or_else(|| keyed(e, 4));
+        assert_eq!(
+            roger.as_deref(),
+            Some("W9XYZ K1ABC R-12"),
+            "control: our roger"
+        );
+        e.ingest_decodes_for_test(&[heard("K1ABC W9XYZ RR73")], 5);
+        let _ = keyed(e, 5).or_else(|| keyed(e, 6));
+    };
+    let aged_out: Setup = |e| e.decode_history.clear();
+    let cases: [(&str, &str, Setup, bool); 9] = [
+        ("a CQ", "CQ W9XYZ EN37", none, true),
+        ("a line to someone else", "K9AAA W9XYZ -10", none, true),
+        ("a report to us", "K1ABC W9XYZ -07", none, true),
+        ("from a CQ run", "CQ W9XYZ EN37", run, true),
+        ("with Hold Tx Freq", "CQ W9XYZ EN37", hold, true),
+        (
+            "after a logged contact",
+            "CQ W9XYZ EN37",
+            worked_before,
+            true,
+        ),
+        ("an RR73 to us", "K1ABC W9XYZ RR73", none, true),
+        ("after the operator's stop", "CQ W9XYZ EN37", stopped, false),
+        ("aged out of the history", "CQ W9XYZ EN37", aged_out, false),
+    ];
+    for (what, line, setup, taken) in cases {
+        let mut e = engine_for("txqp", MY_GRID);
+        let mut s = e.settings().clone();
+        s.fd_active = false;
+        e.apply_settings(s);
+        e.set_tier(Tier::Ft8);
+        e.set_mode("qso-monitor").expect("FT8 QSO mode");
+        setup(&mut e);
+        e.ingest_decodes_for_test(&[heard(line)], 10);
+        if what == "aged out of the history" {
+            setup(&mut e);
+        }
+        let r = e.answer_udp_reply(DX, line, DX_SNR, Some(1234.0));
+        assert_eq!(r.is_ok(), taken, "{what}: {r:?}");
+        let mut overs = 0;
+        for slot in 11..17 {
+            let shown = e.snapshot().qso;
+            let Some(sent) = keyed(&mut e, slot) else {
+                continue;
+            };
+            overs += 1;
+            assert!(taken, "{what}: a refused Reply keyed {sent:?}");
+            let shown = shown.unwrap_or_else(|| panic!("{what}: keyed {sent:?} with no qso"));
+            assert_eq!(shown.dxcall.as_deref(), Some(DX), "{what}: keyed {sent:?}");
+            assert_eq!(shown.tx_now.as_deref(), Some(sent.as_str()), "{what}");
+            assert_ne!(shown.state, "Listening", "{what}");
+        }
+        assert_eq!(overs > 0, taken, "{what}: {overs} overs keyed");
+    }
 }

@@ -36,6 +36,9 @@ interface Props {
   nextIndex: number | null
   /** Fire row n (1-based): Tx6 = Call CQ; Tx1–Tx5 = override the next TX. */
   onTx: (n: number) => void
+  /** The tier answers no station (a beacon, or a receive-only mode): Tx1–Tx5 are disabled, as
+   *  the station refuses them there. Disabling moves nothing — the rows keep their place. */
+  worksNobody?: boolean
   /** Regenerate the std messages (resets an edited Tx5/Tx6 to its baseline). */
   onGenerate: () => void
   /** Clear DX Call + DX Grid (the F4 action). */
@@ -81,6 +84,7 @@ export function TxPanel({
   tx6Contest = null,
   nextIndex,
   onTx,
+  worksNobody = false,
   onGenerate,
   onClear,
   qsoMacros,
@@ -92,7 +96,7 @@ export function TxPanel({
   stripRef,
 }: Props) {
   const { canAction } = useOperateServices()
-  const canTx = dxCall.trim().length > 0
+  const canTx = dxCall.trim().length > 0 && !worksNobody
   const rows: { n: number; text: string }[] = [
     { n: 1, text: messages.tx1 },
     { n: 2, text: messages.tx2 },

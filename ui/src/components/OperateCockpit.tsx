@@ -15,6 +15,7 @@ import { useEscStop } from '../useEscStop'
 // binding below, which is a keyboard handler with no string of its own.
 import { Fragment, createRef, useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react'
 import { t } from '../i18n'
+import { contestName, contestShortName } from '../fdEvent'
 import { engagedInQso } from '../alerts'
 import type {
   AppSnapshot,
@@ -136,6 +137,11 @@ interface Props {
    * ⊞-removable pane; nothing is ever removed or disabled by rule). */
   fdActive?: boolean
   fdRuleset?: FdRulesetDto | null
+  /** The picked contest's rules-file id (`settings.fdEvent`; blank is ARRL Field Day), named by the
+   *  header's "Contest: …" chip while `fdActive`, and the chip's click: the Contest screen. The chip
+   *  needs both; the pop-out passes neither switch nor screen, and draws none. */
+  fdEvent?: string
+  onOpenContest?: () => void
   /** Calls of DXpeditions that are ON THE AIR NOW and announced SuperFox (the propagation
    * snapshot's workable-now cards, `ft8Mode === 'SuperFox'`). Nexus does not decode SuperFox
    * in this version, so the header names them beside the Hound button — an operator has to
@@ -495,13 +501,15 @@ function OperateCockpitBody({
   companionAddr,
   fdActive = false,
   fdRuleset = null,
+  fdEvent = '',
+  onOpenContest,
   superFoxCalls = NO_CALLS,
   onOpenSettings,
   wheelSensitivity,
   boxes,
 }: Props) {
   const { api: { atuBypass, atuTune, closePanelWindow, openPanelWindow, getSettings,
-    notifyErase, setSettings, setMsk144Period, clearDxCall, pointRotatorAtCall,
+    notifyErase, setSettings, setMsk144Period, clearDxCall, setDxBox, pointRotatorAtCall,
     redecode, startCq, startRunning, startSearchAndPounce, startQsoRecording,
     stopQsoRecording, setDecodeDepth, setSkipTx1: setSkipTx1Cmd }, can, canAction, canTier } = useOperateServices()
   const notifyDecodeErase = (pane: 0 | 1) => {
@@ -705,6 +713,14 @@ function OperateCockpitBody({
     setSpotOpen(true)
   }
   const [dxGrid, setDxGrid] = useState('')
+  // The station's JTDX-style FT8 decoder is given the DX call whenever the box holds one, as
+  // WSJT-X's is. Sent when the boxes change, never on mount (the station starts with them empty).
+  const sentDxBox = useRef({ call: '', grid: '' })
+  useEffect(() => {
+    if (sentDxBox.current.call === dxCall && sentDxBox.current.grid === dxGrid) return
+    sentDxBox.current = { call: dxCall, grid: dxGrid }
+    void setDxBox(dxCall, dxGrid).catch(() => {})
+  }, [dxCall, dxGrid])
   // Tx5 free text: auto-tracks the generated baseline until the operator edits
   // it; Generate Std Msgs resets the edit and re-baselines (stock behavior).
   const [tx5, setTx5] = useState('')
@@ -1133,9 +1149,11 @@ function OperateCockpitBody({
   // logs correctly. Seeding from the snapshot covers every one of those paths at once, and it
   // closes a worse hazard: pressing a Tx row with a STALE dxCall retargets the live QSO to the
   // wrong station. Operator report, 2026-07-25.
+  // In a contest the station is the contest sequencer's (`fieldDay.dxcall`): a logger's Reply to a
+  // CQ is worked there with no click on this screen (a field report).
   const lastDx = useRef<string | null>(null)
   useEffect(() => {
-    const dx = snap.qso?.dxcall ?? null
+    const dx = snap.qso?.dxcall ?? snap.fieldDay?.dxcall ?? null
     // The engine resolves the grid the same way the logged GRIDSQUARE does (the exchange's
     // grid, else the roster's), so screen and log agree by construction.
     const grid = (snap.qso?.dxgrid ?? '').toUpperCase()
@@ -1143,15 +1161,18 @@ function OperateCockpitBody({
       lastDx.current = dx
       setLocalNext(null)
       if (dx) {
+        // The contest's sequencer names no grid: a box already holding this station (the click
+        // that started it) keeps the grid that click put there; another station's is cleared.
+        if (snap.qso || dxCall.trim().toUpperCase() !== dx.toUpperCase()) setDxGrid(grid)
         setDxCall(dx.toUpperCase())
-        setDxGrid(grid)
       }
     } else if (dx && grid) {
       // The grid can land LATER than the call — a caller who answered with a bare report has
       // no grid until we decode one from them. Fill an empty box; never overwrite a typed one.
       setDxGrid((prev) => (prev.trim() ? prev : grid))
     }
-  }, [snap.qso?.dxcall, snap.qso?.dxgrid])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [snap.qso?.dxcall, snap.qso?.dxgrid, snap.fieldDay?.dxcall])
 
   // ⭐ WHILE A CONTEST RUNS THAT WSJT-X HAS AN ACTIVITY FOR, THE TX6 ROW IS THE CONTEST'S CQ.
   // WSJT-X's Tx6 is its activity's CQ once one is set (`genCQMsg`): `CQ FD`, `CQ TEST`. The engine
@@ -1166,9 +1187,10 @@ function OperateCockpitBody({
   const contestCqTyped = snap.contestCqTyped === true
 
   // The six panel rows (Tx5 + Tx6 = the live editable texts). The "next" dot
-  // follows the row qso.txNow stands for (txRowIndex), else the operator's local pick.
+  // follows the row qso.txNow stands for (txRowIndex) — in a contest the over its sequencer sends
+  // (contestTxNow) — else the operator's local pick.
   const rowTexts = stdMessageList({ ...msgs, tx5, tx6: contestCq ?? tx6 })
-  const nextIndex = txRowIndex(rowTexts, snap.qso?.txNow) ?? localNext
+  const nextIndex = txRowIndex(rowTexts, snap.qso?.txNow ?? snap.contestTxNow) ?? localNext
 
   /** #254's refusal of a Tx6 text that is not a CQ in WSJT-X's grammar, naming the form that
    *  would work when `cqSuggestionFromText` can derive one from the operator's own words. */
@@ -1187,6 +1209,7 @@ function OperateCockpitBody({
    * Tx6 = Call CQ — parse the editable Tx6 text for a directed token and call
    * startCq(dir | null) directly; apply the returned snapshot via onSnap.
    * Tx1–Tx5 force the row's text as the next transmission to the DX. */
+  const txWorksNobody = isBeacon(tier) || isRxOnly(tier)
   const doTx = (n: number) => {
     if (snap.mycall == null) return
     if (n === 6) {
@@ -1202,7 +1225,7 @@ function OperateCockpitBody({
       //
       // `dir === undefined` means the Tx6 text is not a CQ in WSJT-X's grammar
       // (`CQ [TOKEN] MYCALL [GRID4]`). This used to fall back to `startCq(null)` — a PLAIN
-      // CQ — while the box went on showing what the operator had typed, so "CQ KD9WES POTA"
+      // CQ — while the box went on showing what the operator had typed, so "CQ W9ABC POTA"
       // put a bare CQ on the air and said nothing. That breaks the transmit path's plainest
       // rule: never transmit a message different from the one shown.
       //
@@ -1222,6 +1245,9 @@ function OperateCockpitBody({
       void startCq(dir).then((s) => { if (s) onSnap?.(s) }).catch((e) => pushToast(String(e), 'error'))
       return
     }
+    // Tx1–Tx5 work nobody on a beacon or receive-only tier (their buttons are disabled; Alt+1..5
+    // lands here): the station refuses them there too.
+    if (txWorksNobody) return
     const call = dxCall.trim().toUpperCase()
     const text = rowTexts[n - 1]?.trim()
     if (!call || !text) return
@@ -1539,6 +1565,7 @@ function OperateCockpitBody({
               tx6Contest={contestCq}
               nextIndex={nextIndex}
               onTx={doTx}
+              worksNobody={txWorksNobody}
               onGenerate={handleGenerate}
               onClear={clearDxAndContact}
               qsoMacros={qsoMacros}
@@ -1685,6 +1712,43 @@ function OperateCockpitBody({
     />
   ) : null
 
+  // ⭐ CONTEST MODE IS ON, SAID IN THE HEADER. With the contest switch on and the station in plain FT8
+  // (a contest worked with standard messages: the QSO parties, CQ WW, WPX), Tx6 and Call CQ look as they
+  // always do, and a click on a CQ answers in the contest's S&P. An operator was in a contest without
+  // knowing it: the only sign was the top bar's "Set operator". So the header names the contest, by the
+  // short form the Contest screen's own header shows, whenever the switch is on (not only once S&P or Run
+  // starts), and a click opens that screen. Not a transmit control: it starts and stops nothing, and
+  // carries no pane-vocabulary id.
+  // A ZERO-COST SLOT AT THE HEAD OF THE ACTIONS (styles.css `.cockpit-contest-slot`). The first build put
+  // the chip in the header's wrapping row as an ordinary item, and wherever that row was nearly full it
+  // broke onto a new line and moved Stop TX down 21-36 px. In the slot it adds nothing to the actions'
+  // width, so the header breaks into exactly the lines it does with the switch off; it takes only the
+  // room the actions' line leaves empty, just left of the actions, and shortens to fit.
+  const contestId = fdEvent.trim() || 'arrlfd'
+  const contestShort = contestShortName(contestId)
+  const contestLabel = t('operate.header.contest.label', { contest: contestShort })
+  const contestTitle = t('operate.header.contest.title', { contest: contestName(contestId) })
+  // The label in two parts, the contest's name and the words before it ("Contest: "), so a slot too narrow
+  // for both keeps the name and lets the words go (styles.css). Split on the placeholder, in any language.
+  const [contestLead, contestTail = ''] = t('operate.header.contest.label', { contest: '\u0001' }).split('\u0001')
+  const contestChip =
+    fdActive && onOpenContest ? (
+      <button
+        type="button"
+        className="cockpit-contest-chip"
+        onClick={onOpenContest}
+        title={contestTitle}
+        aria-label={contestLabel}
+      >
+        {/* Laid out right to left and wrapping: the name first, the words after it in the DOM, so it is the
+            words that wrap away (clipped) when both do not fit. */}
+        <span className="ccc-text">
+          <span className="ccc-name">{contestShort + contestTail}</span>
+          {contestLead && <span className="ccc-lead">{contestLead}</span>}
+        </span>
+      </button>
+    ) : null
+
   return (
     <main className="layout single operate-cockpit" ref={cockpitRef} data-pane-drag={dropPane ? '' : undefined}>
       <CockpitHeader
@@ -1746,6 +1810,7 @@ function OperateCockpitBody({
         wheelSensitivity={wheelSensitivity}
         actions={
           <>
+            {contestChip && <span className="cockpit-contest-slot">{contestChip}</span>}
             <div
               className="cockpit-decode-depth"
               role="group"
@@ -2151,6 +2216,11 @@ function OperateCockpitBody({
           alarm={<TxAlarmBanner alarms={snap.txAlarms} onSnap={onSnap} ownLine />}
           qso={snap.qso}
           contestRunning={snap.fieldDay?.running}
+          contest={
+            snap.fieldDay
+              ? { state: snap.fieldDay.state, dxcall: snap.fieldDay.dxcall, txNow: snap.contestTxNow }
+              : null
+          }
           radio={snap.radio}
           rxOnly={isRxOnly(tier)}
           beacon={isBeacon(tier)}
@@ -2507,6 +2577,7 @@ function OperateCockpitBody({
                       tx6Contest={contestCq}
                       nextIndex={nextIndex}
                       onTx={doTx}
+                      worksNobody={txWorksNobody}
                       onGenerate={handleGenerate}
                       onClear={clearDxAndContact}
                       qsoMacros={qsoMacros}

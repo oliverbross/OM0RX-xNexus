@@ -20,6 +20,7 @@ pub mod clocksync;
 pub mod club_firewall;
 pub mod clubclock;
 pub mod connect_web;
+pub mod custom_contests;
 pub mod dto;
 pub mod dualrx;
 pub mod engine;
@@ -45,6 +46,7 @@ pub mod remote_control;
 pub mod remote_monitor;
 pub mod rig_modes;
 pub mod scp;
+pub mod serial_port;
 pub mod sstv_gallery;
 #[cfg(test)]
 mod stage1_tests;
@@ -1042,6 +1044,7 @@ impl AppState {
             active_station_profile: String::new(),
             station_profile_locked: false,
             auto_radio_switch: None,
+            ft8_step_down: None,
             b4_match_mode: false,
             link: self.link.clone(),
             chat_cq: String::new(), // Engine fills the run state in snapshot()
@@ -1099,6 +1102,7 @@ impl AppState {
             // Filled by the engine while a contest runs whose FT8/FT4 messages apply; none here.
             contest_cq: None,
             contest_cq_typed: false,
+            contest_tx_now: None,
             freedv: None,
         }
     }
@@ -1149,6 +1153,7 @@ mod tests {
             qual: 1.0,
             rv: None,
             raw: None,
+            unchecked: false,
             mode: None,
         }
     }

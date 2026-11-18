@@ -38,11 +38,12 @@ const RX = 'RX'
 const OP = 'OP'
 const REC = 'REC'
 
-/** The tier pills in the top bar. FT8/FT4 transmit; the six WSJT-X modes below
- *  them are DECODE-ONLY (modes::tx_mode refuses them in the engine) and carry a
- *  dashed edge so that is visible before the operator tries to call CQ rather
- *  than after. Order is deliberate: the two Tempo tiers, then the two production
- *  FT modes, then the receive-only set roughly by how often they get used.
+/** The tier pills in the top bar. Order is deliberate: the two Tempo tiers, then the
+ *  production FT modes, then the other WSJT-X modes roughly by how often they get used.
+ *  A tier that cannot transmit (`isRxOnly`, the one list mirroring the modes' declared
+ *  capability) is marked RX with a receive-only style and tooltip, so that is visible before
+ *  the operator tries to call CQ rather than after. The mark is read from that list, never
+ *  set per pill: a per-pill flag kept JT65 marked receive-only long after it could transmit.
  *
  *  Where a title points into Settings it names the SECTION, never the tab: a pill is a tier
  *  selector, so these five cannot become deep links, and a tab name in a sentence nobody can
@@ -52,14 +53,18 @@ const REC = 'REC'
  *  prose and resolve through the catalog when the pill renders (a resolved constant would
  *  freeze the first locale loaded). */
 /** A pill's tooltip, read where it renders: the pill's own, and its item in the folded menu. */
-const tierTitle = (p: { titleKey: MessageKey }) => t(p.titleKey)
+const tierTitle = (p: { tier: Tier; titleKey: MessageKey }) => {
+  const title = t(p.titleKey)
+  return isRxOnly(p.tier) ? `${title}\n${t('topbar.rxOnly.why')}` : title
+}
+/** A pill's tag: RX on a tier that cannot transmit, else its own. */
+const pillSmall = (p: { tier: Tier; small?: string }) => (isRxOnly(p.tier) ? 'RX' : p.small)
 
 const TIER_PILLS: {
   tier: Tier
   small?: string
   name: string
   titleKey: MessageKey
-  rxOnly?: boolean
 }[] = [
   { tier: 'TempoFast', small: 'Tempo', name: 'Fast', titleKey: 'topbar.tier.tempoFast.title' },
   { tier: 'TempoDeep', small: 'Tempo', name: 'Deep', titleKey: 'topbar.tier.tempoDeep.title' },
@@ -69,7 +74,7 @@ const TIER_PILLS: {
   { tier: 'WSPR', name: 'WSPR', small: 'BCN', titleKey: 'topbar.tier.wspr.title' },
   { tier: 'Q65', name: 'Q65', titleKey: 'topbar.tier.q65.title' },
   { tier: 'MSK144', name: 'MSK144', titleKey: 'topbar.tier.msk144.title' },
-  { tier: 'JT65', name: 'JT65', small: 'RX', rxOnly: true, titleKey: 'topbar.tier.jt65.title' },
+  { tier: 'JT65', name: 'JT65', titleKey: 'topbar.tier.jt65.title' },
   { tier: 'FST4', name: 'FST4', titleKey: 'topbar.tier.fst4.title' },
   { tier: 'FST4W', name: 'FST4W', small: 'BCN', titleKey: 'topbar.tier.fst4w.title' },
 ]
@@ -484,10 +489,10 @@ function TopBarBody({
   const modeButton = (
     <button
       type="button"
-      className={`tier-btn active tier-menu-btn${fold ? ' tier-menu-folded' : ''}${currentPill?.rxOnly ? ' rx-only' : ''}`}
+      className={`tier-btn active tier-menu-btn${fold ? ' tier-menu-folded' : ''}${currentPill && isRxOnly(currentPill.tier) ? ' rx-only' : ''}`}
       title={t('topbar.tier.aria')}
     >
-      {currentPill?.small ? <small>{currentPill.small}</small> : null}
+      {currentPill && pillSmall(currentPill) ? <small>{pillSmall(currentPill)}</small> : null}
       {currentPill?.name ?? tier}
       <ChevronDown size={12} aria-hidden="true" />
     </button>
@@ -497,59 +502,6 @@ function TopBarBody({
         {/* Help lives in the one group that renders in every section — the
             cockpits hide the TX cluster, the readout and the digital chrome,
             but never this one, so the guide is one click away everywhere. */}
-        {/* WHO IS AT THE KEY (#25). Shown when an operator is set — that is the multi-op
-            case, and for the single-op station that is nearly everyone this costs no width
-            at all. It has to be somewhere always visible rather than in Settings, because a
-            wrong operator is silent: nothing misbehaves, and it is discovered at submission
-            when the log is already wrong. Same group as Help, the one group no cockpit hides.
-
-            ...AND WHEN FIELD DAY IS ON, EVEN BEFORE ONE IS (2026-08-30). "Only when set" made
-            the app-wide seat-swap button invisible at the one station that swaps seats: it
-            appeared only after somebody had already set an operator, and the only place to do
-            that first set is the Field Day dashboard — so the operator sitting down in Phone,
-            CW or Operate had to go find the screen this chip exists to save them from.
-            (Operator: "when people are swapping out, there needs to be a button to swap out
-            the operator easily across any mode".) The gate widens by exactly ONE case, not to
-            "always", because the width it costs is paid on every screen. */}
-        {(fdActive || (operator && operator.trim() !== '')) && (
-          <Menu
-            trigger={
-              <button
-                type="button"
-                className="theme-chip op-chip"
-                title={
-                  operator && operator.trim() !== ''
-                    ? t('topbar.operator.title', { call: operator })
-                    : t('topbar.operator.set.title')
-                }
-              >
-                {operator && operator.trim() !== '' ? `${OP} ${operator}` : t('topbar.operator.set')}
-              </button>
-            }
-            items={[
-              // The roster is the operators this log has already seen, so the second and
-              // every later seat swap is a click.
-              ...(operatorRoster ?? [])
-                .filter((o) => o.toUpperCase() !== (operator ?? '').toUpperCase())
-                .map((o) => ({
-                  label: t('topbar.operator.switch', { call: o }),
-                  onSelect: () => onSetOperator?.(o),
-                })),
-              // Clearing is only offered when there is something to clear; with nobody set it
-              // would be a row that does nothing.
-              ...(operator && operator.trim() !== ''
-                ? [{ label: t('topbar.operator.single'), onSelect: () => onSetOperator?.('') }]
-                : []),
-              // ...which leaves ONE case with an empty menu, and it is the first event: the
-              // roster is built from operators already in the log, so a station that has never
-              // logged one opens this chip onto nothing. Say where the first name is typed
-              // instead. Disabled on purpose — it is a signpost, not a second control.
-              ...((operatorRoster ?? []).length === 0 && !(operator && operator.trim() !== '')
-                ? [{ label: t('topbar.operator.firstSet'), onSelect: () => {}, disabled: true }]
-                : []),
-            ]}
-          />
-        )}
         <Menu
           trigger={
             <button type="button" className="theme-chip" title={t('topbar.help.label')}>
@@ -576,6 +528,80 @@ function TopBarBody({
           </button>
         )}
       </div>
+  )
+  const opChip = (
+    <>
+        {/* WHO IS AT THE KEY (#25). Shown when an operator is set — that is the multi-op
+            case, and for the single-op station that is nearly everyone this costs no width
+            at all. It has to be somewhere always visible rather than in Settings, because a
+            wrong operator is silent: nothing misbehaves, and it is discovered at submission
+            when the log is already wrong. In the bar itself, which no cockpit hides.
+
+            ...AND WHEN FIELD DAY IS ON, EVEN BEFORE ONE IS (2026-08-30). "Only when set" made
+            the app-wide seat-swap button invisible at the one station that swaps seats: it
+            appeared only after somebody had already set an operator, and the only place to do
+            that first set is the Field Day dashboard — so the operator sitting down in Phone,
+            CW or Operate had to go find the screen this chip exists to save them from.
+            (Operator: "when people are swapping out, there needs to be a button to swap out
+            the operator easily across any mode".) The gate widens by exactly ONE case, not to
+            "always", because the width it costs is paid on every screen.
+
+            ...AND BESIDE THE STATION'S OWN CALL, ON THE LINE THAT HOLDS THE BAR'S FREE ROOM (2026-11-14). In the
+            Help group its whole text width counted toward the bar's line, and in French and Russian at the
+            smallest screen "Set operator" wrapped the Tx-cycle group onto a second line: the bar grew a row the
+            moment contest mode came on and Stop TX moved down 31–34 px. Here, right after the brand group and in
+            front of the status lane, it counts only a small floor toward the line and takes the free room the lane
+            would have, up to its text (cockpit-panes.css `.topbar-opchip`). Where that room is short, "OP" gives
+            way first so the call stays whole, then the words end in an ellipsis; the tooltip and the accessible
+            name keep the whole of it. Beside Help it shared Help's line, which on the Logbook and Field Day is the
+            full one: the chip was cut to a sliver there while the bar's free room sat on the line above. */}
+        {(fdActive || (operator && operator.trim() !== '')) && (
+          <Menu
+            trigger={
+              <button
+                type="button"
+                className="theme-chip op-chip topbar-opchip"
+                title={
+                  operator && operator.trim() !== ''
+                    ? t('topbar.operator.title', { call: operator })
+                    : t('topbar.operator.set.title')
+                }
+              >
+                {operator && operator.trim() !== '' ? (
+                  <>
+                    <span className="topbar-opchip-tag">{OP}</span>{' '}
+                    <span className="topbar-opchip-text">{operator}</span>
+                  </>
+                ) : (
+                  <span className="topbar-opchip-text">{t('topbar.operator.set')}</span>
+                )}
+              </button>
+            }
+            items={[
+              // The roster is the operators this log has already seen, so the second and
+              // every later seat swap is a click.
+              ...(operatorRoster ?? [])
+                .filter((o) => o.toUpperCase() !== (operator ?? '').toUpperCase())
+                .map((o) => ({
+                  label: t('topbar.operator.switch', { call: o }),
+                  onSelect: () => onSetOperator?.(o),
+                })),
+              // Clearing is only offered when there is something to clear; with nobody set it
+              // would be a row that does nothing.
+              ...(operator && operator.trim() !== ''
+                ? [{ label: t('topbar.operator.single'), onSelect: () => onSetOperator?.('') }]
+                : []),
+              // ...which leaves ONE case with an empty menu, and it is the first event: the
+              // roster is built from operators already in the log, so a station that has never
+              // logged one opens this chip onto nothing. Say where the first name is typed
+              // instead. Disabled on purpose — it is a signpost, not a second control.
+              ...((operatorRoster ?? []).length === 0 && !(operator && operator.trim() !== '')
+                ? [{ label: t('topbar.operator.firstSet'), onSelect: () => {}, disabled: true }]
+                : []),
+            ]}
+          />
+        )}
+    </>
   )
 
   const showStationPicker = stationProfiles != null && stationProfiles.length > 1
@@ -630,6 +656,8 @@ function TopBarBody({
           />
         )}
       </div>
+
+      {opChip}
 
       {/* THE STATUS LANE: ALWAYS DRAWN, and HERE, right after the brand group, so it is the item in front of
           the group that carries the bar's free room (the readout's `margin-left: auto`, or the TX/RX group's
@@ -791,14 +819,14 @@ function TopBarBody({
             key={p.tier}
             type="button"
             className={`tier-btn${tier === p.tier ? ' active' : ''}${
-              p.rxOnly ? ' rx-only' : ''
+              isRxOnly(p.tier) ? ' rx-only' : ''
             }`}
             aria-pressed={tier === p.tier}
             onClick={() => onTierChange(p.tier)}
             disabled={!canTier(p.tier)}
             title={tierTitle(p)}
           >
-            {p.small ? <small>{p.small}</small> : null}
+            {pillSmall(p) ? <small>{pillSmall(p)}</small> : null}
             {p.name}
           </button>
         ))}
@@ -814,7 +842,7 @@ function TopBarBody({
             trigger={modeButton}
             items={TIER_PILLS.map((p) => ({
               label: p.name,
-              icon: p.small ? <small>{p.small}</small> : undefined,
+              icon: pillSmall(p) ? <small>{pillSmall(p)}</small> : undefined,
               title: tierTitle(p),
               onSelect: () => onTierChange(p.tier),
               disabled: !canTier(p.tier),
