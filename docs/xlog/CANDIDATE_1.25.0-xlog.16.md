@@ -37,3 +37,33 @@ resulting exact clean commit.
 
 Not run here: CI's browser probe (`scripts/browser-probe`) and the macOS/Linux jobs.
 No on-air TX was made with this candidate before installation.
+
+## Package and installation (2026-11-18)
+
+- Source: `de1b9edb3` (this record's reservation commit), clean canonical checkout.
+- Guarded package attempt 1 (default 4 GiB job cap, LTO profile not reaching the
+  child): stopped by the guard at the job memory limit during the final
+  compile, no artifact. Attempt 2: external supervisor profile
+  `optimized-no-lto-cgu16-7GiB-physical14-commit12p5-reserve6` (7 GiB job cap,
+  `CARGO_PROFILE_RELEASE_LTO=false`, `CODEGEN_UNITS=16`, one job, 6 GiB host
+  floors; admission commit lowered from 13 to 12.5 GiB because a VM held 4 GiB).
+  Status `passed`, peak 6.17 GiB, evidence
+  `.build/nexus-16-build/20261118T1724105025890Z-17a059b8bc8844cf887d11db77f960a0`.
+- Installer `OM0RX-xNexus_1.25.0-xlog.16_x64-setup.exe`, 286,500,241 bytes,
+  SHA-256 `d7dcad06372263f74be6ef2e70ae033bed805878980edf2c5f8edf7821afc1e6`.
+  Built executable SHA-256 `f34233d4…f3710b`; installed executable
+  (bundler-stamped) `6f80015d7394efb1369cc0eacb0ca4ad6c22b63cc4a7ddabf8ebd6d609f084a9`,
+  product version `1.25.0-xlog.16`.
+- Installed current-user, silent, after closing the previous full Nexus normally.
+
+## Live acceptance (receive only, no transmission)
+
+- A plain launch (no arguments) opened full Nexus 1.25.0-xlog.16: the full mode
+  bar, all cockpits, the full Settings; TX Off at launch.
+- FT8 on 30 m (FLEX via SmartSDR CAT/DAX): 17 stations decoding in the Call Roster
+  and Band Activity, CS and DS filled on every row.
+- CS checked against xLog's database for four calls: OM2BK (30 m FT8 confirmed)
+  → C; EA5EB (not in the log) → NC; EB5R (worked on other bands only) → NB;
+  CN2JA (30 m worked, unconfirmed) → W. All match xLog's rules.
+- Settings preserved across the upgrade: WSJT-X UDP `127.0.0.1:2237` on, PTT CAT.
+  Nexus's contact port `127.0.0.1:2239` is listening; xLog's sync agent running.
