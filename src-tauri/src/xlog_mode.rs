@@ -931,11 +931,31 @@ fn xlog_disconnect(state: State<'_, Shared>, forget: bool) -> Result<View, Strin
 }
 
 pub(crate) fn requested() -> bool {
-    // The fork starts as xLog's companion by default. Independent upstream
-    // operation is a separate explicit launch, never a disconnected fallback.
-    !std::env::args()
-        .skip(1)
-        .any(|arg| arg == "--independent-mode")
+    // The fork starts as full Nexus, which works beside xLog: it logs to xLog over the
+    // WSJT-X UDP API, xLog's sync agent keeps its logbook current, and CS/DS come from that
+    // log. The reduced xLog-owned companion is a separate explicit launch,
+    // `--xlog-companion`, never a fallback. `--independent-mode`, the old switch for full
+    // Nexus, is still accepted and changes nothing.
+    companion_from(std::env::args().skip(1))
+}
+
+fn companion_from(args: impl Iterator<Item = String>) -> bool {
+    args.into_iter().any(|arg| arg == "--xlog-companion")
+}
+
+#[cfg(test)]
+mod launch_mode_tests {
+    use super::companion_from;
+    fn args(list: &[&str]) -> impl Iterator<Item = String> {
+        list.iter().map(|s| s.to_string()).collect::<Vec<_>>().into_iter()
+    }
+    #[test]
+    fn full_nexus_is_the_default_and_the_companion_is_explicit() {
+        assert!(!companion_from(args(&[])), "a plain launch is full Nexus");
+        assert!(!companion_from(args(&["--independent-mode"])), "the old switch still means full");
+        assert!(companion_from(args(&["--xlog-companion"])));
+        assert!(companion_from(args(&["--profile", "r1", "--xlog-companion"])));
+    }
 }
 
 fn startup_failure(reason: &str) -> ! {
