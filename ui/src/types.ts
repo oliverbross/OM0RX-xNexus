@@ -1706,6 +1706,12 @@ export interface Station {
   gridRarity?: GridRarity | null
   /** Uploads to LoTW within the recency window (see DecodeRow.lotwUser). */
   lotwUser?: boolean
+  /** CS: the call's status in the operator's own log on this band, by mode class (New Call, New
+   * Band, New Mode, New Band+Mode, Worked, Confirmed). Absent off the bands. */
+  callStatus?: string | null
+  /** DS: the DXCC entity's status on this band, by mode class (ATNO, C/ or W/ New Band, New Mode,
+   * New Band+Mode, Worked, Confirmed). Absent off the bands or with no entity. */
+  dxccStatus?: string | null
   /** Audio offset (Hz) of the station's last decode — where they were heard on the
    * waterfall. A roster click passes it so RX/TX move there like a Band Activity
    * double-click. Null for stations known only from free-text attribution. */
@@ -3231,6 +3237,12 @@ export interface DecodeRow {
   /** The sender uploads to LoTW within your recency window (Settings) — the
    * "this contact will confirm" mark. False until the ARRL list is fetched. */
   lotwUser?: boolean
+  /** CS: the call's status in the operator's own log on this band, by mode class (New Call, New
+   * Band, New Mode, New Band+Mode, Worked, Confirmed). Absent off the bands. */
+  callStatus?: string | null
+  /** DS: the DXCC entity's status on this band, by mode class (ATNO, C/ or W/ New Band, New Mode,
+   * New Band+Mode, Worked, Confirmed). Absent off the bands or with no entity. */
+  dxccStatus?: string | null
   /** True if this row is OUR OWN transmitted message (yellow, one per cycle). */
   mine?: boolean
   /** For `mine` rows: Unix-second the message was transmitted — the stable

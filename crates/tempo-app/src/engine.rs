@@ -32752,6 +32752,18 @@ contact yourself."
             (Some(b), Some(e)) => hot.entity_confirmed_on(e, b),
             _ => false,
         };
+        // CS/DS: the call's and the entity's status on this band in this decode's own mode
+        // (its tier, as heard), by mode class. Off the bands, like the band slot, there is no
+        // band for either to be new on, so neither is claimed.
+        let heard_mode = Self::adif_mode(d.mode.map(Tier::from_mode_kind).unwrap_or(link_tier));
+        let call_status = match (cur_band, key.as_deref()) {
+            (Some(b), Some(c)) => Some(hot.call_status(c, b, heard_mode).to_string()),
+            _ => None,
+        };
+        let dxcc_status = match (cur_band, entity.as_deref()) {
+            (Some(b), Some(e)) => Some(hot.dxcc_status(e, b, heard_mode).to_string()),
+            _ => None,
+        };
         // Rarity: prefer the grid on THIS frame, but on report/R/RR73/73
         // frames (which carry no grid) fall back to the sender's grid
         // remembered in the roster — so an ULTRA-rare station keeps its
@@ -32782,6 +32794,8 @@ contact yourself."
             new_dxcc,
             new_band,
             confirmed_band,
+            call_status,
+            dxcc_status,
             new_grid,
             grid: grid.filter(|g| !g.is_empty()).map(str::to_string),
             grid_rarity,
@@ -32878,8 +32892,18 @@ contact yourself."
         // logged contact, which used to rebuild both.
         let hot = self.station.hot();
         let now = now_unix_secs() as i64;
+        // CS/DS for the roster: the lifetime log's status on the current band in the current
+        // mode (not the contest session's dupe rule). Off the bands, as for a decode, neither.
+        let roster_band = (!self.settings.band.is_empty()).then_some(self.settings.band.as_str());
+        let roster_mode = self.adif_mode_for_tier();
         for st in &mut s.stations {
             let up = st.call.to_ascii_uppercase();
+            if let (Some(band), Some(key)) = (roster_band, lookup_call(&st.call)) {
+                st.call_status = Some(hot.call_status(&key, band, roster_mode).to_string());
+                if let Some(entity) = self.station.dxcc_resolve.as_ref().and_then(|r| r(&key)) {
+                    st.dxcc_status = Some(hot.dxcc_status(&entity, band, roster_mode).to_string());
+                }
+            }
             // Asked as the call the log knows (`lookup_call`): a station heard hashed, `<K1ABC>`,
             // is K1ABC's B4, and the unresolved `<...>` is nobody's. The row shows it as sent.
             match (&session_b4, lookup_call(&st.call)) {
@@ -33425,6 +33449,8 @@ contact yourself."
                 new_dxcc: false,
                 new_band: false,
                 confirmed_band: false,
+                call_status: None,
+                dxcc_status: None,
                 new_grid: false,
                 grid: None,
                 grid_rarity: None,

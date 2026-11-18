@@ -1011,6 +1011,9 @@ impl AppState {
             cq_dir: h.cq_dir.clone(),
             // Stamped by the engine from the subdivision resolver; None at this layer.
             state: None,
+            // Stamped by the engine from the hot index (CS/DS); None at this layer.
+            call_status: None,
+            dxcc_status: None,
         }
     }
 

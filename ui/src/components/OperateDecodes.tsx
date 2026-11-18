@@ -1,4 +1,4 @@
-import { XlogStatusCell } from './OwnerNeedBadge'
+import { StatusCell, XlogStatusCell } from './OwnerNeedBadge'
 // ⚠️ THIS FILE IS ON THE MIGRATED LIST (i18n/hardcoded-strings.test.ts). Every reading in this
 // pane is DATA and stays in the code: the callsign, the decoded message, the SNR and dB, the
 // DT in seconds, the audio offset in Hz, the UTC stamp, the band, the tier and the country.
@@ -1107,7 +1107,7 @@ export function OperateDecodes({
                 actions={rowActions}
                 watchColor={watchOf({ call: d.from, entity: d.country, grid: d.grid })?.color}
                 menuOpen={menu?.id === d.id}
-                xlogColumns={external != null}
+                xlogColumns
               />
             </Fragment>
           )
@@ -1291,10 +1291,13 @@ const DecodeRowView = memo(function DecodeRowView({
           {fmtDt(d.dtSec)}
         </span>
         <span className="decode-freq">{Math.round(d.freqHz)}</span>
-        {xlogColumns && <>
-          <XlogStatusCell kind="CS" facts={'external' in d ? d.external : undefined} />
-          <XlogStatusCell kind="DS" facts={'external' in d ? d.external : undefined} />
-        </>}
+        {xlogColumns && ('external' in d && d.external ? <>
+          <XlogStatusCell kind="CS" facts={d.external} />
+          <XlogStatusCell kind="DS" facts={d.external} />
+        </> : <>
+          <StatusCell kind="CS" status={d.callStatus} />
+          <StatusCell kind="DS" status={d.dxccStatus} />
+        </>)}
         <span className="decode-msg" title={d.country ? `${d.message} · ${d.country}` : d.message}>
           {menuOpen && d.from && (
             <CallRowMenu call={d.from} band={d.heard?.band ?? band} country={d.country} onClose={actions.closeMenu} />

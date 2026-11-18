@@ -404,6 +404,63 @@ pub const STORE_EXTRAS: &[&str] = &[super::callbook::MAP_ONLY_GRID_FIELD];
 /// order, handed to [`HotIndex::follow`].
 pub type RowPair = (Option<Arc<QsoRecord>>, Option<Arc<QsoRecord>>);
 
+/// The CS/DS sets: worked and award-confirmed by mode CLASS (CW, phone, digital), for a
+/// decode's call status and DXCC status in the operator's own logbook's terms (the three
+/// classes a DX-cluster logger compares, xLog's and Wavelog's). Band keys are the station's
+/// ([`HotKeys::band_key`]), the same as the entity badges'. Counted like every other set.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+struct NeedSets {
+    /// `(CALL, class)`: the call worked in this class, any band.
+    call_class: Counted<(String, String)>,
+    /// `(CALL, band U+0001 class)`: the call worked on this band in this class.
+    call_band_class: Counted<(String, String)>,
+    /// `(CALL, band U+0001 class)`: the same, award-confirmed.
+    call_band_class_conf: Counted<(String, String)>,
+    /// `(CALL, band)`: the call worked on this band (the station's band key).
+    call_band: Counted<(String, String)>,
+    /// The entity award-confirmed on any band, any class.
+    entity_conf: Counted<String>,
+    /// `(entity, class)`: the entity worked in this class, any band.
+    entity_class: Counted<(String, String)>,
+    /// `(entity, band U+0001 class)`: the entity worked on this band in this class.
+    entity_band_class: Counted<(String, String)>,
+    /// `(entity, band U+0001 class)`: the same, award-confirmed.
+    entity_band_class_conf: Counted<(String, String)>,
+}
+
+/// A mode's class for CS/DS: `CW`, `PHONE` (SSB/USB/LSB/AM/FM and digital voice) or `DIGI`
+/// (every other mode, FT8 and RTTY included): the three DX-cluster QRG categories a logger
+/// compares.
+pub fn mode_class(mode: &str) -> &'static str {
+    let m = mode.trim().to_ascii_uppercase();
+    match m.as_str() {
+        "CW" => "CW",
+        "SSB" | "USB" | "LSB" | "PHONE" | "PH" | "AM" | "FM" | "DIGITALVOICE" | "C4FM"
+        | "DSTAR" | "DMR" => "PHONE",
+        _ => "DIGI",
+    }
+}
+
+/// The shared tail of CS and DS: `prefix` is "" for a call, "C/" or "W/" for an entity.
+fn need_status(new_band: bool, new_mode: bool, prefix: &str) -> &'static str {
+    match (prefix, new_band, new_mode) {
+        (_, false, false) => "Worked",
+        ("", true, true) => "New Band+Mode",
+        ("", true, false) => "New Band",
+        ("", false, true) => "New Mode",
+        ("C/", true, true) => "C/New Band+Mode",
+        ("C/", true, false) => "C/New Band",
+        ("C/", false, true) => "C/New Mode",
+        (_, true, true) => "W/New Band+Mode",
+        (_, true, false) => "W/New Band",
+        (_, false, true) => "W/New Mode",
+    }
+}
+
+fn band_class(band: &str, class: &str) -> String {
+    format!("{band}\u{1}{class}")
+}
+
 /// The hot index set. See the module header.
 #[derive(Debug, Default)]
 pub struct HotIndex {
@@ -445,6 +502,8 @@ pub struct HotIndex {
     activations: HashMap<(String, u64), ActivationDay>,
     /// The contest session's sweep, once a session asks for it.
     session: Option<Session>,
+    /// CS/DS: worked and confirmed by mode class.
+    needs: NeedSets,
 }
 
 impl HotIndex {
@@ -655,6 +714,7 @@ impl HotIndex {
             && self.parks == other.parks
             && self.activations == other.activations
             && self.session == other.session
+            && self.needs == other.needs
     }
 
     /// ★ Follow one change to the log — the one way a change reaches the index. `pairs` are the
@@ -814,9 +874,26 @@ impl HotIndex {
         if !call.is_ascii() {
             d.apply(&mut self.odd_calls, call.clone());
         }
-        d.apply(&mut self.calls, call);
         // The badges — exactly the station's worked index.
         let band = keys.band_key(p.band);
+        // CS/DS by mode class, on the station's band key as the entity badges use.
+        let class = mode_class(p.mode);
+        let bc = band_class(&band, class);
+        d.apply(&mut self.needs.call_class, (call.clone(), class.to_string()));
+        d.apply(&mut self.needs.call_band_class, (call.clone(), bc.clone()));
+        d.apply(&mut self.needs.call_band, (call.clone(), band.clone()));
+        if p.award_confirmed {
+            d.apply(&mut self.needs.call_band_class_conf, (call.clone(), bc.clone()));
+        }
+        if let Some(e) = entity {
+            d.apply(&mut self.needs.entity_class, (e.to_string(), class.to_string()));
+            d.apply(&mut self.needs.entity_band_class, (e.to_string(), bc.clone()));
+            if p.award_confirmed {
+                d.apply(&mut self.needs.entity_conf, e.to_string());
+                d.apply(&mut self.needs.entity_band_class_conf, (e.to_string(), bc));
+            }
+        }
+        d.apply(&mut self.calls, call);
         if let Some(g4) = p
             .grid
             .filter(|_| !is_satellite(p.prop_mode))
@@ -976,6 +1053,58 @@ impl HotIndex {
     pub fn entity_confirmed_on(&self, entity: &str, band_key: &str) -> bool {
         self.confirmed
             .contains(&(entity.to_string(), band_key.to_string()))
+    }
+
+    /// CS: the call's status for a decode on `band_key` (the station's band key) in `mode`, in
+    /// the operator's log: "New Call", "Confirmed" (award-confirmed on this band in this mode
+    /// class), "New Band+Mode", "New Band", "New Mode" or "Worked". New Mode means: on a band
+    /// the call is worked on, not in this class there; on a new band, not in this class anywhere.
+    pub fn call_status(&self, call_upper: &str, band_key: &str, mode: &str) -> &'static str {
+        if !self.calls.contains(call_upper) {
+            return "New Call";
+        }
+        let class = mode_class(mode);
+        let call = call_upper.to_string();
+        let bc = band_class(band_key, class);
+        if self.needs.call_band_class_conf.contains(&(call.clone(), bc.clone())) {
+            return "Confirmed";
+        }
+        let band_worked = self
+            .needs
+            .call_band
+            .contains(&(call.clone(), band_key.to_string()));
+        let new_mode = if band_worked {
+            !self.needs.call_band_class.contains(&(call, bc))
+        } else {
+            !self.needs.call_class.contains(&(call, class.to_string()))
+        };
+        need_status(!band_worked, new_mode, "")
+    }
+
+    /// DS: the DXCC entity's status for a decode on `band_key` in `mode`: "ATNO", "Confirmed"
+    /// (award-confirmed on this band in this class), "C/" or "W/" with "New Band+Mode", "New
+    /// Band" or "New Mode" (C when the entity is award-confirmed anywhere, else W), or "Worked".
+    pub fn dxcc_status(&self, entity: &str, band_key: &str, mode: &str) -> &'static str {
+        if !self.worked_any.contains(entity) {
+            return "ATNO";
+        }
+        let class = mode_class(mode);
+        let e = entity.to_string();
+        let bc = band_class(band_key, class);
+        if self.needs.entity_band_class_conf.contains(&(e.clone(), bc.clone())) {
+            return "Confirmed";
+        }
+        let band_worked = self.worked.contains(&(e.clone(), band_key.to_string()));
+        let new_mode = if band_worked {
+            !self.needs.entity_band_class.contains(&(e.clone(), bc))
+        } else {
+            !self.needs.entity_class.contains(&(e, class.to_string()))
+        };
+        let confirmed = self.needs.entity_conf.contains(entity);
+        match need_status(!band_worked, new_mode, if confirmed { "C/" } else { "W/" }) {
+            "Worked" if confirmed => "Confirmed",
+            status => status,
+        }
     }
 
     /// `entity` is worked on any band — the all-time (ATNO) question.
@@ -1145,6 +1274,7 @@ impl HotIndex {
             "hot index: B4 calls outside ASCII"
         );
         assert_eq!(recount.call_band, self.call_band, "hot index: B4 by band");
+        assert_eq!(recount.needs, self.needs, "hot index: CS/DS by mode class");
         assert_eq!(
             recount.call_band_mode, self.call_band_mode,
             "hot index: B4 by band and mode"
@@ -1966,6 +2096,59 @@ mod tests {
                 index.verify(&log, &Keys);
             }
         }
+    }
+
+    /// CS and DS read the operator's own log by band and mode CLASS (CW, phone, digital), with
+    /// award-confirmed rows making "Confirmed", in the codes a DX-cluster logger uses.
+    #[test]
+    fn call_and_dxcc_status_follow_band_mode_class_and_confirmation() {
+        let qso = |call: &str, band: &str, mode: &str, confirmed: bool| {
+            let mut r = parse_adif("<CALL:4>W1AW<BAND:3>20m<MODE:3>FT8<EOR>").remove(0);
+            r.call = call.to_string();
+            r.band = band.to_string();
+            r.mode = mode.to_string();
+            r.award_confirmed = confirmed;
+            r
+        };
+        let mut log = Logbook::new();
+        log.add(qso("W1AW", "20m", "FT8", true));
+        log.add(qso("W1AW", "40m", "CW", false));
+        log.add(qso("K1ABC", "20m", "SSB", false));
+        let ix = HotIndex::build(&log, &Keys);
+        ix.verify(&log, &Keys);
+
+        // CS: the call, by band and class.
+        assert_eq!(ix.call_status("N0CALL", "20m", "FT8"), "New Call");
+        assert_eq!(ix.call_status("W1AW", "20m", "FT8"), "Confirmed");
+        assert_eq!(ix.call_status("W1AW", "20m", "FT4"), "Confirmed", "FT4 is the same class");
+        assert_eq!(ix.call_status("W1AW", "20m", "CW"), "New Mode");
+        assert_eq!(ix.call_status("W1AW", "15m", "CW"), "New Band", "CW is worked on 40 m");
+        assert_eq!(ix.call_status("W1AW", "15m", "USB"), "New Band+Mode");
+        assert_eq!(ix.call_status("W1AW", "40m", "CW"), "Worked");
+        assert_eq!(ix.call_status("K1ABC", "20m", "LSB"), "Worked", "LSB is phone");
+
+        // DS: the entity (Keys: two letters of the base call).
+        assert_eq!(ix.dxcc_status("E-ZZ", "20m", "FT8"), "ATNO");
+        assert_eq!(ix.dxcc_status("E-W1", "20m", "FT8"), "Confirmed");
+        assert_eq!(ix.dxcc_status("E-W1", "40m", "CW"), "Confirmed", "worked here, confirmed elsewhere");
+        assert_eq!(ix.dxcc_status("E-W1", "40m", "FT8"), "C/New Mode");
+        assert_eq!(ix.dxcc_status("E-W1", "15m", "CW"), "C/New Band");
+        assert_eq!(ix.dxcc_status("E-W1", "15m", "SSB"), "C/New Band+Mode");
+        assert_eq!(ix.dxcc_status("E-K1", "20m", "SSB"), "Worked");
+        assert_eq!(ix.dxcc_status("E-K1", "15m", "SSB"), "W/New Band");
+        assert_eq!(ix.dxcc_status("E-K1", "20m", "FT8"), "W/New Mode");
+        assert_eq!(ix.dxcc_status("E-K1", "15m", "CW"), "W/New Band+Mode");
+
+        // A confirmation counted in and out with its row: the index built from the log with it
+        // answers as one that counted it, and differs from one built without it.
+        let mut unconfirmed = Logbook::new();
+        unconfirmed.add(qso("W1AW", "20m", "FT8", false));
+        unconfirmed.add(qso("W1AW", "40m", "CW", false));
+        unconfirmed.add(qso("K1ABC", "20m", "SSB", false));
+        let without = HotIndex::build(&unconfirmed, &Keys);
+        assert_eq!(without.call_status("W1AW", "20m", "FT8"), "Worked");
+        assert_eq!(without.dxcc_status("E-W1", "15m", "CW"), "W/New Band");
+        assert!(!ix.answers_as(&without), "the CS/DS sets are part of what an index answers");
     }
 
     /// The POSITIVE CONTROLS for `answers_as`: it tells apart two indexes whose counts differ,

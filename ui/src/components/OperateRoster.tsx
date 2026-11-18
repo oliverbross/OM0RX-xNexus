@@ -1,4 +1,4 @@
-import { OwnerNeedBadge } from './OwnerNeedBadge'
+import { OwnerNeedBadge, StatusCell, XlogStatusCell } from './OwnerNeedBadge'
 import type { OperatingStation } from './operatingView'
 // A WSJT-X / GridTracker-style Call Roster: one row per heard station as aligned,
 // sortable columns (Call · Calling · Need · Park · Country · State · Grid · Dist · Brg · SNR · Age) with
@@ -98,6 +98,8 @@ interface Props {
 
 type SortKey =
   | 'need'
+  | 'cs'
+  | 'ds'
   | 'call'
   | 'calling'
   | 'park'
@@ -108,6 +110,16 @@ type SortKey =
   | 'bearing'
   | 'snr'
   | 'age'
+
+/** CS and DS, strongest need first (xLog's order), for sorting their columns; an absent status
+ * (off the bands, no entity) sorts last. */
+const CS_ORDER = ['New Call', 'New Band+Mode', 'New Band', 'New Mode', 'Worked', 'Confirmed']
+const DS_ORDER = ['ATNO', 'C/New Band+Mode', 'W/New Band+Mode', 'C/New Band', 'W/New Band',
+  'C/New Mode', 'W/New Mode', 'Worked', 'Confirmed']
+const statusRank = (order: string[], status: string | null | undefined) => {
+  const i = status ? order.indexOf(status) : -1
+  return i < 0 ? order.length : i
+}
 
 /** The column the roster is sorted by, and which way. */
 export type RosterSort = { key: SortKey; dir: 'asc' | 'desc' }
@@ -388,6 +400,14 @@ export function OperateRoster({
         case 'need':
           c = a.needRank - b.needRank
           break
+        case 'cs':
+          c = statusRank(CS_ORDER, a.s.callStatus ?? a.s.external?.callStatus)
+            - statusRank(CS_ORDER, b.s.callStatus ?? b.s.external?.callStatus)
+          break
+        case 'ds':
+          c = statusRank(DS_ORDER, a.s.dxccStatus ?? a.s.external?.dxccStatus)
+            - statusRank(DS_ORDER, b.s.dxccStatus ?? b.s.external?.dxccStatus)
+          break
         case 'call':
           c = a.s.call.localeCompare(b.s.call)
           break
@@ -662,6 +682,8 @@ export function OperateRoster({
             t('operate.roster.col.calling.title'),
           )}
           {th('need', t('operate.roster.col.need'))}
+          {th('cs', t('operate.roster.col.cs'), t('operate.roster.col.cs.title'))}
+          {th('ds', t('operate.roster.col.ds'), t('operate.roster.col.ds.title'))}
           {showPark && th('park', t('operate.roster.col.park'), t('operate.roster.col.park.title'))}
           {th('country', t('operate.roster.col.country'))}
           {/* Header stays "State" — the column is two letters wide and GridTracker/WSJT-X call
@@ -806,6 +828,15 @@ export function OperateRoster({
                       widened Need column has room for the loud 💎 ULTRA pill the grid cell clipped. */}
                   <RarityChip rarity={s.gridRarity} />
                 </span>
+                {/* CS and DS in the operator's own log, xLog's codes and colours. A companion
+                    station keeps xLog's own answer. */}
+                {s.external ? <>
+                  <XlogStatusCell kind="CS" facts={s.external} />
+                  <XlogStatusCell kind="DS" facts={s.external} />
+                </> : <>
+                  <StatusCell kind="CS" status={s.callStatus} />
+                  <StatusCell kind="DS" status={s.dxccStatus} />
+                </>}
                 {/* #357 — the park or summit: the spotted reference, or the program a CQ names. */}
                 {showPark && (
                 <span

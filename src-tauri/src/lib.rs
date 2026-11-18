@@ -62644,6 +62644,8 @@ mod tests {
             calling: None,
             cq_dir: None,
             state: None,
+            call_status: None,
+            dxcc_status: None,
         };
         let spots = |stations: &[tempo_app::dto::Station], clock: &SlotClock, period: f64| {
             roster_local_spots(
@@ -62718,6 +62720,8 @@ mod tests {
             calling: None,
             cq_dir: None,
             state: None,
+            call_status: None,
+            dxcc_status: None,
         };
         let credited: std::collections::HashMap<String, String> =
             [("W9XYZ".to_string(), "FN42".to_string())].into();
@@ -62792,6 +62796,8 @@ mod tests {
             calling: None,
             cq_dir: None,
             state: None,
+            call_status: None,
+            dxcc_status: None,
         };
         // The renumbering, measured rather than asserted from memory: the FT4 index of
         // 17:00 runs ahead of the FT8 index of 18:00, which is impossible on one clock.

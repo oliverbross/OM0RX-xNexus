@@ -178,15 +178,15 @@ const header = () => document.querySelector('.or-row.or-header')!
 const firstRow = () => document.querySelector('.or-row:not(.or-header)')!
 
 describe('#357 the Park column takes no width until it is needed', () => {
-  it('with no station at a park: no Park heading, no Park cells, and the row keeps its old ten tracks', () => {
+  it('with no station at a park: no Park heading, no Park cells, and the row keeps its twelve tracks (CS and DS after Need)', () => {
     mountWith([station('W1LOUD'), station('KA5ABC')], new Map())
     expect(screen.queryByRole('button', { name: /^Park/ })).toBeNull()
     expect(document.querySelector('.or-park')).toBeNull()
     const tracks = tracksOf(firstRow())
-    expect(tracks).toHaveLength(10)
-    expect(header().children).toHaveLength(10)
-    expect(firstRow().children).toHaveLength(10)
-    // The floor main shipped: Call 124 · Calling 68 · Need 105 · Country 50 · State 40 · Grid 54 ·
+    expect(tracks).toHaveLength(12)
+    expect(header().children).toHaveLength(12)
+    expect(firstRow().children).toHaveLength(12)
+    // The floor main shipped: Call 124 · Calling 68 · Need 105 · (CS, DS: ch tracks) · Country 50 · State 40 · Grid 54 ·
     // Dist 56 · Brg 48 · SNR 44 · Age 48.
     expect(floorPx(tracks)).toBe(637)
   })
@@ -194,16 +194,16 @@ describe('#357 the Park column takes no width until it is needed', () => {
   it('with a station at a park: the Park track joins, after Need, and every row carries its cell', () => {
     mountWith(STATIONS, ALERTS)
     const tracks = tracksOf(firstRow())
-    expect(tracks).toHaveLength(11)
-    expect(tracks[3]).toContain('60px')
+    expect(tracks).toHaveLength(13)
+    expect(tracks[5]).toContain('60px')
     expect(floorPx(tracks)).toBe(697)
-    expect(header().children).toHaveLength(11)
-    for (const row of document.querySelectorAll('.or-row:not(.or-header)')) expect(row.children).toHaveLength(11)
+    expect(header().children).toHaveLength(13)
+    for (const row of document.querySelectorAll('.or-row:not(.or-header)')) expect(row.children).toHaveLength(13)
   })
 
   it('sorted by Park, the column stays even when no station is at a park, so the sort stays on screen', () => {
     mountWith([station('W1LOUD')], new Map(), { key: 'park', dir: 'asc' })
     expect(screen.getByRole('button', { name: /^Park/ })).not.toBeNull()
-    expect(tracksOf(firstRow())).toHaveLength(11)
+    expect(tracksOf(firstRow())).toHaveLength(13)
   })
 })

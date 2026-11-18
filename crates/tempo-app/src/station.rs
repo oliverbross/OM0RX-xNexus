@@ -911,6 +911,20 @@ impl Hot<'_> {
     pub(crate) fn entity_confirmed_on(&self, entity: &str, band: &str) -> bool {
         self.0.entity_confirmed_on(entity, &band_key(band))
     }
+
+    /// CS: the call's status on `band` (the raw band label) in `mode`, in the log's own terms
+    /// ([`HotIndex::call_status`]): New Call / New Band / New Mode / New Band+Mode / Worked /
+    /// Confirmed, by mode class.
+    pub(crate) fn call_status(&self, call: &str, band: &str, mode: &str) -> &'static str {
+        self.0
+            .call_status(&call.to_ascii_uppercase(), &band_key(band), mode)
+    }
+
+    /// DS: the DXCC entity's status on `band` in `mode` ([`HotIndex::dxcc_status`]): ATNO,
+    /// C/ or W/ New Band / New Mode / New Band+Mode, Worked, Confirmed.
+    pub(crate) fn dxcc_status(&self, entity: &str, band: &str, mode: &str) -> &'static str {
+        self.0.dxcc_status(entity, &band_key(band), mode)
+    }
 }
 
 /// Whether two DXCC resolvers are the same one — both absent, or one shared `Arc`. A hot index

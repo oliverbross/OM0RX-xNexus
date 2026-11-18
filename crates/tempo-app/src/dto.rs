@@ -85,6 +85,16 @@ pub struct Station {
     /// false when the user-activity file hasn't been fetched (honest default).
     #[serde(default)]
     pub lotw_user: bool,
+    /// CS: the call's status in the operator's log on the current band in the current mode, by
+    /// mode class (New Call, New Band, New Mode, New Band+Mode, Worked, Confirmed). `None` off
+    /// the bands and for a hashed `<...>` call.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub call_status: Option<String>,
+    /// DS: the call's DXCC entity status on the current band in the current mode, by mode class
+    /// (ATNO, C/ or W/ New Band, New Mode, New Band+Mode, Worked, Confirmed). `None` off the
+    /// bands or with no entity.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dxcc_status: Option<String>,
     /// Audio offset (Hz) of the station's last decode — where on the waterfall they were
     /// heard. A roster click passes it so RX/TX move there, exactly like a Band Activity
     /// double-click (`call_station_ctx` then applies the Hold-Tx rule). `None` when the
@@ -275,6 +285,15 @@ pub struct DecodeRow {
     /// decode panes' hide-confirmed filter (F4MQS). Never true when new_dxcc/new_band is.
     #[serde(default)]
     pub confirmed_band: bool,
+    /// CS: the sender's call status in the operator's log on this band, by mode class (New Call,
+    /// New Band, New Mode, New Band+Mode, Worked, Confirmed). `None` off the bands, for a frame
+    /// with no sender, and on own-TX rows.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub call_status: Option<String>,
+    /// DS: the sender's DXCC entity status on this band, by mode class (ATNO, C/ or W/ New Band,
+    /// New Mode, New Band+Mode, Worked, Confirmed). `None` off the bands or with no entity.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dxcc_status: Option<String>,
     /// True if the decode carries a Maidenhead grid never worked before.
     #[serde(default)]
     pub new_grid: bool,

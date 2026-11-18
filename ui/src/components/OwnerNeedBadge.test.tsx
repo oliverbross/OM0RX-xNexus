@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { render, screen, cleanup } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
-import { OwnerNeedBadge } from './OwnerNeedBadge'
+import { OwnerNeedBadge, StatusCell } from './OwnerNeedBadge'
 import { XLOG_STATUS_COLORS } from '../xlog/xlogStatus'
 afterEach(cleanup)
 const needColor = (el: HTMLElement) => el.style.getPropertyValue('--need-color')
@@ -45,5 +45,24 @@ describe('owner call and entity facts', () => {
     expect(worked.textContent).toBe('NB/W')
     expect(needColor(worked)).toBe(XLOG_STATUS_COLORS['W/New Band'])
     expect(needColor(worked)).not.toBe(XLOG_STATUS_COLORS['C/New Band'])
+  })
+})
+
+describe("CS and DS from the operator's own log (full app)", () => {
+  it("draws each status in xLog's short code and colour", () => {
+    render(<><StatusCell kind="CS" status="New Band+Mode" /><StatusCell kind="DS" status="C/New Mode" /></>)
+    const cs = screen.getByLabelText('CS New Band+Mode')
+    expect(cs.textContent).toBe('NB+M')
+    expect(cs.style.color).toBeTruthy()
+    const ds = screen.getByLabelText('DS C/New Mode')
+    expect(ds.textContent).toBe('NM/C')
+    expect(ds.getAttribute('data-xlog-status')).toBe('C/New Mode')
+  })
+  it('leaves an absent status empty, never "?" or unworked', () => {
+    const { container } = render(<><StatusCell kind="CS" status={null} /><StatusCell kind="DS" /></>)
+    const cells = container.querySelectorAll('.decode-xlog')
+    expect(cells.length).toBe(2)
+    cells.forEach(c => expect(c.textContent).toBe(''))
+    expect(screen.queryByLabelText(/^CS /)).toBeNull()
   })
 })

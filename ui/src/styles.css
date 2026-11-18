@@ -23905,7 +23905,8 @@ button.cq-skiptx1.on {
      Settings ▸ Workspace ▸ Text size (#215); at Normal each is exactly its px. */
   grid-template-columns:
     minmax(calc(124px * var(--text-scale)), 1fr) minmax(calc(68px * var(--text-scale)), 0.8fr)
-    minmax(calc(105px * var(--text-scale)), 1.13fr) minmax(calc(50px * var(--text-scale)), 0.85fr)
+    minmax(calc(105px * var(--text-scale)), 1.13fr)
+    calc(4.5ch * var(--text-scale)) calc(7.5ch * var(--text-scale)) minmax(calc(50px * var(--text-scale)), 0.85fr)
     calc(40px * var(--text-scale)) calc(54px * var(--text-scale)) calc(56px * var(--text-scale))
     calc(48px * var(--text-scale)) calc(44px * var(--text-scale)) calc(48px * var(--text-scale));
   align-items: center;
@@ -23922,7 +23923,8 @@ button.cq-skiptx1.on {
 .operate-roster.or-has-park .or-row {
   grid-template-columns:
     minmax(calc(124px * var(--text-scale)), 1fr) minmax(calc(68px * var(--text-scale)), 0.8fr)
-    minmax(calc(105px * var(--text-scale)), 1.13fr) minmax(calc(60px * var(--text-scale)), 0.6fr)
+    minmax(calc(105px * var(--text-scale)), 1.13fr)
+    calc(4.5ch * var(--text-scale)) calc(7.5ch * var(--text-scale)) minmax(calc(60px * var(--text-scale)), 0.6fr)
     minmax(calc(50px * var(--text-scale)), 0.85fr)
     calc(40px * var(--text-scale)) calc(54px * var(--text-scale)) calc(56px * var(--text-scale))
     calc(48px * var(--text-scale)) calc(44px * var(--text-scale)) calc(48px * var(--text-scale));

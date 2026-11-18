@@ -40,6 +40,25 @@ export function XlogStatusCell({ kind, facts }: { kind: 'CS' | 'DS'; facts?: Ext
   )
 }
 
+/** CS or DS from the operator's own logbook (the full app's decode lists and roster): the short
+ * code in the status colour, xLog's scheme. An absent status (off the bands, own TX, no entity)
+ * leaves the cell empty so the columns stay aligned and nothing reads as unworked. */
+export function StatusCell({ kind, status }: { kind: 'CS' | 'DS'; status?: string | null }) {
+  const cls = `decode-xlog decode-${kind.toLowerCase()}`
+  if (!status) return <span className={cls} />
+  return (
+    <span
+      className={cls}
+      data-xlog-status={status}
+      style={{ color: xlogStatusColor(status) }}
+      title={`${kind === 'CS' ? t('logStatus.cs') : t('logStatus.ds')}: ${status}`}
+      aria-label={`${kind} ${status}`}
+    >
+      {xlogStatusCode(status)}
+    </span>
+  )
+}
+
 export function OwnerNeedBadge({ facts }: { facts: ExternalDecodeEntry['external'] }) {
   const call = facts.callStatus && facts.callStatus !== 'Unknown' ? facts.callStatus : null
   const dxcc = facts.dxccStatus && facts.dxccStatus !== 'Unknown' ? facts.dxccStatus : null

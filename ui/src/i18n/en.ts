@@ -12877,6 +12877,12 @@ export const EN = {
   'operate.roster.col.calling.title':
     'Sort by who each station is calling (CQ = calling nobody)',
   'operate.roster.col.need': 'Need',
+  'logStatus.cs': 'Call status in your log',
+  'logStatus.ds': 'DXCC status in your log',
+  'operate.roster.col.cs': 'CS',
+  'operate.roster.col.cs.title': 'Sort by call status in your log (New Call first)',
+  'operate.roster.col.ds': 'DS',
+  'operate.roster.col.ds.title': 'Sort by DXCC status in your log (ATNO first)',
   'operate.roster.col.park': 'Park',
   'operate.roster.col.park.title': 'Sort by the park or summit each station is activating (from a POTA or SOTA spot, or its CQ POTA). The parks stay on top either way.',
   'operate.roster.park.title.spot': 'Activating {{park}} (from a spot)',
