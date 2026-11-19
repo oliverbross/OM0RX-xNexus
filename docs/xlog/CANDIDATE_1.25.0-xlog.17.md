@@ -75,4 +75,36 @@ Windows 10, GNU toolchain `1.93.1-x86_64-pc-windows-gnu`, MSYS2 UCRT64, Ninja,
 | `cargo test -p tempo-app` | 3986 pass, 10 fail: Windows paths (`upload_start`, NotADirectory), journal sync, panadapter, scoreboard and claim timing under load. The crate is byte-identical to xlog.16. |
 | `cargo test --manifest-path src-tauri/Cargo.toml --lib --features radio` | The raw harness cannot start on Windows (no Common-Controls v6 manifest, `0xc0000139`); run as `scripts/xnexus/test-windows-native.ps1` prepares it, on a manifested copy. 1934 pass, 37 fail. 14 pass when run alone. Of the other 23, 13 fail on an xlog.16 (`124c2953c`) harness built the same way: Icom keychain naming (the fork's own identity), remote stop-road lock, account grants, rotator (Mac serial paths), stream credentials (mock-runtime ACL) and DXKeeper queue. The remaining 10 remote stop-road UDP timing tests are flaky on both builds: run side by side, each build failed some the other passed. src-tauri differs from xlog.16 only by deleted companion modules and their declarations. |
 
-No failure is caused by this change. Package, install and live check: below.
+No failure is caused by this change.
+
+## Package and installation (2026-11-19)
+
+- Source: `d66a1bc7a` (the commit above), clean canonical checkout, canonical
+  `main` fast-forwarded to it locally (not pushed).
+- Guarded package, one attempt: supervisor profile
+  `optimized-no-lto-cgu16-7GiB-physical14-commit12p5-reserve6` (7 GiB job cap,
+  `CARGO_PROFILE_RELEASE_LTO=false`, `CODEGEN_UNITS=16`, one job). Admission
+  16.9 GiB physical / 12.5 GiB commit; status `passed`, peak 5.44 GiB, release
+  compile 133 min. Evidence
+  `.build/xnexus-xlog17-package-7g/evidence/20261119T1416401657365Z-150cdb1b08c341fea7bcf191c2e33bb8`;
+  build receipt `target/xnexus-provenance/1.25.0-xlog.17.json`.
+- Installer `OM0RX-xNexus_1.25.0-xlog.17_x64-setup.exe`, 276,249,319 bytes,
+  SHA-256 `332c3a591ace9315d1bb89c2dd939af926989c0bc640f71e51bc3cc12a43e7a5`.
+  Built executable SHA-256 `eeab4c9f…5420cac82`; installed executable
+  (bundler-stamped) `3cb790361cb748ab3e8303f9a36a33e46dd0ee87298bc989e69f4c88fefd8909`,
+  product version `1.25.0-xlog.17`.
+- Nexus was not running (nothing on the air), so nothing had to be closed.
+  Installed current-user, silent (`/S`), exit 0.
+
+## Live check (receive only, no transmission)
+
+- A plain launch (no arguments) opened full Nexus `v1.25.0-xlog.17`: the full
+  mode bar and cockpits, TX Off at launch, the Call Roster with its CS and DS
+  columns.
+- Kept across the upgrade: the logbook (69,984 ADIF records), WSJT-X UDP
+  `127.0.0.1:2237` on, PTT by CAT, the CAT broker, and the SmartSDR CAT address
+  (`rigctld -m 23005 -r 192.168.0.199:5002` started by itself).
+- Not yet checked: decoding, CS/DS on live rows and a logged contact reaching
+  xLog. SmartSDR, DAX and SmartSDR CAT were not running at install time (the
+  radio answered on the network; xLog also showed the radio offline), so Nexus
+  reported no sound card and no CAT. To be checked with the station up.
