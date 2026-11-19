@@ -1,5 +1,3 @@
-import { OwnerNeedBadge, StatusCell, XlogStatusCell } from './OwnerNeedBadge'
-import type { OperatingStation } from './operatingView'
 // A WSJT-X / GridTracker-style Call Roster: one row per heard station as aligned,
 // sortable columns (Call · Calling · Need · Park · Country · State · Grid · Dist · Brg · SNR · Age) with
 // roster filters (Needed-only, Hide-worked, a distance cap) and double-click-to-work. This is the
@@ -11,11 +9,12 @@ import type { OperatingStation } from './operatingView'
 // entity, the state/province, the grid square, the distance, the bearing and the SNR. So do
 // the tokens the roster is built out of (ROSTER_TOKENS below). What moved is the prose around
 // them — the column headings, the filters, and everything a row says out loud.
+import { StatusCell } from './LogStatusCell'
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react'
 import { t } from '../i18n'
 import { callCardTrigger, qrzPageOf } from './CallCard'
 import { useRovingList } from '../useRovingList'
-import type { NeedAlert, NeedTag } from '../types'
+import type { NeedAlert, NeedTag, Station } from '../types'
 import {
   gridToLatLon,
   haversineKm,
@@ -27,7 +26,7 @@ import {
 } from '../grid'
 import { useEntityCentroids } from '../features/entityCentroids'
 import { KM_PER_MI, fmtDistanceKm, useUnits } from '../units'
-import { useOperateServices } from './operateServices'
+import { getDeclination } from '../api'
 import { NEED_CHIP } from '../features/needVisuals'
 import { alertsForSurface, chaseRank, confirmOnlyOnWorkedBand, isActivityTag, strongestNeed } from '../features/needs'
 import { isIgnored } from '../txMessages'
@@ -54,9 +53,9 @@ interface Props {
   /** The pane's id, where its cockpit arranges by drag: its head is then the grip it is dragged by
    *  (panes/PaneDrag). Absent: nothing here can be dragged. */
   grip?: string
-  stations: OperatingStation[]
+  stations: Station[]
   myGrid: string
-  currentSlot: number | null
+  currentSlot: number
   needByCall: Map<string, NeedTag>
   /** FULL per-call alerts — a station needed on several dimensions (grid AND
    * band…) shows EVERY need chip, not just the top tier (operator report). */
@@ -181,7 +180,7 @@ const PARK_PROGRAMS: ReadonlySet<string> = new Set(['POTA', 'SOTA'])
  * own CQ names (`CQ POTA`, with no reference: nobody has spotted it yet), else null. Read from the
  * UNGATED alerts: an activation is the station's, whichever band or mode the spot was taken on.
  */
-function parkOf(s: OperatingStation, alerts: readonly NeedAlert[] | undefined): { label: string; spotted: boolean } | null {
+function parkOf(s: Station, alerts: readonly NeedAlert[] | undefined): { label: string; spotted: boolean } | null {
   const ref = alerts?.find((a) => a.park?.reference)?.park?.reference
   if (ref) return { label: ref, spotted: true }
   const cq = s.cqDir?.toUpperCase()
@@ -218,7 +217,6 @@ export function OperateRoster({
   sort: keptSort,
   onSort,
 }: Props) {
-  const { api: { getDeclination, openQrzPage } } = useOperateServices()
   // QTH magnetic declination (WMM) — the Brg column's tooltip shows the compass
   // heading a rotator zeroed on magnetic north needs.
   const units = useUnits()
@@ -227,7 +225,7 @@ export function OperateRoster({
     getDeclination()
       .then(setDeclination)
       .catch(() => {})
-  }, [getDeclination])
+  }, [])
   const [ownSort, setOwnSort] = useState<RosterSort>(DEFAULT_ROSTER_SORT)
   const sort = keptSort ?? ownSort
   const setSort = onSort ?? setOwnSort
@@ -313,15 +311,15 @@ export function OperateRoster({
         // the first contact on this band is already waiting on (#350) — and a station on the
         // watch list, which counts the way a new park does, worked or not (maintainer,
         // 2026-09-23: "always show it").
-        stillNeeded: s.external ? s.external.status === 'needed' : (need != null && !confirmOnlyOnWorkedBand(needAll, s.workedBand)) || watch != null,
-        needRank: s.external ? -(s.external.score ?? -2147483648) : chaseRank(alerts, need),
+        stillNeeded: (need != null && !confirmOnlyOnWorkedBand(needAll, s.workedBand)) || watch != null,
+        needRank: chaseRank(alerts, need),
         distKm: me && ll ? haversineKm(me, ll) : Infinity,
         // Sorts on the SAME number the Brg cell prints, centroid fallback included.
         // Left as `me && ll ? … : 999` it would file every `~` row at the end of a
         // Brg sort while showing it a real heading — the column would read as broken.
         // 999 still parks a row with no bearing at all after everything that has one.
         brg: azimuthTo(myGrid, s.grid, s.country, centroids)?.deg ?? 999,
-        age: currentSlot == null ? Infinity : currentSlot - s.lastHeardSlot,
+        age: currentSlot - s.lastHeardSlot,
       }
     })
     // Keep only stations heard within the recency window — the roster stays a
@@ -401,12 +399,10 @@ export function OperateRoster({
           c = a.needRank - b.needRank
           break
         case 'cs':
-          c = statusRank(CS_ORDER, a.s.callStatus ?? a.s.external?.callStatus)
-            - statusRank(CS_ORDER, b.s.callStatus ?? b.s.external?.callStatus)
+          c = statusRank(CS_ORDER, a.s.callStatus) - statusRank(CS_ORDER, b.s.callStatus)
           break
         case 'ds':
-          c = statusRank(DS_ORDER, a.s.dxccStatus ?? a.s.external?.dxccStatus)
-            - statusRank(DS_ORDER, b.s.dxccStatus ?? b.s.external?.dxccStatus)
+          c = statusRank(DS_ORDER, a.s.dxccStatus) - statusRank(DS_ORDER, b.s.dxccStatus)
           break
         case 'call':
           c = a.s.call.localeCompare(b.s.call)
@@ -776,7 +772,7 @@ export function OperateRoster({
                   <button
                     type="button"
                     className="qrz-link"
-                    {...callCardTrigger(s.call, qrzPageOf(s.call, openQrzPage), true)}
+                    {...callCardTrigger(s.call, qrzPageOf(s.call), true)}
                     onDoubleClick={(e) => e.stopPropagation()}
                   >
                     ↗
@@ -802,7 +798,7 @@ export function OperateRoster({
                 >
                   {/* `CQ DX`, not a translated phrase: the modifier is what went on the air,
                       and CQ is a Q-code. Both are invariant tokens. */}
-                  {s.external ? (s.external.isCq ? ROSTER_TOKENS.cq : '—') : s.calling ?? (s.cqDir ? `${ROSTER_TOKENS.cq} ${s.cqDir}` : ROSTER_TOKENS.cq)}
+                  {s.calling ?? (s.cqDir ? `${ROSTER_TOKENS.cq} ${s.cqDir}` : ROSTER_TOKENS.cq)}
                 </span>
                 <span
                   className="or-need"
@@ -812,7 +808,6 @@ export function OperateRoster({
                 >
                   {/* The WATCH tile leads: this cell clips what does not fit, and the tile is
                       the one the operator asked for by name. */}
-                  {s.external && <OwnerNeedBadge facts={s.external} />}
                   {watch && <WatchTile entry={watch} />}
                   {chips.map((t) => {
                     const c = NEED_CHIP[t]
@@ -828,15 +823,9 @@ export function OperateRoster({
                       widened Need column has room for the loud 💎 ULTRA pill the grid cell clipped. */}
                   <RarityChip rarity={s.gridRarity} />
                 </span>
-                {/* CS and DS in the operator's own log, xLog's codes and colours. A companion
-                    station keeps xLog's own answer. */}
-                {s.external ? <>
-                  <XlogStatusCell kind="CS" facts={s.external} />
-                  <XlogStatusCell kind="DS" facts={s.external} />
-                </> : <>
-                  <StatusCell kind="CS" status={s.callStatus} />
-                  <StatusCell kind="DS" status={s.dxccStatus} />
-                </>}
+                {/* CS and DS in the operator's own log, xLog's codes and colours. */}
+                <StatusCell kind="CS" status={s.callStatus} />
+                <StatusCell kind="DS" status={s.dxccStatus} />
                 {/* #357 — the park or summit: the spotted reference, or the program a CQ names. */}
                 {showPark && (
                 <span

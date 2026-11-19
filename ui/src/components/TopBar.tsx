@@ -1,4 +1,3 @@
-import type { OperatingRadio, OperatingLink } from './operatingView'
 // ⚠️ THIS FILE IS **PARTIAL** ON THE i18n LIST (i18n/hardcoded-strings.test.ts), and what is
 // deferred is the TX CLUSTER: TX On/Off (its two tooltip arms state the abort semantics — "an
 // FT over already in flight finishes" — and its labels name the latch), TUNE and STOP TX, which
@@ -12,7 +11,7 @@ import type { OperatingRadio, OperatingLink } from './operatingView'
 import { useEffect, useId, useState, type ReactNode } from 'react'
 import { ChevronDown } from 'lucide-react'
 import { ListenLevel } from './ListenLevel'
-import type { BandChannel, RadioSummary, StationProfileChoice, Tier } from '../types'
+import type { BandChannel, LinkState, RadioStatus, RadioSummary, StationProfileChoice, Tier } from '../types'
 import { isOnAir, isRxOnly } from '../types'
 import { Menu } from './ui/Menu'
 import { FrequencyControl } from './FrequencyControl'
@@ -20,7 +19,7 @@ import { StatusLane } from './StatusLane'
 import { LiveLevelMeter } from './LiveMeters'
 import { RadioSwitcher } from './RadioSwitcher'
 import { stationProfileName } from './StationProfiles'
-import { OPERATE_UNAVAILABLE, guardOperateAction, guardOperateTier, useOperateServices, type OperateAction } from './operateServices'
+import { appVersion, repairClock } from '../api'
 import { pushToast } from '../toast'
 import { t } from '../i18n'
 import type { MessageKey } from '../i18n'
@@ -103,9 +102,9 @@ interface Props {
    *  Stop TX, so the lane here may be cut on a full line (cockpit-panes.css `.status-lane`). Without one, the lane
    *  keeps a critical item's flag and announces it as an alert. */
   alarmCell?: boolean
-  mycall: string | null
-  mygrid: string | null
-  radio: OperatingRadio
+  mycall: string
+  mygrid: string
+  radio: RadioStatus
   /** Multi-radio switcher summaries (dual-radio). Empty/1-element ⇒ no switcher shown. */
   radios?: RadioSummary[]
   /** Peg-lock state for the switcher. */
@@ -119,7 +118,7 @@ interface Props {
   stationProfileLocked?: boolean
   onSwitchStationProfile?: (id: string) => void
   onSetPegLock?: (on: boolean) => void
-  link: OperatingLink
+  link: LinkState
   bandPlan: BandChannel[]
   onSetFrequency: (dialMhz: number, band: string, mode: string) => void
   onSetTxEnabled: (enabled: boolean) => void
@@ -134,7 +133,7 @@ interface Props {
   tier: Tier
   onTierChange: (t: Tier) => void
   /** Open the Getting started guide (Help ▸ Getting started). */
-  onOpenGuide?: () => void
+  onOpenGuide: () => void
   /** Open the first-contact walk-through (Help ▸ Your first FT8 contact). Absent = not offered. */
   onOpenWalk?: () => void
   /** Field mode (outdoor/POTA) — see useFieldMode. Optional: absent hides the chip. */
@@ -270,8 +269,7 @@ const CLOCK_LOG_CONCERN_MS = 1000
  *    its hold window, so steering has stopped and slot timing follows the PC
  *    clock again. This one used to happen SILENTLY;
  *  - **never measured** — the pre-existing DT-derived health, unchanged. */
-function ClockChip({ radio }: { radio: OperatingRadio }) {
-  if (radio.timeSyncOk == null) return <span className="timesync" title={radio.clockOwnerNote}>Clock —</span>
+function ClockChip({ radio }: { radio: RadioStatus }) {
   // Who is keeping this clock right, appended to whatever the chip says. On the
   // machines where it matters most it is the whole answer: a station running
   // NetTime or Meinberg has a clock Nexus deliberately does not touch (guard 8),
@@ -353,8 +351,7 @@ function clockRepairRefused(code: unknown): string {
  *  prompt on the station's screen, and the command is not in the Remote vocabulary either. It
  *  is disabled while anything is on the air, because a repair can move the clock mid-over; the
  *  backend refuses that too, and this only says so first. */
-function ClockRepair({ radio, keyed }: { radio: OperatingRadio; keyed: boolean }) {
-  const { api: { repairClock }, can } = useOperateServices()
+function ClockRepair({ radio, keyed }: { radio: RadioStatus; keyed: boolean }) {
   const [busy, setBusy] = useState(false)
   const noteId = useId()
   const note = radio.clockOwnerNote?.trim() ? ` (${radio.clockOwnerNote.trim()})` : ''
@@ -374,7 +371,7 @@ function ClockRepair({ radio, keyed }: { radio: OperatingRadio; keyed: boolean }
       <button
         type="button"
         className="clock-repair-btn"
-        disabled={busy || keyed || !can('repairClock')}
+        disabled={busy || keyed}
         aria-busy={busy}
         aria-describedby={noteId}
         onClick={press}
@@ -389,28 +386,7 @@ function ClockRepair({ radio, keyed }: { radio: OperatingRadio; keyed: boolean }
   )
 }
 
-export function TopBar(props: Props) {
-  const { adapter } = useOperateServices()
-  const guard = <A extends unknown[],>(action: OperateAction, fn: (...args: A) => void) => guardOperateAction(adapter, action, fn)
-  const optional = <A extends unknown[],>(action: OperateAction, fn?: (...args: A) => void) => fn ? guard(action, fn) : undefined
-  return <TopBarBody {...props}
-    onSetFrequency={guard('radio', props.onSetFrequency)}
-    onSetTxEnabled={on => guard(on ? 'transmit' : 'stopTransmit', props.onSetTxEnabled)(on)}
-    onSetTune={on => guard(on ? 'transmit' : 'stopTransmit', props.onSetTune)(on)}
-    onHaltTx={guard('stopTransmit', props.onHaltTx)}
-    onSetTxEven={guard('transmit', props.onSetTxEven)}
-    onSetTxCycleAuto={guard('transmit', props.onSetTxCycleAuto)}
-    onSetHoldTxFreq={guard('transmit', props.onSetHoldTxFreq)}
-    onTierChange={guardOperateTier(adapter, props.onTierChange)}
-    onSetActiveRadio={optional('radio', props.onSetActiveRadio)}
-    onSetPegLock={optional('radio', props.onSetPegLock)}
-    onSwitchStationProfile={optional('settings', props.onSwitchStationProfile)}
-    onSetOperator={optional('settings', props.onSetOperator)}
-    onStopRecording={optional('recording', props.onStopRecording)}
-  />
-}
-
-function TopBarBody({
+export function TopBar({
   mycall,
   mygrid,
   radio,
@@ -451,7 +427,6 @@ function TopBarBody({
   nowBar,
   listenLevel,
 }: Props) {
-  const { api: { appVersion }, canAction, canTier } = useOperateServices()
   // md and lg (features/compactChrome): the eleven tier pills are one menu button, as they are on the
   // FT screens at the small size, so the bar is one row. xl keeps the pills, which fit there.
   const { fold } = useCompactChrome()
@@ -461,31 +436,28 @@ function TopBarBody({
   // buttons, their order, their handlers and what they set are untouched.
   const cycleCaption = fold ? <small className="sr-only" /> : <small />
   const currentPill = TIER_PILLS.find((p) => p.tier === tier)
-  const countdown = radio.nextSlotMs == null ? '—' : (radio.nextSlotMs / 1000).toFixed(1)
+  const countdown = (radio.nextSlotMs / 1000).toFixed(1)
   const [version, setVersion] = useState('')
   useEffect(() => {
-    let live = true
-    setVersion('')
-    appVersion().then(v => { if (live) setVersion(v) }).catch(() => {})
-    return () => { live = false }
-  }, [appVersion])
+    appVersion().then(setVersion).catch(() => {})
+  }, [])
   // The readout above prints `radio.sideband` — what Nexus BELIEVES the rig is on. The rig can
   // legitimately be somewhere else (it powered up in FM, or the operator turned the mode knob):
   // launch is a read-only act, so Nexus never commands the rig into agreement. Surface the
   // disagreement instead of printing the belief as if it were fact. Display only.
-  const rigModeMismatch = radio.sideband == null ? null : modeMismatch(radio.rigMode, radio.sideband, radio.rigConfirmed)
+  const rigModeMismatch = modeMismatch(radio.rigMode, radio.sideband, radio.rigConfirmed)
   // The TX/RX plate asks the arbiter the cockpit header's ON AIR sign asks. It keyed on the FT
   // slot flag alone, so a voice over, CW, a tune or a mic key held at the radio read RX in green
   // under a header saying ON AIR. Display only.
-  const onAir = radio.transmitting == null ? null : isOnAir({ ...radio, transmitting: radio.transmitting })
+  const onAir = isOnAir(radio)
   // The engine refuses to arm TX on a receive-only tier; don't offer the control.
   // Stop TX stays live — disarming is always allowed, and it is the operator's way
   // out if they switched tiers mid-over.
-  const noTx = isRxOnly(tier) || !canAction('transmit')
+  const noTx = isRxOnly(tier)
   // WHY a mode cannot transmit — prose about the MODE, shown on every control it disables, so
   // it moves with the bar rather than with the deferred TX controls it happens to sit on (the
   // batch-18 ruling; the Operate strip states the same fact under `operate.strip.rxOnly.why`).
-  const NO_TX_WHY = canAction('transmit') ? t('topbar.rxOnly.why') : OPERATE_UNAVAILABLE
+  const NO_TX_WHY = t('topbar.rxOnly.why')
   const modeButton = (
     <button
       type="button"
@@ -509,7 +481,7 @@ function TopBarBody({
             </button>
           }
           items={[
-            { label: t('gettingStarted.title'), onSelect: () => onOpenGuide?.(), disabled: !onOpenGuide },
+            { label: t('gettingStarted.title'), onSelect: onOpenGuide },
             ...(onOpenWalk ? [{ label: t('firstContact.title'), onSelect: onOpenWalk }] : []),
           ]}
         />
@@ -621,8 +593,8 @@ function TopBarBody({
             over the call and grid (its arrow just past them), out of the bar's line, so showing it
             never widens the bar — a wrap there moved the TX cluster (cockpit-panes.css). */}
         <span className={`mycall${showStationPicker ? ' mycall-picker' : ''}`}>
-          {mycall ?? '—'}
-          <span className="mygrid">{mygrid ?? '—'}</span>
+          {mycall}
+          <span className="mygrid">{mygrid}</span>
           {showStationPicker && (
             <select
               className="station-profile-picker"
@@ -635,7 +607,7 @@ function TopBarBody({
                     ? t('topbar.stationProfile.busy')
                     : t('topbar.stationProfile.title'),
               ].filter(Boolean).join('\n')}
-              disabled={drivesAnotherStation() || stationProfileLocked || !onSwitchStationProfile || !canAction('settings')}
+              disabled={drivesAnotherStation() || stationProfileLocked || !onSwitchStationProfile}
               value={activeStationProfile ?? ''}
               onChange={(e) => onSwitchStationProfile?.(e.target.value)}
             >
@@ -699,7 +671,7 @@ function TopBarBody({
               className="topbar-rig-mode"
               title={t('topbar.rigMode.title', {
                 rig: rigModeMismatch,
-                believed: radio.sideband ?? '—',
+                believed: radio.sideband,
               })}
             >
               {t('topbar.rigMode.chip', { mode: rigModeMismatch })}
@@ -709,8 +681,8 @@ function TopBarBody({
       )}
 
       <div className="topbar-group txrx">
-        <span className={`txrx-indicator ${onAir == null ? 'unknown' : onAir ? 'tx' : 'rx'}`}>
-          {onAir == null ? '—' : onAir ? TX : RX}
+        <span className={`txrx-indicator ${onAir ? 'tx' : 'rx'}`}>
+          {onAir ? TX : RX}
         </span>
 
         {/* Live-polled meter (100 ms, lock-free backend) — the meter's own title carries the
@@ -739,7 +711,7 @@ function TopBarBody({
             className={`op-btn monitor${radio.txEnabled ? ' on' : ''}`}
             aria-pressed={radio.txEnabled}
             onClick={() => onSetTxEnabled(!radio.txEnabled)}
-            disabled={radio.txEnabled ? !canAction('stopTransmit') : noTx}
+            disabled={noTx}
             title={
               noTx
                 ? NO_TX_WHY
@@ -753,9 +725,9 @@ function TopBarBody({
           <button
             type="button"
             className={`op-btn tune${radio.tuning ? ' keyed' : ''}`}
-            aria-pressed={radio.tuning ?? undefined}
+            aria-pressed={radio.tuning}
             onClick={() => onSetTune(!radio.tuning)}
-            disabled={radio.tuning ? !canAction('stopTransmit') : noTx}
+            disabled={noTx}
             title={noTx ? NO_TX_WHY : 'Key a tune carrier'}
           >
             Tune
@@ -764,7 +736,6 @@ function TopBarBody({
             type="button"
             className="op-btn stop"
             data-stop-control="stop-tx"
-            disabled={!canAction('stopTransmit')}
             onClick={onHaltTx}
             title="Stop transmitting immediately — cuts even an over already in flight"
           >
@@ -775,7 +746,6 @@ function TopBarBody({
             className={`op-btn hold${radio.holdTxFreq ? ' on' : ''}`}
             aria-pressed={radio.holdTxFreq}
             onClick={() => onSetHoldTxFreq(!radio.holdTxFreq)}
-            disabled={!canAction('transmit')}
             title={t('topbar.holdTx.title')}
           >
             {t('topbar.holdTx.label')}
@@ -796,16 +766,16 @@ function TopBarBody({
             {radio.clockRepairAvailable ? (
               <span className="clock-stack">
                 <ClockChip radio={radio} />
-                <ClockRepair radio={radio} keyed={onAir === true || radio.tuning === true} />
+                <ClockRepair radio={radio} keyed={onAir || radio.tuning} />
               </span>
             ) : (
               <ClockChip radio={radio} />
             )}
             <span
-              className={`dt-readout${link.dtSec != null && Math.abs(link.dtSec) > 0.5 ? ' bad' : ''}`}
+              className={`dt-readout${Math.abs(link.dtSec) > 0.5 ? ' bad' : ''}`}
               title={t('topbar.dt.title')}
             >
-              {link.dtSec == null ? 'DT —' : dtLabel(link.dtSec)}
+              {dtLabel(link.dtSec)}
             </span>
           </>
         )}
@@ -823,7 +793,6 @@ function TopBarBody({
             }`}
             aria-pressed={tier === p.tier}
             onClick={() => onTierChange(p.tier)}
-            disabled={!canTier(p.tier)}
             title={tierTitle(p)}
           >
             {pillSmall(p) ? <small>{pillSmall(p)}</small> : null}
@@ -845,7 +814,6 @@ function TopBarBody({
               icon: pillSmall(p) ? <small>{pillSmall(p)}</small> : undefined,
               title: tierTitle(p),
               onSelect: () => onTierChange(p.tier),
-              disabled: !canTier(p.tier),
             }))}
           />
         )}
@@ -868,7 +836,6 @@ function TopBarBody({
           className={`tier-btn${radio.txCycleAuto ? ' active' : ''}`}
           aria-pressed={radio.txCycleAuto ?? false}
           onClick={() => onSetTxCycleAuto(true)}
-          disabled={!canAction('transmit')}
           title={t('topbar.txCycle.auto.title')}
         >
           {radio.txCycleAuto ? (
@@ -889,19 +856,17 @@ function TopBarBody({
         <button
           type="button"
           className={`tier-btn${!radio.txCycleAuto && radio.txEven ? ' active' : ''}${radio.txCycleAuto && radio.txEven ? ' derived' : ''}`}
-          aria-pressed={radio.txEven == null ? undefined : !radio.txCycleAuto && radio.txEven}
+          aria-pressed={!radio.txCycleAuto && radio.txEven}
           onClick={() => onSetTxEven(true)}
-          disabled={!canAction('transmit')}
           title={t('topbar.txCycle.first.title')}
         >
           <T k="topbar.txCycle.first.label" tags={{ s: cycleCaption }} />
         </button>
         <button
           type="button"
-          className={`tier-btn${!radio.txCycleAuto && radio.txEven === false ? ' active' : ''}${radio.txCycleAuto && radio.txEven === false ? ' derived' : ''}`}
-          aria-pressed={!radio.txCycleAuto && radio.txEven === false}
+          className={`tier-btn${!radio.txCycleAuto && !radio.txEven ? ' active' : ''}${radio.txCycleAuto && !radio.txEven ? ' derived' : ''}`}
+          aria-pressed={!radio.txCycleAuto && !radio.txEven}
           onClick={() => onSetTxEven(false)}
-          disabled={!canAction('transmit')}
           title={t('topbar.txCycle.second.title')}
         >
           <T k="topbar.txCycle.second.label" tags={{ s: cycleCaption }} />

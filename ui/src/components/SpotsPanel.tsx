@@ -28,7 +28,6 @@ import { SpotDialog } from './SpotDialog'
 import { WorkedWindowSelect, isWorkedWindow, workedWithin, type WorkedWindow } from './WorkedWindowSelect'
 import { setPounceSpotterFilter } from '../api'
 import { surfaceGet, surfaceSet } from '../features/windowScope'
-import { EXTERNAL_SPOTS_CAPABILITIES, externalSpotAge, externalSpotsCurrent, selectExternalSpot, type ExternalSpotsSource, type ExternalSpotRow } from './spotsExternal'
 
 type SortKey = 'age' | 'call' | 'entity' | 'state' | 'band' | 'freq' | 'mode'
 
@@ -221,36 +220,7 @@ function adoptPopOutFilters(): void {
   }
 }
 
-interface ExternalSpotsPanelProps {
-  external: ExternalSpotsSource
-  selectedCall: string | null
-}
-
-interface BoardRow {
-  key: string; call: string; entity: string; band: string; freqMhz: number
-  mode: string; ageSecs: number; native: SpotRow | null; owner: ExternalSpotRow | null
-}
-
-export function SpotsPanel(props: SpotsPanelProps | ExternalSpotsPanelProps) {
-  const external = 'external' in props ? props.external : undefined
-  const native = 'external' in props ? null : props
-  const { spots = [], bandPlan = [], onSelect, onWork, onPopOut, myGrid = '', needAlerts, pane, fieldDay, spotMe, poppedOut } = native ?? {}
-  const { selectedCall } = props
-  const caps = external ? EXTERNAL_SPOTS_CAPABILITIES : {
-    pounceFilter: true, entityCentroids: true, callCard: true, rowMenu: true,
-    postSpot: true, popOut: true, privileges: true, reporter: true,
-    workedDates: true, states: true, awards: true,
-  }
-  const [, tick] = useState(0)
-  useEffect(() => {
-    if (!external) return
-    const timer = setInterval(() => tick(value => value + 1), 100)
-    return () => clearInterval(timer)
-  }, [external?.key])
-  const externalCurrent = !!external && externalSpotsCurrent(external, performance.now())
-  const ownerRows = externalCurrent ? external!.rows : []
-  const filterInput = external ? ownerRows.map(row => ({ band: row.band ?? '', mode: row.mode, submode: undefined })) : spots
-
+export function SpotsPanel({ spots, bandPlan, selectedCall, onSelect, onWork, onPopOut, myGrid = '', needAlerts, pane, fieldDay, spotMe, poppedOut }: SpotsPanelProps) {
   const marker = useContestSpotMarker(fieldDay)
   // The call menu (Best times first, then watch and hide), on a right-click or the menu key on a row.
   const callMenu = useCallMenu()
@@ -260,14 +230,14 @@ export function SpotsPanel(props: SpotsPanelProps | ExternalSpotsPanelProps) {
   // station's own cluster login — the review step is deliberate, never bypassed).
   const [spotRow, setSpotRow] = useState<{ call: string; freqMhz: number } | null>(null)
   // Entity centres — the only geometry the firehose carries (a spot has no grid).
-  const centroids = useEntityCentroids(caps.entityCentroids)
+  const centroids = useEntityCentroids()
   // The operator's watch list, live — the matcher the Call Roster and the Stations list ask, so
   // a watched station wears the same WATCH tile on this board.
   const watchOf = useWatchMatch()
   // Whose copy of every filter below: the view's own keys, or this pane's (see SpotsPane). The
   // memos below key on booleans (`isPane`, `allowModes`), never on `pane`: the host passes a fresh
   // object every render.
-  const host = external ? 'xlog-spots' : pane?.scope
+  const host = pane?.scope
   const isPane = pane != null
   // Which mode rule this host keeps: an ALLOW-list when the pane names the modes it opens on, the
   // view's hidden set otherwise (SpotsPane). Keyed on the NAMES, never on `pane`: Connect's box is
@@ -276,7 +246,7 @@ export function SpotsPanel(props: SpotsPanelProps | ExternalSpotsPanelProps) {
   // The window Pop out opened: the view's filters, moved into this window's own session before a filter
   // below reads it. A state initializer, so it runs as the board mounts and never on a later render.
   useState(() => {
-    if (caps.popOut && poppedOut) adoptPopOutFilters()
+    if (poppedOut) adoptPopOutFilters()
   })
   // ONE flat mode filter: the SPECIFIC modes present (CW/Phone/FT8/FT4/RTTY/Digital…), each a
   // show/hide toggle. The view stores the HIDDEN set (empty = all shown) so a mode that first
@@ -334,9 +304,9 @@ export function SpotsPanel(props: SpotsPanelProps | ExternalSpotsPanelProps) {
   // on another screen keeps chips of its own for its own box. Sent on every change and on mount;
   // the station applies them before its alert gate, and nothing is saved.
   useEffect(() => {
-    if (!caps.pounceFilter || host !== undefined) return
+    if (host !== undefined) return
     setPounceSpotterFilter(spotterConts, spotterEntities).catch(() => {})
-  }, [caps.pounceFilter, host, spotterConts, spotterEntities])
+  }, [host, spotterConts, spotterEntities])
 
   const knownBands = useMemo(() => new Set(bandPlan.map((b) => b.band)), [bandPlan])
 
@@ -350,18 +320,18 @@ export function SpotsPanel(props: SpotsPanelProps | ExternalSpotsPanelProps) {
 
   const availableBands = useMemo(() => {
     const result = [...COMMON_BANDS]
-    for (const s of filterInput) if (s.band && !result.includes(s.band)) result.push(s.band)
+    for (const s of spots) if (s.band && !result.includes(s.band)) result.push(s.band)
     // The band a pane follows always has a chip — it is the one way to stop following it.
     if (rigBand && !result.includes(rigBand)) result.push(rigBand)
     // A picked band always has one too: a filter with no chip empties the board and cannot say why.
     for (const b of bands) if (!result.includes(b)) result.push(b)
     return result
-  }, [filterInput, rigBand, bands])
+  }, [spots, rigBand, bands])
   // The SPECIFIC modes present in the firehose (skimmer submode, else the class label), in a
   // natural operating order (CW, Phone, then the digital submodes), unknowns trailing alpha.
   const availableModes = useMemo(() => {
     const set = new Set<string>()
-    for (const s of filterInput) set.add(s.submode ?? s.mode)
+    for (const s of spots) set.add(s.submode ?? s.mode)
     // So does a hidden mode, for the same reason, whether or not the feed holds it right now.
     for (const m of hiddenModes) set.add(m)
     const order = ['CW', 'Phone', 'FT8', 'FT4', 'RTTY', 'PSK', 'Digital']
@@ -370,7 +340,7 @@ export function SpotsPanel(props: SpotsPanelProps | ExternalSpotsPanelProps) {
       return i < 0 ? order.length : i
     }
     return [...set].sort((a, b) => rank(a) - rank(b) || a.localeCompare(b))
-  }, [filterInput, hiddenModes])
+  }, [spots, hiddenModes])
   // US states present (resolved for stations heard before with a grid).
   const availableStates = useMemo(() => presentStates(spots), [spots])
 
@@ -414,17 +384,17 @@ export function SpotsPanel(props: SpotsPanelProps | ExternalSpotsPanelProps) {
   const hasActiveFilters =
     shownBands.length > 0 ||
     (allowModes ? availableModes.some((m) => !shownModes.includes(m)) : hiddenModes.length > 0) ||
-    (caps.privileges && licensedOnly) ||
-    (caps.reporter && localOnly) ||
-    (caps.workedDates && hideWorked) ||
-    (caps.states && states.length > 0) ||
-    (caps.reporter && spotterConts.length > 0) ||
-    (caps.reporter && spotterEntities.length > 0)
+    licensedOnly ||
+    localOnly ||
+    hideWorked ||
+    states.length > 0 ||
+    spotterConts.length > 0 ||
+    spotterEntities.length > 0
 
   // The Needed board's alerts by call, for the rescue in `neededHere`.
   const needsByCall = useMemo(() => alertsByCall(needAlerts ?? []), [needAlerts])
 
-  const { rows: nativeRows, workedHidden } = useMemo(() => {
+  const { rows, workedHidden } = useMemo(() => {
     // Terms still narrow (AND), which is right here: a spot row is call + entity + spotter
     // + mode + band + frequency flattened together, so "20m ft8" means both. What changed is
     // that a term may now carry `*`/`?` and be matched as a whole-word pattern — `PA*` finds
@@ -496,26 +466,6 @@ export function SpotsPanel(props: SpotsPanelProps | ExternalSpotsPanelProps) {
     return { rows: filtered, workedHidden: worked }
   }, [spots, allowModes, hiddenModes, shownModes, shownBands, states, spotterConts, spotterEntities, sort, query, licensedOnly, localOnly, hideWorked, workedWindow, needsByCall, watchOf])
 
-  const rows: BoardRow[] = external ? ownerRows.filter(row => {
-    const search = searchMatcher(query)
-    return !hiddenModes.includes(row.mode) && bandOk(shownBands, row.band ?? '')
-      && (!search || search([row.callsign, row.country ?? '', row.source, row.mode,
-        row.band ?? '', String(row.frequencyHz), (row.frequencyHz / 1e6).toFixed(6)]))
-  }).map(row => ({ key: row.id, call: row.callsign, entity: row.country ?? '', band: row.band ?? '',
-    freqMhz: row.frequencyHz / 1e6, mode: row.mode,
-    ageSecs: externalSpotAge(row, external.generatedAtUnixMs, Date.now()),
-    native: null, owner: row,
-  })).sort((a, b) => {
-    const direction = sort.dir === 'asc' ? 1 : -1
-    const compared = sort.key === 'age' ? a.ageSecs - b.ageSecs
-      : sort.key === 'freq' || sort.key === 'band' ? a.owner!.frequencyHz - b.owner!.frequencyHz
-      : sort.key === 'state' ? 0 : a[sort.key].localeCompare(b[sort.key])
-    return (compared || a.key.localeCompare(b.key)) * direction
-  }) : nativeRows.map(row => ({ key: `${row.call}|${row.freqMhz}|${row.spotter}`,
-    call: row.call, entity: row.entity, band: row.band, freqMhz: row.freqMhz,
-    mode: row.mode, ageSecs: row.ageSecs, native: row, owner: null }))
-  const inputCount = external ? ownerRows.length : spots.length
-
   // How many rows the locality filter is holding back RIGHT NOW — the honest half of a filter
   // that is on by default. Counted against everything else the operator has chosen, so it says
   // "hidden from what you asked for", not "hidden from the firehose".
@@ -530,7 +480,6 @@ export function SpotsPanel(props: SpotsPanelProps | ExternalSpotsPanelProps) {
     <button
       type="button"
       data-col={key}
-      disabled={!!external && key === 'state'}
       className={`np-th${sort.key === key ? ' active' : ''}`}
       onClick={() =>
         setSort((p) =>
@@ -551,9 +500,9 @@ export function SpotsPanel(props: SpotsPanelProps | ExternalSpotsPanelProps) {
       <div className="np-head">
         {!pane && <h2>{t('spots.title')}</h2>}
         <span className="np-count">{rows.length}</span>
-        {inputCount !== rows.length && <span className="np-count np-count-filtered">{t('spots.countFiltered', { count: inputCount })}</span>}
+        {spots.length !== rows.length && <span className="np-count np-count-filtered">{t('spots.countFiltered', { count: spots.length })}</span>}
         {/* Not in a pane: "every spot on the air" is untrue of a filtered pane. */}
-        {!pane && <span className="np-hint">{external ? (externalCurrent ? t('spots.owner.hint') : t('spots.owner.unavailable')) : t('spots.hint')}</span>}
+        {!pane && <span className="np-hint">{t('spots.hint')}</span>}
         <FilterSearch query={query} onQuery={setQuery} placeholder={t('spots.search.placeholder')} label={t('spots.search.label')} />
         <button
           type="button"
@@ -569,8 +518,8 @@ export function SpotsPanel(props: SpotsPanelProps | ExternalSpotsPanelProps) {
         </button>
         {/* Spot me: one cluster spot of this station per press (SpotsSpotMe.tsx). Not on a page that
             only watches. */}
-        {caps.postSpot && spotMe && <SpotsSpotMe {...spotMe} />}
-        {caps.popOut && onPopOut && (
+        {spotMe && <SpotsSpotMe {...spotMe} />}
+        {onPopOut && (
           <button
             type="button"
             className="np-popout"
@@ -630,15 +579,15 @@ export function SpotsPanel(props: SpotsPanelProps | ExternalSpotsPanelProps) {
             </>
           )}
           {/* US-state chips — only states we could resolve (a station heard before with a grid). */}
-          {caps.states && <StateChips
+          <StateChips
             available={availableStates}
             picked={states}
             onToggle={toggleState}
             ariaLabel={t('spots.filters.states.aria')}
             titleFor={(st) => t('spots.filter.state.title', { state: st })}
-          />}
+          />
           {/* Spotted from (#174) — continents, then countries, of the voices in this feed. */}
-          {caps.reporter && availableSpotterConts.length > 0 && (
+          {availableSpotterConts.length > 0 && (
             <>
               <div className="np-filter-sep" aria-hidden="true" />
               <div className="np-filter-group" role="group" aria-label={t('spots.filters.spotterConts.aria')}>
@@ -657,7 +606,7 @@ export function SpotsPanel(props: SpotsPanelProps | ExternalSpotsPanelProps) {
               </div>
             </>
           )}
-          {caps.reporter && availableSpotterEntities.length > 0 && (
+          {availableSpotterEntities.length > 0 && (
             <>
               <div className="np-filter-sep" aria-hidden="true" />
               <div className="np-filter-group" role="group" aria-label={t('spots.filters.spotterEntities.aria')}>
@@ -676,7 +625,6 @@ export function SpotsPanel(props: SpotsPanelProps | ExternalSpotsPanelProps) {
               </div>
             </>
           )}
-          {caps.privileges && caps.reporter && caps.workedDates ? <>
           <div className="np-filter-sep" aria-hidden="true" />
           <PrivilegesChip on={licensedOnly} onToggle={() => setLicensedOnly((v) => !v)} title={t('spots.filter.privileges.title')} />
           {/* Locality. The count of what it is hiding rides ON the chip, so the answer to
@@ -710,7 +658,6 @@ export function SpotsPanel(props: SpotsPanelProps | ExternalSpotsPanelProps) {
             value={workedWindow}
             onChange={(w) => setWorkedWindow(w ?? 'utcDay')}
           />
-          </> : <span className="np-hint">{t('spots.owner.filtersUnavailable')}</span>}
           {hasActiveFilters && (
             <button
               type="button"
@@ -746,15 +693,15 @@ export function SpotsPanel(props: SpotsPanelProps | ExternalSpotsPanelProps) {
           {th('band', t('spots.column.band'))}
           {th('freq', t('spots.column.freq'))}
           {th('mode', t('spots.column.mode'))}
-          <span className="np-th-static" data-col="spotter">{external ? t('spots.owner.source') : t('spots.column.spotter')}</span>
-          <span className="np-th-static" data-col="comment">{external ? t('spots.owner.assessment') : t('spots.column.comment')}</span>
+          <span className="np-th-static" data-col="spotter">{t('spots.column.spotter')}</span>
+          <span className="np-th-static" data-col="comment">{t('spots.column.comment')}</span>
         </div>
         {rows.length === 0 ? (
           <div className="np-empty">
             {/* When Hide worked is what emptied the board, say so and name the way back — a
                 default-on filter that leaves a blank panel is the report this feature must not
                 generate. */}
-            {external ? (!externalCurrent ? t('spots.owner.unavailable') : ownerRows.length === 0 ? t('spots.owner.empty') : t('spots.empty.filtered')) : workedHidden > 0
+            {workedHidden > 0
               ? t('spots.empty.worked', { count: workedHidden })
               : hasActiveFilters
                 ? t('spots.empty.filtered')
@@ -762,52 +709,49 @@ export function SpotsPanel(props: SpotsPanelProps | ExternalSpotsPanelProps) {
           </div>
         ) : (
           rows.map((s) => {
-            const original = s.native
-            const owner = s.owner
-            const canQsy = !owner && knownBands.has(s.band)
+            const canQsy = knownBands.has(s.band)
             // Worked inside the window the chip is set to — so the badge below answers for the
             // rows Hide worked would drop, and says nothing about a contact from last month.
             const workedAge =
-              original?.workedAgoSecs != null && workedWithin(original, workedWindow)
-                ? workedAgeLabel(original!.workedAgoSecs!)
+              s.workedAgoSecs != null && workedWithin(s, workedWindow)
+                ? workedAgeLabel(s.workedAgoSecs)
                 : null
-            const watch = original ? watchOf({ call: s.call, entity: s.entity, grid: original.grid }) : null
-            const mark = original ? marker?.(original) ?? null : null
+            const watch = watchOf({ call: s.call, entity: s.entity, grid: s.grid })
+            const mark = marker?.(s) ?? null
             const markWords = spotMarkWords(mark)
             const multTag = spotMultTag(mark)
-            const rowTitle = owner ? t('spots.owner.select', { call: owner.callsign, hz: owner.frequencyHz, source: owner.source }) : canQsy
+            const rowTitle = canQsy
               ? t('spots.row.work.title', {
                   call: s.call,
                   mode: s.mode,
                   freq: s.freqMhz.toFixed(3),
-                  spotter: original?.spotter ?? '',
+                  spotter: s.spotter,
                 })
               : t('spots.row.title', {
                   call: s.call,
                   freq: s.freqMhz.toFixed(3),
-                  spotter: original?.spotter ?? '',
+                  spotter: s.spotter,
                 })
             return (
               <div
-                key={s.key}
-                data-owner-spot-id={owner?.id}
+                key={`${s.call}|${s.freqMhz}|${s.spotter}`}
                 role="row"
                 className={`np-row sp-row${s.call === selectedCall ? ' selected' : ''}${mark?.dupe ? ' contest-dupe' : ''}`}
                 title={markWords.length > 0 ? [rowTitle, ...markWords].join(' · ') : rowTitle}
                 onClick={() => {
-                  if (external && owner) selectExternalSpot(external, owner, performance.now())
-                  else if (original) { onSelect?.(s.call); onWork?.(original) }
+                  onSelect(s.call)
+                  onWork(s)
                 }}
-                {...(caps.rowMenu ? callMenu.on(s.key, s.call, { band: s.band || null, country: s.entity || null }) : {})}
+                {...callMenu.on(`${s.call}|${s.freqMhz}|${s.spotter}`, s.call, { band: s.band || null, country: s.entity || null })}
               >
                 <span className="np-age">{ageLabel(s.ageSecs)}</span>
                 <span className="np-call">
-                  {caps.rowMenu && callMenu.at(s.key)}
+                  {callMenu.at(`${s.call}|${s.freqMhz}|${s.spotter}`)}
                   {/* The station card; stopping the click keeps the row's tune from firing. */}
                   <button
                     type="button"
                     className="qrz-link-call"
-                    {...(caps.callCard ? callCardTrigger(s.call, qrzPageOf(s.call), true) : { onClick: (event: React.MouseEvent<HTMLButtonElement>) => { event.stopPropagation(); if (external && owner) selectExternalSpot(external, owner, performance.now()) } })}
+                    {...callCardTrigger(s.call, qrzPageOf(s.call), true)}
                   >
                     {s.call}
                   </button>
@@ -817,7 +761,7 @@ export function SpotsPanel(props: SpotsPanelProps | ExternalSpotsPanelProps) {
                 <span className="np-entity">
                   <span className="np-name">{s.entity || '—'}</span>
                   {(() => {
-                    const az = original ? azimuthTo(myGrid, original.grid, s.entity, centroids) : null
+                    const az = azimuthTo(myGrid, s.grid, s.entity, centroids)
                     return az ? (
                       <span className="np-az" title={azimuthTitle(az, s.entity)}>
                         {azimuthLabel(az)}
@@ -828,20 +772,20 @@ export function SpotsPanel(props: SpotsPanelProps | ExternalSpotsPanelProps) {
                 {/* The panel already FILTERS by state; now it shows the value it filters on
                     (operator ask, 2026-08-16). FCC-index / heard-grid resolved; '—' = unknown
                     (a cluster spot of a station never heard, or a non-US/VE call). */}
-                <span className="sp-state">{original?.state || '—'}</span>
+                <span className="sp-state">{s.state || '—'}</span>
                 <span className="np-band">{s.band || '—'}</span>
                 <span className="sp-freq">{s.freqMhz.toFixed(3)}</span>
                 <span
                   className={`np-mode-col np-mode-${s.mode.toLowerCase()}`}
                   title={
-                    original?.submode
-                      ? t('spots.row.mode.submode.title', { submode: original!.submode!, mode: s.mode })
+                    s.submode
+                      ? t('spots.row.mode.submode.title', { submode: s.submode, mode: s.mode })
                       : t('spots.row.mode.title', { mode: s.mode })
                   }
                 >
-                  {original?.submode ?? s.mode}
+                  {s.submode ?? s.mode}
                 </span>
-                <span className="sp-spotter">{owner?.source ?? original?.spotter ?? '—'}</span>
+                <span className="sp-spotter">{s.spotter}</span>
                 <span className="np-why">
                   {/* The WATCH tile leads the cell, ahead of the worked badge: the comment
                       ellipsizes, and first is the one place the tile cannot be cut. */}
@@ -862,16 +806,16 @@ export function SpotsPanel(props: SpotsPanelProps | ExternalSpotsPanelProps) {
                   )}
                   {/* The island group the comment names (`iota::in_comment`, the reading the Needed
                       board scores New IOTA by), in the need's colour while it is one. */}
-                  {original?.iota && (
+                  {s.iota && (
                     <span
-                      className={`sp-iota${iotaNeeded(needsByCall.get(s.call.toUpperCase()), original.iota) ? ' need-chip need-iota' : ''}`}
+                      className={`sp-iota${iotaNeeded(needsByCall.get(s.call.toUpperCase()), s.iota) ? ' need-chip need-iota' : ''}`}
                       title={
-                        iotaNeeded(needsByCall.get(s.call.toUpperCase()), original.iota)
-                          ? t('spots.row.iota.needed', { ref: original.iota })
-                          : t('spots.row.iota.title', { ref: original.iota })
+                        iotaNeeded(needsByCall.get(s.call.toUpperCase()), s.iota)
+                          ? t('spots.row.iota.needed', { ref: s.iota })
+                          : t('spots.row.iota.title', { ref: s.iota })
                       }
                     >
-                      {original.iota}
+                      {s.iota}
                     </span>
                   )}
                   {/* What Hide worked would drop, said on the row itself — so turning the chip
@@ -885,12 +829,7 @@ export function SpotsPanel(props: SpotsPanelProps | ExternalSpotsPanelProps) {
                       {t('spots.row.worked', { age: workedAge })}
                     </span>
                   )}
-                  {owner ? (owner.assessment.status === 'unknown'
-                    ? t('spots.owner.unknown', { reason: owner.assessment.explanation ?? '' })
-                    : owner.assessment.status === 'needed'
-                      ? t('spots.owner.needed', { score: owner.assessment.score, reasons: owner.assessment.reasons.join(' · ') })
-                      : t('spots.owner.worked', { score: owner.assessment.score, reasons: owner.assessment.reasons.join(' · ') }))
-                    : original?.comment || (workedAge || watch || mark ? '' : '—')}
+                  {s.comment || (workedAge || watch || mark ? '' : '—')}
                 </span>
                 {/* Spot THIS station in one click — the reviewable cluster-spot popup
                     (SpotDialog), seeded with its call and frequency. Its OWN trailing cell
@@ -899,7 +838,7 @@ export function SpotsPanel(props: SpotsPanelProps | ExternalSpotsPanelProps) {
                     its cell. `stopPropagation` so the press spots rather than working the row. The
                     small-action button style is the Needed board's ↗ (`np-point`). */}
                 <span className="sp-actions" data-col="spot">
-                  {caps.postSpot && <button
+                  <button
                     type="button"
                     className="np-point sp-spot-btn"
                     onClick={(e) => { e.stopPropagation(); setSpotRow({ call: s.call, freqMhz: s.freqMhz }) }}
@@ -907,7 +846,7 @@ export function SpotsPanel(props: SpotsPanelProps | ExternalSpotsPanelProps) {
                     title={t('operate.header.spot.title')}
                   >
                     📢
-                  </button>}
+                  </button>
                 </span>
               </div>
             )
@@ -917,13 +856,13 @@ export function SpotsPanel(props: SpotsPanelProps | ExternalSpotsPanelProps) {
       {/* The row Spot popup — one instance for the board, seeded from whichever row's
           button was pressed (SpotDialog re-seeds each time `open` goes true). Portals out, so it
           is fine in the view, in a cockpit pane and in a box alike. */}
-      {caps.postSpot && <SpotDialog
+      <SpotDialog
         open={spotRow != null}
         onClose={() => setSpotRow(null)}
         initialCall={spotRow?.call ?? ''}
         freqMhz={spotRow?.freqMhz ?? 0}
         defaultComment=""
-      />}
+      />
     </Root>
   )
 }

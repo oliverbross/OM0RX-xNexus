@@ -14,15 +14,21 @@
 // azimuth in degrees and the true/magnetic marks are data, and the three annunciator plates
 // below are the instrument's own vocabulary.
 import { useEffect, useRef, useState, type CSSProperties } from 'react'
-import { useOperateServices } from './operateServices'
+import {
+  getDeclination,
+  getSatTrackStatus,
+  getSatTransponder,
+  getSettings,
+  readRotator,
+  setSatTransponder,
+  stopRotator,
+  stopSatTrack,
+} from '../api'
 import type { SatTrackStatus, SatTransponderHeld } from '../types'
 import { magneticDeg } from '../grid'
 import { pushToast } from '../toast'
 import { t } from '../i18n'
 import { pollSingleFlight } from '../singleFlight'
-import type { ExternalRotorPresentation } from './rotorExternal'
-import { bearingReason } from '../xlog/ownerBearingMessages'
-import { Tooltip, TooltipProvider } from './ui/Tooltip'
 
 /** The strip's annunciator plates — what the chip is, in the shortest form that fits a cockpit
  *  header bar. Instrument marks rather than sentences (the CwCockpit `SPLIT ▲` / `REC` class),
@@ -35,8 +41,6 @@ const ROTOR_PLATE = 'ROTOR'
 const LONG_PATH = 'LP'
 
 export interface RotorStripProps {
-  /** Explicit owner observations/retained Stop; never invokes native readers. */
-  external?: ExternalRotorPresentation
   /** Poll/render only while the host cockpit is the active view (defaults on). */
   active?: boolean
   /** A selected station to offer a one-click "point at" slew for. */
@@ -69,120 +73,35 @@ const chipStyle: CSSProperties = {
   cursor: 'pointer',
 }
 
-export function RotorStrip(props: RotorStripProps) {
-  return props.external ? <OwnerRotorStrip source={props.external} /> : <NativeRotorStrip {...props} />
-}
-
-function OwnerRotorStrip({ source }: { source: ExternalRotorPresentation }) {
-  const [, setNow] = useState(performance.now())
-  useEffect(() => {
-    const timer = setInterval(() => setNow(performance.now()), 100)
-    return () => clearInterval(timer)
-  }, [])
-  const now = performance.now()
-  const observation = source.observation
-  const az = Number.isFinite(now) && now >= 0 && source.observationCurrent() && observation && observation.deadline > now
-    && observation.azimuthDeg !== null && Number.isFinite(observation.azimuthDeg) && observation.azimuthDeg >= 0 && observation.azimuthDeg < 360
-    ? observation.azimuthDeg : null
-  const stop = source.stop, canStop = stop !== null && source.canStop()
-  const bearing = source.bearing, facts = bearing?.current() ? bearing.facts : null
-  const evidence = bearing?.evidence
-  if (az === null && !canStop && !bearing) return null
-  // Display precision only. Retained facts and the Point callback keep exact angles.
-  const deg = az === null ? null : az.toFixed(1)
-  const pointStatus = evidence?.settlement.kind === 'receipt' ? evidence.settlement.receipt.status
-    : evidence?.settlement.kind === 'pending' ? t('rotor.owner.pending')
-    : evidence?.settlement.kind === 'uncertain' ? t('rotor.owner.uncertain') : t('rotor.owner.notSent')
-  const pointSummary = evidence ? t('rotor.owner.lastPoint', {
-    status: pointStatus, deg: evidence.intent.command.azimuth_deg.toFixed(1),
-  }) : ''
-  return <span role="group" aria-label={t('rotor.strip.aria')}
-    style={{ display: 'inline-flex', alignItems: 'center', flexWrap: 'wrap', gap: '0.35rem', color: 'inherit' }}>
-    <span style={{ fontSize: '0.65em', letterSpacing: '0.08em', opacity: 0.55, fontWeight: 600 }} aria-hidden>{ROTOR_PLATE}</span>
-    {deg !== null && <svg width={GLYPH} height={GLYPH} viewBox={`0 0 ${GLYPH} ${GLYPH}`} aria-hidden style={{ flex: '0 0 auto' }}>
-      <circle cx={C} cy={C} r={C - 1} fill="none" stroke="currentColor" strokeOpacity={0.3} />
-      <g transform={`rotate(${deg} ${C} ${C})`}><line x1={C} y1={C} x2={C} y2={2} stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" />
-        <circle cx={C} cy={2} r={1.4} fill="currentColor" /></g>
-    </svg>}
-    <span className="mono" style={{ fontSize: '0.95em', fontWeight: 600, whiteSpace: 'nowrap' }}>{deg === null ? '—' : `${deg}°T`}</span>
-    {bearing && <>
-      <button type="button" style={chipStyle} disabled={!bearing.canRead()} onClick={() => { void bearing.read() }}>
-        {t('rotor.owner.read', { call: bearing.callsign })}</button>
-      {facts?.status === 'available' && facts.geometry && facts.target ? <>
-        <span className="mono">{t('rotor.owner.paths', { sp: facts.geometry.short_path_deg.toFixed(1), lp: facts.geometry.long_path_deg.toFixed(1) })}</span>
-        <span>{facts.target.precision === 'historical_grid_cell_center'
-          ? t('rotor.owner.historical', { grid: facts.target.grid ?? '—' }) : t('rotor.owner.approximate')}</span>
-      </> : <span role="status">{bearing.state === 'loading' ? t('rotor.owner.loading') : bearingReason(facts?.reason ?? null)}</span>}
-      <button type="button" style={chipStyle} disabled={!bearing.canPoint()} onClick={() => { void bearing.point(false) }}
-        title={t('rotor.strip.pointAt.title', { call: bearing.callsign })}>→ {bearing.callsign}</button>
-      <button type="button" style={chipStyle} disabled={!bearing.canPoint()} onClick={() => { void bearing.point(true) }}
-        title={t('rotor.strip.pointAtLong.title', { call: bearing.callsign })}>{LONG_PATH}</button>
-      {evidence && <span role="status">
-        <TooltipProvider><Tooltip side="bottom" content={<div style={{ overflowWrap: 'anywhere' }}>
-          <div>{t('rotor.owner.receipt', { id: evidence.intent.requestId, status: pointStatus })}</div>
-          <div className="mono">{`${evidence.intent.command.rotor_id} → ${evidence.intent.command.azimuth_deg}°T`}</div>
-        </div>}>
-          <button type="button" style={chipStyle} aria-label={`${pointSummary} · ${t('rotor.owner.inspect')}`}>{pointSummary}</button>
-        </Tooltip></TooltipProvider>
-        {bearing.observationCurrent() && evidence.observation.kind === 'snapshot' && !evidence.retired && evidence.observation.deadline > now
-          ? evidence.observation.matchesTarget ? t('rotor.owner.laterMatch', { deg: evidence.observation.azimuthDeg.toFixed(1) })
-            : t('rotor.owner.laterOther', { deg: evidence.observation.azimuthDeg.toFixed(1) }) : ''}
-      </span>}
-    </>}
-    <button type="button" style={chipStyle} title={t('rotor.pane.stop.title')} aria-label={t('rotor.pane.stop.title')}
-      disabled={!canStop} onClick={() => {
-        if (stop && source.canStop()) void stop().catch(error => pushToast(t('rotor.stop.failed', { error: String(error) }), 'error'))
-      }}>■</button>
-  </span>
-}
-
-function NativeRotorStrip({ active = true, targetCall, onPointAt, onOpenSettings }: RotorStripProps) {
-  const services = useOperateServices()
-  const { api: { getDeclination, getSatTrackStatus, getSatTransponder, getSettings,
-    readRotator, setSatTransponder, stopRotator, stopSatTrack }, can, canAction, adapter } = services
+export function RotorStrip({ active = true, targetCall, onPointAt, onOpenSettings }: RotorStripProps) {
   // null = never read (no rotator / daemon down) → the strip hides itself.
-  const [readAz, setAz] = useState<number | null>(null)
-  const [readDeclination, setDeclination] = useState<number | null>(null)
+  const [az, setAz] = useState<number | null>(null)
+  const [declination, setDeclination] = useState<number | null>(null)
   // Satellite auto-track owning the rotor right now (Satellites section's loop).
   // Shown so the operator knows WHY the needle is moving on its own — and so
   // the ■ button stops the LOOP, not just one slew it would immediately redo.
-  const [readSatTrack, setSatTrack] = useState<SatTrackStatus | null>(null)
+  const [satTrack, setSatTrack] = useState<SatTrackStatus | null>(null)
   // A transponder HELD with no armed track (the QO-100/park case, and any pick
   // made before AOS). The hold owns the dial — section entry and tier flips
   // now stand down for it (the sat-FT batch) — so it must be visible from the
   // operating cockpits, not only inside the Satellites section: a dial that
   // won't re-home with no visible owner is the same trust failure the track
   // chip exists for.
-  const [readHeld, setHeld] = useState<SatTransponderHeld | null>(null)
+  const [held, setHeld] = useState<SatTransponderHeld | null>(null)
   // Rotor CONFIGURED in settings (model-launched rotctld or external host) —
   // splits "no rotor in this station" (render nothing) from "configured but
   // not answering" (render a dim, honest placeholder: a configured rotor that
   // silently vanishes reads as a missing feature — operator report from the
   // FT cockpit).
-  const [readConfigured, setConfigured] = useState(false)
-  const [readingSource, setReadingSource] = useState(services.api)
-  const current = readingSource === services.api
-  const az = current ? readAz : null
-  const declination = current ? readDeclination : null
-  const satTrack = current ? readSatTrack : null
-  const held = current ? readHeld : null
-  const configured = current && readConfigured
-  const sourceRef = useRef(services.api)
-  sourceRef.current = services.api
-  const ownsSource = () => sourceRef.current === services.api
+  const [configured, setConfigured] = useState(false)
+  const alive = useRef(true)
 
   useEffect(() => {
-    let alive = true
-    setAz(null)
-    setDeclination(null)
-    setSatTrack(null)
-    setHeld(null)
-    setConfigured(false)
-    setReadingSource(services.api)
     if (!active) return
+    alive.current = true
     getSettings()
       .then((st) => {
-        if (alive) setConfigured((st.rotatorModel ?? 0) > 0 || st.rotatorHost.trim() !== '')
+        if (alive.current) setConfigured((st.rotatorModel ?? 0) > 0 || st.rotatorHost.trim() !== '')
       })
       .catch(() => {})
     // One single-flight poll (#335): `read_rotator` and `get_sat_transponder` take the engine
@@ -197,13 +116,13 @@ function NativeRotorStrip({ active = true, targetCall, onPointAt, onOpenSettings
       ]),
     )
     getDeclination()
-      .then((d) => alive && setDeclination(d))
+      .then((d) => alive.current && setDeclination(d))
       .catch(() => {})
     return () => {
-      alive = false
+      alive.current = false
       stop()
     }
-  }, [active, services.api, getSettings, getDeclination, readRotator, getSatTrackStatus, getSatTransponder])
+  }, [active])
 
   // Is Doppler driving a radio surface at all? Read from the DTO's `mode` —
   // the engine's own per-tick answer (a pass-only track drives nothing and
@@ -261,10 +180,9 @@ function NativeRotorStrip({ active = true, targetCall, onPointAt, onOpenSettings
             type="button"
             style={chipStyle}
             aria-label={t('rotor.strip.release.aria')}
-            disabled={!can('setSatTransponder')}
             onClick={() => {
               setSatTransponder(held.name, null)
-                .then(() => { if (ownsSource()) setHeld(null) })
+                .then(() => setHeld(null))
                 .catch((e) =>
                   pushToast(
                     t('rotor.strip.release.failed', {
@@ -331,7 +249,6 @@ function NativeRotorStrip({ active = true, targetCall, onPointAt, onOpenSettings
             type="button"
             style={chipStyle}
             aria-label={t('rotor.strip.trackStop.aria')}
-            disabled={!can('stopSatTrack')}
             onClick={() => {
               stopSatTrack()
                 .then(() => setSatTrack(null))
@@ -350,14 +267,6 @@ function NativeRotorStrip({ active = true, targetCall, onPointAt, onOpenSettings
           </button>
         </span>
       )
-    // The paired owner's emergency Stop remains reachable without an azimuth
-    // reading or a fabricated Nexus rotator-settings object.
-    if (adapter && can('stopRotator')) return <>
-      <span className="mono">{ROTOR_PLATE} —</span>
-      <button type="button" style={chipStyle} title={t('rotor.strip.stop.title')}
-        onClick={() => void stopRotator().catch(e => pushToast(String(e), 'error'))}>■</button>
-      {satChip}
-    </>
     if (!configured) return satChip
     // The dim chip's whole job is the model/port — a rotator that is configured and silent is
     // nearly always wired to the wrong port. So where the host can navigate, the chip IS the
@@ -495,7 +404,6 @@ function NativeRotorStrip({ active = true, targetCall, onPointAt, onOpenSettings
             type="button"
             style={chipStyle}
             onClick={() => onPointAt(targetCall, false)}
-            disabled={!canAction('rotator')}
             title={t('rotor.strip.pointAt.title', { call: targetCall })}
           >
             → {targetCall}
@@ -515,7 +423,6 @@ function NativeRotorStrip({ active = true, targetCall, onPointAt, onOpenSettings
             type="button"
             style={chipStyle}
             onClick={() => onPointAt(targetCall, true)}
-            disabled={!canAction('rotator')}
             title={t('rotor.strip.pointAtLong.title', { call: targetCall })}
           >
             {LONG_PATH}
@@ -525,23 +432,11 @@ function NativeRotorStrip({ active = true, targetCall, onPointAt, onOpenSettings
       <button
         type="button"
         style={chipStyle}
-        disabled={!can('stopRotator')}
         onClick={() => {
-          if (adapter) {
-            // An owner's emergency Stop must not queue behind another service.
-            const stopping = stopRotator()
-            const tracking = can('stopSatTrack') ? stopSatTrack() : Promise.resolve()
-            void Promise.all([stopping, tracking]).then(() => {
-              if (ownsSource()) setSatTrack(null)
-            }).catch(e => {
-              if (ownsSource()) pushToast(t('rotor.stop.failed', { error: e instanceof Error ? e.message : String(e) }), 'error')
-            })
-            return
-          }
           // ALWAYS stop the track first (no-op when idle): the local satTrack
           // poll is up to 2 s stale, and a bare rotor stop inside that window
           // would be undone by the loop's next 3 s tick. Belt-and-braces halt.
-          ;(can('stopSatTrack') ? stopSatTrack() : Promise.resolve())
+          stopSatTrack()
             .then(() => {
               setSatTrack(null)
               return stopRotator()

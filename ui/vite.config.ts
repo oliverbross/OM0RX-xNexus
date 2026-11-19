@@ -84,7 +84,6 @@ export default defineConfig({
   }],
   define: {
     __BUILD_ID__: JSON.stringify(buildId()),
-    __XNEXUS_VERSION__: JSON.stringify(JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8')).version),
     // The street map's renderer (components/StreetMap, MapLibre) is part of the desktop build; the
     // hosted Remote build leaves it out (vite.remote.config.ts).
     __STREET_MAP__: 'true',
@@ -118,7 +117,6 @@ export default defineConfig({
       // (src-tauri/src/lan_client/origin.rs).
       input: {
         main: 'index.html',
-        xlog: 'xlog.html',
         tv: 'connect-tv.html',
         lan: 'lan.html',
       },

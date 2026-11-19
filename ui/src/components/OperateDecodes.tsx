@@ -1,10 +1,10 @@
-import { StatusCell, XlogStatusCell } from './OwnerNeedBadge'
 // ⚠️ THIS FILE IS ON THE MIGRATED LIST (i18n/hardcoded-strings.test.ts). Every reading in this
 // pane is DATA and stays in the code: the callsign, the decoded message, the SNR and dB, the
 // DT in seconds, the audio offset in Hz, the UTC stamp, the band, the tier and the country.
 // So do the TOKENS the pane is built out of — gathered in DECODE_TOKENS below so a translator
 // can see the whole set at once. What moved is the prose around them.
-import { Fragment, memo, useEffect, useId, useMemo, useRef, useState, type CSSProperties } from 'react'
+import { StatusCell } from './LogStatusCell'
+import { Fragment, memo, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { getLocale, t } from '../i18n'
 import { PaneCloseButton } from './panes/PaneCloseButton'
 import { useRovingList } from '../useRovingList'
@@ -24,12 +24,11 @@ import {
   renderWindow,
   rowTimeMs,
   TIER_PERIOD_SECS,
-  type DisplayDecodeEntry,
-  type ExternalDecodeEntry,
+  type DecodeEntry,
   type DecodeFilter,
   type DecodeSort,
 } from '../decodeHistory'
-import { useOperateServices } from './operateServices'
+import { getDecodeRefill } from '../api'
 import { DECODE_HIDE_B4_EVENT, DECODE_HIDE_B4_SCOPE_EVENT, type DecodeHideB4Scope, loadDecodeFilter, loadDecodeHideB4, loadDecodeHideB4Scope, loadDecodeHideBlocked, loadDecodeHideConfirmed, loadDecodeNewestTop, saveDecodeFilter, saveDecodeHideB4, saveDecodeHideB4Scope, saveDecodeHideBlocked, saveDecodeHideConfirmed, saveDecodeNewestTop } from '../operateFilters'
 import { isHiddenByCountry, useCountryExclude } from '../features/countryExclude'
 import { isCallHidden, isCallHiddenScoped, useHideCalls } from '../features/hideCalls'
@@ -44,7 +43,6 @@ import { useEntityCentroids } from '../features/entityCentroids'
 import { callCardTrigger, qrzPageOf } from './CallCard'
 import { CallRowMenu, isMenuKey, useMenuFocusReturn } from './CallRowMenu'
 import { useWatchMatch, watchColorStyle, type WatchColor } from '../watchlist'
-import { isXlogNeed, xlogOpportunityStatus, xlogStatusColor } from '../xlog/xlogStatus'
 
 /**
  * The pane's invariant vocabulary — never translated, never locale-formatted.
@@ -89,10 +87,8 @@ export function buildHighlightMap(
 interface Props {
   /** This slot's decodes (the live per-slot feed from the snapshot). */
   decodes: DecodeRow[]
-  /** Exact owner rows; explicit presence disables native ingest and refill. */
-  external?: { contextKey: string; entries: readonly ExternalDecodeEntry[] }
   /** Current slot index — stamps history rows + keys the period separators. */
-  slot: number | null
+  slot: number
   /** Current RX audio offset (Hz), for the "On RX freq" filter. */
   rxOffsetHz: number
   /** Current band (e.g. "20m") — a band change WIPES the pane (stale old-band
@@ -114,11 +110,10 @@ interface Props {
    * heard on, and never worked from. */
   late?: LateDecodes | null
   /** Session count of IR-HARQ rescues (decodes recovered by combining). */
-  harqRescues: number | null
+  harqRescues: number
   /** Work / answer a decoded station. `freq` = the decode's audio offset (Hz) so the
    * rig moves RX/TX onto it (WSJT-X double-click). */
   onCall: (call: string, grid?: string, message?: string, snr?: number, freq?: number) => void
-  onCallExternal?: (decodeId: string) => void
   /** WSJT-X single-click SELECT: populate the Tx panel's DX Call/Grid from this
    * decode — no RF action, no TX. Grid is parsed from a trailing 4-char grid. */
   onSelectDecode?: (call: string, grid?: string, message?: string, snr?: number) => void
@@ -279,7 +274,6 @@ const FOLD_CHIPS_BELOW_EM = 22
  */
 export function OperateDecodes({
   decodes,
-  external,
   slot,
   rxOffsetHz,
   band,
@@ -289,7 +283,6 @@ export function OperateDecodes({
   late = null,
   harqRescues,
   onCall,
-  onCallExternal,
   onSelectDecode,
   onSetRx,
   selectedCall,
@@ -318,7 +311,6 @@ export function OperateDecodes({
   hideExcludedCountries = true,
   myGrid = '',
 }: Props) {
-  const { api: { getDecodeRefill } } = useOperateServices()
   // Cockpit-owned history when provided (survives layout remounts); private otherwise.
   const localHistRef = useRef<DecodeHistory | null>(null)
   if (history == null && localHistRef.current == null) {
@@ -464,14 +456,11 @@ export function OperateDecodes({
   // them (a 4 Hz poll of an unchanged period) reuses the list instead of filtering and sorting
   // up to MAX_HISTORY rows again.
   const hist = histRef.current
-  const [erased, setErased] = useState<{ context: string; ids: Set<string> } | null>(null)
-  const entries = external
-    ? external.entries.filter(row => erased?.context !== external.contextKey || !erased.ids.has(row.id))
-    : hist.entries()
   const kept = useMemo(
     () =>
       orderEntries(
-        entries
+        hist
+          .entries()
           .filter((d) => passesFilter(d, filter, rxOffsetHz))
           // "Hide B4" ANDs with the chip (never with the B4 chip itself). Own rows and the
           // station mid-QSO stay — hiding your own echo or your current partner as "worked"
@@ -563,7 +552,7 @@ export function OperateDecodes({
     // `histVersion` stands for `hist.entries()`: equal versions mean equal entries.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [
-      hist, histVersion, external, erased, filter, rxOffsetHz, hideB4, hideB4Scope, hideBlocked, ignores,
+      hist, histVersion, filter, rxOffsetHz, hideB4, hideB4Scope, hideBlocked, ignores,
       partnerCall, hideConfirmed, hideCalls.entries, hideCalls.scoped, band, hiddenEntities, selectedCall, sort,
     ],
   )
@@ -588,7 +577,7 @@ export function OperateDecodes({
   // and the roving-keyboard index must address the rows that exist.
   const shown = useMemo(() => renderWindow(list), [list])
   // A new array only when the history changes one, which bumps its version (a re-render follows).
-  const gaps = external ? [] : hist.gaps()
+  const gaps = hist.gaps()
   // The order rows are DRAWN in. Everything that addresses a row by position (the roving index,
   // the period separators) reads `drawn`; counts read `shown`, which is the same set.
   const drawn = useMemo(() => (newestTop ? [...shown].reverse() : shown), [shown, newestTop])
@@ -630,16 +619,14 @@ export function OperateDecodes({
   // Band/tier change wipes the pane BEFORE this poll's decodes are ingested
   // (effect order = declaration order).
   useEffect(() => {
-    if (external) return
     if (histRef.current.setScope(band, tier)) {
       repin()
       setTick((t) => t + 1)
     }
-  }, [band, tier, repin, external?.contextKey])
+  }, [band, tier, repin])
 
   // Ingest this poll's decode list into the rolling history.
   useEffect(() => {
-    if (external || slot == null) return
     // The period caught decoding at the change is older than anything live, so it goes first.
     if (late) histRef.current.ingestLate(late)
     // The slot clock dates an own over by its own transmit time, never by `slot`, which is the last
@@ -665,7 +652,7 @@ export function OperateDecodes({
     // it": a history the cockpit shares may already have been moved by another pane.
     if (histRef.current.version !== histVersion) setTick((t) => t + 1)
     // eslint-disable-next-line react-hooks/exhaustive-deps -- the poll's own inputs; histVersion is read, not a trigger
-  }, [decodes, slot, late, band, tier, external])
+  }, [decodes, slot, late, band, tier])
 
   // Inbound UDP Clear: when clearTick changes (skip mount), wipe without
   // calling onErase (no echo loop back to the logger).
@@ -711,18 +698,17 @@ export function OperateDecodes({
   // Wipe this pane (WSJT-X "Erase") and re-pin to the bottom.
   // Also calls onErase so the cockpit can mirror the gesture to loggers.
   const erase = () => {
-    if (external) setErased({ context: external.contextKey, ids: new Set(external.entries.map(row => row.id)) })
-    else histRef.current.erase()
+    histRef.current.erase()
     repin()
     setTick((t) => t + 1)
-    if (!external) onErase?.()
+    onErase?.()
   }
 
   const selectedUp = selectedCall?.trim().toUpperCase() || null
 
   // WSJT-X double-click dispatch: Alt = toggle session ignore; Ctrl = populate
   // DX fields + move RX onto the signal (no QSO start, no TX arm); plain = work.
-  const handleDouble = (e: React.MouseEvent, d: DisplayDecodeEntry) => {
+  const handleDouble = (e: React.MouseEvent, d: DecodeEntry) => {
     // A row heard before a band or mode change is display only: answering it here would start a
     // QSO on the band or mode it was not heard on.
     if (!d.from || d.heard) return
@@ -735,8 +721,7 @@ export function OperateDecodes({
       onSetRx?.(d.freqHz)
       return
     }
-    if ('external' in d && onCallExternal) onCallExternal(d.id)
-    else onCall(d.from, undefined, d.message, d.snr, d.freqHz)
+    onCall(d.from, undefined, d.message, d.snr, d.freqHz)
   }
 
   // Keyboard: arrow through rows, Enter selects, Shift+Enter works the station,
@@ -745,10 +730,7 @@ export function OperateDecodes({
     const d = drawn[i]
     if (!d?.from || d.heard) return
     if (mods.alt) onToggleIgnore?.(d.from)
-    else if (mods.shift) {
-      if ('external' in d && onCallExternal) onCallExternal(d.id)
-      else onCall(d.from, undefined, d.message, d.snr, d.freqHz)
-    }
+    else if (mods.shift) onCall(d.from, undefined, d.message, d.snr, d.freqHz)
     else onSelectDecode?.(d.from, gridFromMessage(d.message), d.message, d.snr)
   })
 
@@ -969,7 +951,7 @@ export function OperateDecodes({
             testId="od-hidden"
           />
         )}
-        {harqRescues != null && harqRescues > 0 && (
+        {harqRescues > 0 && (
           <span
             className="harq-chip"
             title={t('operate.decodes.harq.title', { count: harqRescues })}
@@ -996,7 +978,7 @@ export function OperateDecodes({
           // hundreds of rows the FILTER was hiding — which read as "decoder dead" and
           // blinded the one pane that could have answered whether decodes were
           // arriving. Say which it is.
-          (entries.length === 0 ? (
+          (histRef.current.entries().length === 0 ? (
             <StateBlock
               kind="empty"
               title={t('operate.decodes.empty.title')}
@@ -1016,7 +998,7 @@ export function OperateDecodes({
                 filter: FILTER_LABEL[filter] ?? filter,
               })}
               detail={t('operate.decodes.emptyFiltered.detail', {
-                count: entries.length,
+                count: histRef.current.entries().length,
               })}
             />
           ))}
@@ -1107,7 +1089,6 @@ export function OperateDecodes({
                 actions={rowActions}
                 watchColor={watchOf({ call: d.from, entity: d.country, grid: d.grid })?.color}
                 menuOpen={menu?.id === d.id}
-                xlogColumns
               />
             </Fragment>
           )
@@ -1120,16 +1101,16 @@ export function OperateDecodes({
 /** The parent's row handlers, through one stable object (see `rowActions`), so a memoised row
  *  never re-renders just because a handler closure was rebuilt. */
 interface RowActions {
-  click: (index: number, d: DisplayDecodeEntry) => void
-  double: (e: React.MouseEvent, d: DisplayDecodeEntry) => void
-  menu: (e: React.MouseEvent | React.KeyboardEvent, d: DisplayDecodeEntry) => void
+  click: (index: number, d: DecodeEntry) => void
+  double: (e: React.MouseEvent, d: DecodeEntry) => void
+  menu: (e: React.MouseEvent | React.KeyboardEvent, d: DecodeEntry) => void
   closeMenu: () => void
   focus: (index: number) => void
   setEl: (index: number, el: HTMLElement | null) => void
 }
 
 interface DecodeRowViewProps {
-  d: DisplayDecodeEntry
+  d: DecodeEntry
   /** The row's position in drawing order (the roving index). */
   index: number
   tabIndex: number
@@ -1153,8 +1134,6 @@ interface DecodeRowViewProps {
   watchColor?: WatchColor
   /** #346 — this row's menu is open: the row draws its anchor. */
   menuOpen?: boolean
-  /** The list is xLog's companion feed: every row carries xLog's CS and DS columns. */
-  xlogColumns?: boolean
 }
 
 /**
@@ -1179,9 +1158,7 @@ const DecodeRowView = memo(function DecodeRowView({
   actions,
   watchColor,
   menuOpen,
-  xlogColumns = false,
 }: DecodeRowViewProps) {
-  const { api: { openQrzPage } } = useOperateServices()
   const hlStyle = hlEntry
     ? {
         backgroundColor: hlEntry.bg ?? undefined,
@@ -1191,29 +1168,21 @@ const DecodeRowView = memo(function DecodeRowView({
   // #299 — re-points --need-watch on this row only; it repaints nothing unless the row carries a
   // watch mark. Alongside the UDP highlight, which still wins the row's own colours.
   const watchStyle = watchColorStyle(watchColor)
-  // An xLog-classified row takes the colour xLog's band map gives the station (a needed entity
-  // first, then a needed call), so the stations worth working stand out as they do in xLog.
-  const xlogStatus = 'external' in d
-    ? xlogOpportunityStatus(d.external.callStatus, d.external.dxccStatus) : null
-  const xlogNeed = isXlogNeed(xlogStatus) ? xlogStatus : null
-  const xlogStyle = xlogNeed
-    ? ({ '--xlog-need-color': xlogStatusColor(xlogNeed) } as CSSProperties) : undefined
-  const rowStyle = hlStyle || watchStyle || xlogStyle
-    ? { ...xlogStyle, ...watchStyle, ...hlStyle } : undefined
+  const rowStyle = hlStyle || watchStyle ? { ...watchStyle, ...hlStyle } : undefined
   // Tooltip suffix for highlighted rows so the operator knows why the color appeared.
   // An appended CLAUSE carrying its own separator, interpolated whole.
   const hlTip = hlEntry ? t('operate.decodes.row.highlighted') : ''
   // Need context for this row (why is this station worth working) — icons + colour. The
   // surface's mode is the tier, the mode every row here is decoded in: a "new mode" need
   // is for one mode, so an FT4 need never marks a row on the FT8 feed.
-  const needs = 'external' in d ? { cats: [], rowNeed: null } : resolveDecodeNeeds(d, band, alerts, tier, needScopes)
+  const needs = resolveDecodeNeeds(d, band, alerts, tier, needScopes)
   // Beam heading for this row: the decode's own grid when it sent one, else
   // the centre of its entity (marked `~`), else nothing at all.
   const az = azimuthTo(myGrid, d.grid, d.country, centroids)
   const azText = azimuthLabel(az)
   return (
       <div
-        className={`decode-row ${rowClass(d, needs.rowNeed, xlogNeed)}${xlogColumns ? ' xlog-cols' : ''}${selected ? ' selected' : ''}${ignored ? ' ignored' : ''}${d.refilled ? ' refilled' : ''}`}
+        className={`decode-row ${rowClass(d, needs.rowNeed)}${selected ? ' selected' : ''}${ignored ? ' ignored' : ''}${d.refilled ? ' refilled' : ''}`}
         role="option"
         data-pin-key={d.id}
         aria-selected={selected}
@@ -1291,13 +1260,9 @@ const DecodeRowView = memo(function DecodeRowView({
           {fmtDt(d.dtSec)}
         </span>
         <span className="decode-freq">{Math.round(d.freqHz)}</span>
-        {xlogColumns && ('external' in d && d.external ? <>
-          <XlogStatusCell kind="CS" facts={d.external} />
-          <XlogStatusCell kind="DS" facts={d.external} />
-        </> : <>
-          <StatusCell kind="CS" status={d.callStatus} />
-          <StatusCell kind="DS" status={d.dxccStatus} />
-        </>)}
+        {/* CS and DS in the operator's own log (OM0RX-xNexus), xLog's codes and colours. */}
+        <StatusCell kind="CS" status={d.callStatus} />
+        <StatusCell kind="DS" status={d.dxccStatus} />
         <span className="decode-msg" title={d.country ? `${d.message} · ${d.country}` : d.message}>
           {menuOpen && d.from && (
             <CallRowMenu call={d.from} band={d.heard?.band ?? band} country={d.country} onClose={actions.closeMenu} />
@@ -1359,7 +1324,7 @@ const DecodeRowView = memo(function DecodeRowView({
               )}
             </span>
           )}
-          {!('external' in d) && d.worked && (
+          {d.worked && (
             <span
               className={`b4-chip${d.workedBand ? ' b4-band' : ''}`}
               title={d.workedBand ? t('operate.b4.sameBand') : t('operate.b4.otherBand')}
@@ -1373,7 +1338,7 @@ const DecodeRowView = memo(function DecodeRowView({
           {d.directedToMe && (
             <span className="decode-tag me">{t('operate.decodes.tag.you')}</span>
           )}
-          {d.rv != null && d.rv > 0 && (
+          {d.rv > 0 && (
             <span className="harq-chip" title={t('operate.decodes.harqRv.title', { rv: d.rv })}>
               {DECODE_TOKENS.harq}·{DECODE_TOKENS.rv}
               {d.rv}
@@ -1409,7 +1374,7 @@ const DecodeRowView = memo(function DecodeRowView({
           <button
             type="button"
             className="qrz-link-call decode-qrz"
-            {...callCardTrigger(d.from, qrzPageOf(d.from, openQrzPage), true)}
+            {...callCardTrigger(d.from, qrzPageOf(d.from), true)}
             onDoubleClick={(e) => e.stopPropagation()}
           >
             {DECODE_TOKENS.qrz}
@@ -1469,7 +1434,7 @@ const FILTER_TITLE: Record<DecodeFilter, string> = {
 /** A row's line as the pane draws it, flattened for the search box: the mode, UTC, SNR, DT and
  *  Hz columns, the message (callsigns, grid, report, any CQ modifier) and the country. The chips
  *  drawn after the message (B4, need tags, LoTW) are left out: each has a filter of its own. */
-function decodeLineText(d: DisplayDecodeEntry, tier: Tier, periodS?: number): string {
+function decodeLineText(d: DecodeEntry, tier: Tier, periodS?: number): string {
   return `${d.tier} ${fmtUtc(rowTimeMs(d, tier, periodS))} ${fmtSnr(d.snr)} ${fmtDt(d.dtSec)} ${Math.round(d.freqHz)} ${d.message} ${d.country ?? ''}`
 }
 
@@ -1487,11 +1452,9 @@ function dtClass(dt: number): string {
  * new. `rowNeed` is the resolved need colour class (or null); `dxped/pota/sota` are
  * icon-only and never reach here. Falls back to the decode's own flags when no
  * NeedAlerts are supplied (Tempo rail / detached panel). */
-function rowClass(d: DisplayDecodeEntry, rowNeed: string | null, xlogNeed: string | null = null): string {
+function rowClass(d: DecodeRow, rowNeed: string | null): string {
   if (d.mine) return 'mine own-tx' // our own transmitted message — WSJT-X yellow
   if (d.directedToMe) return 'directed'
-  // xLog's answer for a companion row, which carries no Nexus need of its own (rowNeed is null).
-  if (xlogNeed) return 'xlog-need'
   if (isAwardNeed(rowNeed)) return rowNeed as string // need-entity/zone/band/mode/grid
   if (d.isCq) return 'cq'
   if (rowNeed === 'need-confirm') return 'need-confirm' // worked, needs a QSL

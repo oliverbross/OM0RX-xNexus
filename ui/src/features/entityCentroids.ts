@@ -17,7 +17,6 @@
 // only symptom being azimuths quietly missing from half the rows.
 import { useEffect, useState } from 'react'
 import { getDxccEntityLocations } from '../api'
-import { useOperateServices } from '../components/operateServices'
 import type { LatLon } from '../grid'
 
 let pending: Promise<ReadonlyMap<string, LatLon>> | null = null
@@ -51,24 +50,18 @@ export function loadEntityCentroids(): Promise<ReadonlyMap<string, LatLon>> {
  * grid-derived bearings, so a pane rendered before the table lands (or in a host
  * that has no backend at all) shows fewer azimuths rather than wrong ones.
  */
-export function useEntityCentroids(enabled = true): ReadonlyMap<string, LatLon> | null {
-  const { api, adapter } = useOperateServices()
-  const [held, setHeld] = useState<{ source: typeof api; centroids: ReadonlyMap<string, LatLon> } | null>(null)
+export function useEntityCentroids(): ReadonlyMap<string, LatLon> | null {
+  const [centroids, setCentroids] = useState<ReadonlyMap<string, LatLon> | null>(null)
   useEffect(() => {
     let live = true
-    setHeld(null)
-    if (!enabled) return
-    // An injected station never consumes the independent engine's window cache.
-    const load = adapter ? async () => new Map((await api.getDxccEntityLocations()).map(
-      ([name, lat, lon]): [string, LatLon] => [name, { lat, lon }])) : loadEntityCentroids
-    load()
+    loadEntityCentroids()
       .then((m) => {
-        if (live) setHeld({ source: api, centroids: m })
+        if (live) setCentroids(m)
       })
       .catch(() => {}) // no table ⇒ grid-derived azimuths only
     return () => {
       live = false
     }
-  }, [adapter, api, enabled])
-  return enabled && held?.source === api ? held.centroids : null
+  }, [])
+  return centroids
 }

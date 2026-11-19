@@ -41,8 +41,7 @@ import './CallCard.css'
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
 import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent } from 'react'
 import { createPortal } from 'react-dom'
-import { openQrzPage as nativeOpenQrzPage } from '../api'
-import { useOperateServices } from './operateServices'
+import { getCallStats, openQrzPage, qrzLookup } from '../api'
 import type { AppSnapshot, CallStats, NeedAlert, NeedTag, QrzLookup, SpotRow } from '../types'
 import type { CallHistory } from '../features/callHistory'
 import { modeKey } from '../features/callHistory'
@@ -249,8 +248,8 @@ export function callCardTrigger(call: string, fallback?: () => void, stop = fals
 }
 
 /** The callbook page, as every surface opened it before the card. */
-export const qrzPageOf = (call: string, openPage = nativeOpenQrzPage) => () =>
-  void withErrorToast(() => openPage(call), t('callbook.qrzPage.failed', { call }))
+export const qrzPageOf = (call: string) => () =>
+  void withErrorToast(() => openQrzPage(call), t('callbook.qrzPage.failed', { call }))
 
 // ---- the answers it shows --------------------------------------------------------------------
 
@@ -364,7 +363,6 @@ export function CallbookPhoto({ call, book }: { call: string; book: QrzLookup | 
 
 /** The card's face, from answers alone: what the tests render from a fixture. */
 export function CallCardView({ data, onClose }: { data: CallCardData; onClose: () => void }) {
-  const { api: { openQrzPage }, can, adapter } = useOperateServices()
   const units = useUnits()
   const { call, book, hist, stats } = data
   const last = hist && hist.count > 0 ? [...hist.qsos].sort((a, b) => b.whenUnix - a.whenUnix)[0] : null
@@ -401,16 +399,16 @@ export function CallCardView({ data, onClose }: { data: CallCardData; onClose: (
           {tokens.length > 0 && <div className="callcard-tokens mono">{tokens.join(' · ')}</div>}
           <div className="callcard-actions">
             {!book && data.onLookup && (
-              <button type="button" className="callcard-lookup" onClick={data.onLookup} disabled={data.looking || !can('qrzLookup')} title={t('logEntry.lookup.title')}>
+              <button type="button" className="callcard-lookup" onClick={data.onLookup} disabled={data.looking} title={t('logEntry.lookup.title')}>
                 {data.looking ? t('callCard.looking') : t('logEntry.lookup.label')}
               </button>
             )}
-            <button type="button" className="callcard-qrz" disabled={!can('openQrzPage')} onClick={qrzPageOf(call, openQrzPage)} title={t('callbook.qrzPage.title', { call })}>
+            <button type="button" className="callcard-qrz" onClick={qrzPageOf(call)} title={t('callbook.qrzPage.title', { call })}>
               {QRZ_PAGE}
             </button>
             {/* Best times for this call: the Best times card takes this card's place beside the call
                 it was opened from (one floating card at a time). It tunes and works nothing. */}
-            <button type="button" className="callcard-besttimes" disabled={!!adapter} onClick={() => { if (!adapter) bestTimesInstead(call) }} title={t('callCard.bestTimes.title', { call })}>
+            <button type="button" className="callcard-besttimes" onClick={() => bestTimesInstead(call)} title={t('callCard.bestTimes.title', { call })}>
               {t('callMenu.bestTimes')}
             </button>
           </div>
@@ -525,7 +523,6 @@ export function CallCardView({ data, onClose }: { data: CallCardData; onClose: (
 
 /** The live answers for one open card. */
 function useCardData(call: string, snap: AppSnapshot, spots: readonly SpotRow[], needAlertsByCall: ReadonlyMap<string, NeedAlert[]>): CallCardData {
-  const { api: { getCallStats, qrzLookup }, adapter } = useOperateServices()
   const band = snap.radio.band
   const mode = liveMode(snap)
   // The card shows `call` as it was heard, and asks about the call the log knows (`lookupCall`): a
@@ -533,9 +530,7 @@ function useCardData(call: string, snap: AppSnapshot, spots: readonly SpotRow[],
   const key = lookupCall(call)
   // Nothing asked of the callbook on open: only the operator's Look up asks it. Any lookup of the call
   // in this window, the card's own or another surface's, lands here (`qrzLookup` keeps the answer).
-  const upstreamBook = useSyncExternalStore(subscribeCallbookAnswers, () => adapter ? null : callbookAnswer(key))
-  const [localBook, setLocalBook] = useState<{ key: string; source: typeof qrzLookup; value: QrzLookup } | null>(null)
-  const book = adapter ? (localBook?.key === key && localBook.source === qrzLookup ? localBook.value : null) : upstreamBook
+  const book = useSyncExternalStore(subscribeCallbookAnswers, () => callbookAnswer(key))
   const [looking, setLooking] = useState(false)
   const live = useRef(true)
   useEffect(() => {
@@ -546,25 +541,22 @@ function useCardData(call: string, snap: AppSnapshot, spots: readonly SpotRow[],
   }, [])
   const onLookup = () => {
     setLooking(true)
-    void withErrorToast(() => qrzLookup(key), t('callbook.lookupFailed')).then(value => {
-      if (live.current) {
-        if (value && adapter) setLocalBook({ key, source: qrzLookup, value })
-        setLooking(false)
-      }
+    void withErrorToast(() => qrzLookup(key), t('callbook.lookupFailed')).then(() => {
+      if (live.current) setLooking(false)
     })
   }
-  const [stats, setStats] = useState<{ key: string; source: typeof getCallStats; s: CallStats | null } | null>(null)
+  const [stats, setStats] = useState<{ key: string; s: CallStats | null } | null>(null)
   const statsKey = `${key} ${band} ${mode} ${snap.logTick ?? 0}`
   useEffect(() => {
     let live = true
     getCallStats(key, band, mode).then(
-      (s) => live && setStats({ key: statsKey, source: getCallStats, s }),
-      () => live && setStats({ key: statsKey, source: getCallStats, s: null }),
+      (s) => live && setStats({ key: statsKey, s }),
+      () => live && setStats({ key: statsKey, s: null }),
     )
     return () => {
       live = false
     }
-  }, [key, band, mode, statsKey, getCallStats])
+  }, [key, band, mode, statsKey])
   const q = { kind: 'callHistory', call: key, band, mode, matchMode: snap.b4MatchMode ?? false } as const
   const hist = useLogAnswer(q, snap.logTick) ?? emptyAnswer(q)
   const aim = useCallBearings([key]).get(key)
@@ -576,7 +568,7 @@ function useCardData(call: string, snap: AppSnapshot, spots: readonly SpotRow[],
     looking,
     onLookup,
     hist,
-    stats: stats?.key === statsKey && stats.source === getCallStats ? stats.s : null,
+    stats: stats?.key === statsKey ? stats.s : null,
     needs,
     spot,
     aim,

@@ -36,7 +36,7 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { ReactNode } from 'react'
-import { useOperateServices } from './operateServices'
+import { getAudioScopeFrame, getRfFrame, getScopeFrame } from '../api'
 import type { SpectrumFrameWire, SpotRow } from '../types'
 import {
   applyGainZero,
@@ -395,7 +395,6 @@ export function PhoneScope({
   privilegeMode = null,
   ft = null,
 }: Props) {
-  const { api: { getAudioScopeFrame, getRfFrame, getScopeFrame } } = useOperateServices()
   // The licence-class spans for the band edges: the gate's own table, for the live section.
   const privSpans = usePrivilegeSpans(privilegeMode, active)
   // The RF pane starts out saying the radio's scope is not there yet: it is only once a sweep lands.
@@ -1573,9 +1572,9 @@ export function PhoneScope({
       // Hands a WebGL2 context back at once (browsers cap live contexts) and takes the canvas out.
       renderer.destroy()
     }
-    // Display props read via refs; a replacement station service retires this loop.
+    // run once; live props read via refs
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [getAudioScopeFrame, getRfFrame, getScopeFrame])
+  }, [])
 
   // The overlays' data: a new spot list, a privilege answer or a slot's decodes draws the overlays
   // again now, between two sweeps or while paused — and only them, never the picture.

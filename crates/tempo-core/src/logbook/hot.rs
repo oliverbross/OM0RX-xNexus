@@ -879,15 +879,27 @@ impl HotIndex {
         // CS/DS by mode class, on the station's band key as the entity badges use.
         let class = mode_class(p.mode);
         let bc = band_class(&band, class);
-        d.apply(&mut self.needs.call_class, (call.clone(), class.to_string()));
+        d.apply(
+            &mut self.needs.call_class,
+            (call.clone(), class.to_string()),
+        );
         d.apply(&mut self.needs.call_band_class, (call.clone(), bc.clone()));
         d.apply(&mut self.needs.call_band, (call.clone(), band.clone()));
         if p.award_confirmed {
-            d.apply(&mut self.needs.call_band_class_conf, (call.clone(), bc.clone()));
+            d.apply(
+                &mut self.needs.call_band_class_conf,
+                (call.clone(), bc.clone()),
+            );
         }
         if let Some(e) = entity {
-            d.apply(&mut self.needs.entity_class, (e.to_string(), class.to_string()));
-            d.apply(&mut self.needs.entity_band_class, (e.to_string(), bc.clone()));
+            d.apply(
+                &mut self.needs.entity_class,
+                (e.to_string(), class.to_string()),
+            );
+            d.apply(
+                &mut self.needs.entity_band_class,
+                (e.to_string(), bc.clone()),
+            );
             if p.award_confirmed {
                 d.apply(&mut self.needs.entity_conf, e.to_string());
                 d.apply(&mut self.needs.entity_band_class_conf, (e.to_string(), bc));
@@ -1066,7 +1078,11 @@ impl HotIndex {
         let class = mode_class(mode);
         let call = call_upper.to_string();
         let bc = band_class(band_key, class);
-        if self.needs.call_band_class_conf.contains(&(call.clone(), bc.clone())) {
+        if self
+            .needs
+            .call_band_class_conf
+            .contains(&(call.clone(), bc.clone()))
+        {
             return "Confirmed";
         }
         let band_worked = self
@@ -1091,7 +1107,11 @@ impl HotIndex {
         let class = mode_class(mode);
         let e = entity.to_string();
         let bc = band_class(band_key, class);
-        if self.needs.entity_band_class_conf.contains(&(e.clone(), bc.clone())) {
+        if self
+            .needs
+            .entity_band_class_conf
+            .contains(&(e.clone(), bc.clone()))
+        {
             return "Confirmed";
         }
         let band_worked = self.worked.contains(&(e.clone(), band_key.to_string()));
@@ -2120,17 +2140,33 @@ mod tests {
         // CS: the call, by band and class.
         assert_eq!(ix.call_status("N0CALL", "20m", "FT8"), "New Call");
         assert_eq!(ix.call_status("W1AW", "20m", "FT8"), "Confirmed");
-        assert_eq!(ix.call_status("W1AW", "20m", "FT4"), "Confirmed", "FT4 is the same class");
+        assert_eq!(
+            ix.call_status("W1AW", "20m", "FT4"),
+            "Confirmed",
+            "FT4 is the same class"
+        );
         assert_eq!(ix.call_status("W1AW", "20m", "CW"), "New Mode");
-        assert_eq!(ix.call_status("W1AW", "15m", "CW"), "New Band", "CW is worked on 40 m");
+        assert_eq!(
+            ix.call_status("W1AW", "15m", "CW"),
+            "New Band",
+            "CW is worked on 40 m"
+        );
         assert_eq!(ix.call_status("W1AW", "15m", "USB"), "New Band+Mode");
         assert_eq!(ix.call_status("W1AW", "40m", "CW"), "Worked");
-        assert_eq!(ix.call_status("K1ABC", "20m", "LSB"), "Worked", "LSB is phone");
+        assert_eq!(
+            ix.call_status("K1ABC", "20m", "LSB"),
+            "Worked",
+            "LSB is phone"
+        );
 
         // DS: the entity (Keys: two letters of the base call).
         assert_eq!(ix.dxcc_status("E-ZZ", "20m", "FT8"), "ATNO");
         assert_eq!(ix.dxcc_status("E-W1", "20m", "FT8"), "Confirmed");
-        assert_eq!(ix.dxcc_status("E-W1", "40m", "CW"), "Confirmed", "worked here, confirmed elsewhere");
+        assert_eq!(
+            ix.dxcc_status("E-W1", "40m", "CW"),
+            "Confirmed",
+            "worked here, confirmed elsewhere"
+        );
         assert_eq!(ix.dxcc_status("E-W1", "40m", "FT8"), "C/New Mode");
         assert_eq!(ix.dxcc_status("E-W1", "15m", "CW"), "C/New Band");
         assert_eq!(ix.dxcc_status("E-W1", "15m", "SSB"), "C/New Band+Mode");
@@ -2148,7 +2184,10 @@ mod tests {
         let without = HotIndex::build(&unconfirmed, &Keys);
         assert_eq!(without.call_status("W1AW", "20m", "FT8"), "Worked");
         assert_eq!(without.dxcc_status("E-W1", "15m", "CW"), "W/New Band");
-        assert!(!ix.answers_as(&without), "the CS/DS sets are part of what an index answers");
+        assert!(
+            !ix.answers_as(&without),
+            "the CS/DS sets are part of what an index answers"
+        );
     }
 
     /// The POSITIVE CONTROLS for `answers_as`: it tells apart two indexes whose counts differ,

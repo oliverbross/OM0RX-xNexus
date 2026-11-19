@@ -1,4 +1,3 @@
-import type { OperatingSnapshot } from './operatingView'
 // ⚠️ THIS FILE IS ON THE **MIGRATED** LIST (i18n/hardcoded-strings.test.ts): the prose is in
 // the catalog under `cockpit.tuning.*`. Nothing here transmits — every control moves the RX
 // dial or a clarifier — so nothing is deferred.
@@ -7,7 +6,7 @@ import type { OperatingSnapshot } from './operatingView'
 // VFO letters are invariant and stay in the code, as do the four button names below.
 import { useRef, useState } from 'react'
 import type { AppSnapshot } from '../types'
-import { useOperateServices } from './operateServices'
+import { setFrequency, setRit, setXit, setVfo, swapVfo } from '../api'
 import { bandLabelForMhz, sidebandForQsy } from '../band'
 import { FrequencyReadout } from './FrequencyReadout'
 import { useWheelTune } from '../useWheelTune'
@@ -48,7 +47,7 @@ export function TuningStrip({
   sensitivity,
   showReadout = true,
 }: {
-  snap: OperatingSnapshot
+  snap: AppSnapshot
   onSnap?: (s: AppSnapshot) => void
   /** Controlled tuning step (Hz), shared with scope wheel-tuning; falls back to internal state. */
   step?: number
@@ -59,10 +58,8 @@ export function TuningStrip({
    * CockpitHeader) already owns the readout and this strip only supplies nudges/step/VFO/RIT/XIT. */
   showReadout?: boolean
 }) {
-  const { api: { setFrequency, setRit, setXit, setVfo, swapVfo }, can } = useOperateServices()
   const dial = snap.radio.dialMhz
-  const catOk = snap.radio.catOk === true && dial != null && snap.radio.sideband != null
-    && (snap.backend !== 'xlog' || snap.radio.transmitting === false)
+  const catOk = snap.radio.catOk === true
   const [stepInternal, setStepInternal] = useState(100)
   const step = stepProp ?? stepInternal
   const setStep = onStep ?? setStepInternal
@@ -76,13 +73,13 @@ export function TuningStrip({
     // A dial has to BE one. The band lookup used to double as this check (it answers '' for a
     // NaN or an absurd value), so it stays here on its own now that band membership no longer
     // refuses anything.
-    if (!catOk || dial == null || snap.radio.sideband == null || !can('setFrequency') || !Number.isFinite(mhz) || mhz <= 0) return
+    if (!Number.isFinite(mhz) || mhz <= 0) return
     // An EMPTY band label is not a refusal: listening off the ham bands is first-class (operator,
     // 2026-08-13) — WWV, a shortwave broadcaster, the gap between two allocations. This used to
     // toast "outside the band plan" and return, which is what made every ◄/► nudge and every
     // typed entry stop dead at a band edge.
     // In-band keeps the current sideband; crossing 10 MHz follows the band convention (#45).
-    const s = await setFrequency(mhz, bandLabelForMhz(mhz), sidebandForQsy(mhz, dial, snap.radio.sideband)).catch((e) => {
+    const s = await setFrequency(mhz, bandLabelForMhz(mhz), sidebandForQsy(mhz, snap.radio.dialMhz, snap.radio.sideband)).catch((e) => {
       showWhenDriving(e)
       return null
     })
@@ -91,7 +88,6 @@ export function TuningStrip({
   // #273: `steps` whole steps, the first rounding to the step (18.110.250 → 18.111.000 at 1 kHz),
   // in integer Hz so float drift never accumulates on repeated nudges.
   const nudge = (steps: number) => {
-    if (dial == null) return
     void tuneTo(stepFrom(Math.round(dial * 1e6), steps, step) / 1e6)
   }
 
@@ -101,8 +97,8 @@ export function TuningStrip({
   const readoutRef = useRef<HTMLSpanElement>(null)
   useWheelTune(readoutRef, {
     dialMhz: dial,
-    sideband: snap.radio.sideband,
-    enabled: can('setFrequency') && catOk && !snap.radio.txBusyReason && !snap.radio.transmitting,
+    sideband: snap.radio.sideband || 'USB',
+    enabled: catOk && !snap.radio.txBusyReason && !snap.radio.transmitting,
     stepHz: step,
     sensitivity,
     onSnap,
@@ -113,7 +109,7 @@ export function TuningStrip({
       <button
         type="button"
         className="tuning-nudge"
-        disabled={!catOk || !can('setFrequency')}
+        disabled={!catOk}
         onClick={() => nudge(-10)}
         title={t('cockpit.tuning.down.title', { hz: step * 10 })}
         aria-label={t('cockpit.tuning.down.aria', { hz: step * 10 })}
@@ -123,7 +119,7 @@ export function TuningStrip({
       <button
         type="button"
         className="tuning-nudge"
-        disabled={!catOk || !can('setFrequency')}
+        disabled={!catOk}
         onClick={() => nudge(-1)}
         title={t('cockpit.tuning.down.title', { hz: step })}
         aria-label={t('cockpit.tuning.down.aria', { hz: step })}
@@ -140,7 +136,7 @@ export function TuningStrip({
             dialMhz={dial}
             size="hero"
             editable
-            disabled={!catOk || !can('setFrequency')}
+            disabled={!catOk}
             onCommit={(mhz) => void tuneTo(mhz)}
             // The ENGINE's privilege answer, not the UI's band table. Off-band RX is legal
             // listening, not a transmit block, and `!bandLabelForMhz(dial)` painted every
@@ -152,7 +148,7 @@ export function TuningStrip({
       <button
         type="button"
         className="tuning-nudge"
-        disabled={!catOk || !can('setFrequency')}
+        disabled={!catOk}
         onClick={() => nudge(1)}
         title={t('cockpit.tuning.up.title', { hz: step })}
         aria-label={t('cockpit.tuning.up.aria', { hz: step })}
@@ -162,7 +158,7 @@ export function TuningStrip({
       <button
         type="button"
         className="tuning-nudge"
-        disabled={!catOk || !can('setFrequency')}
+        disabled={!catOk}
         onClick={() => nudge(10)}
         title={t('cockpit.tuning.up.title', { hz: step * 10 })}
         aria-label={t('cockpit.tuning.up.aria', { hz: step * 10 })}
@@ -186,7 +182,7 @@ export function TuningStrip({
         <button
           type="button"
           className={vfo === VFO_A ? 'active' : ''}
-          disabled={!catOk || !can('setVfo')}
+          disabled={!catOk}
           onClick={() => apply(setVfo(VFO_A))}
           title={t('cockpit.tuning.vfo.title', { vfo: VFO_A })}
         >
@@ -195,7 +191,7 @@ export function TuningStrip({
         <button
           type="button"
           className={vfo === VFO_B ? 'active' : ''}
-          disabled={!catOk || !can('setVfo')}
+          disabled={!catOk}
           onClick={() => apply(setVfo(VFO_B))}
           title={t('cockpit.tuning.vfo.title', { vfo: VFO_B })}
         >
@@ -210,7 +206,7 @@ export function TuningStrip({
             link would be a button that lies. */}
         <button
           type="button"
-          disabled={!catOk || !can('swapVfo')}
+          disabled={!catOk}
           onClick={() => apply(swapVfo())}
           title={t('cockpit.tuning.vfo.swap.title')}
           aria-label={t('cockpit.tuning.vfo.swap.aria')}
@@ -219,14 +215,14 @@ export function TuningStrip({
         </button>
       </span>
       <span className={`tuning-clar${rit !== 0 ? ' on' : ''}`}>
-        <button type="button" disabled={!catOk || !can('setRit')} onClick={() => apply(setRit(0))} title={t('cockpit.tuning.rit.title')}>
+        <button type="button" disabled={!catOk} onClick={() => apply(setRit(0))} title={t('cockpit.tuning.rit.title')}>
           {RIT}
         </button>
-        <button type="button" disabled={!catOk || !can('setRit')} onClick={() => apply(setRit(rit - 10))} aria-label={t('cockpit.tuning.rit.down.aria')}>
+        <button type="button" disabled={!catOk} onClick={() => apply(setRit(rit - 10))} aria-label={t('cockpit.tuning.rit.down.aria')}>
           −
         </button>
         <span className="tuning-clar-val mono">{fmtOffset(rit)}</span>
-        <button type="button" disabled={!catOk || !can('setRit')} onClick={() => apply(setRit(rit + 10))} aria-label={t('cockpit.tuning.rit.up.aria')}>
+        <button type="button" disabled={!catOk} onClick={() => apply(setRit(rit + 10))} aria-label={t('cockpit.tuning.rit.up.aria')}>
           +
         </button>
       </span>
@@ -234,14 +230,14 @@ export function TuningStrip({
           snapshot. Absent on an older station means offered, as it always was. */}
       {!snap.radio.xitUnsupported && (
         <span className={`tuning-clar${xit !== 0 ? ' on' : ''}`}>
-          <button type="button" disabled={!catOk || !can('setXit')} onClick={() => apply(setXit(0))} title={t('cockpit.tuning.xit.title')}>
+          <button type="button" disabled={!catOk} onClick={() => apply(setXit(0))} title={t('cockpit.tuning.xit.title')}>
             {XIT}
           </button>
-          <button type="button" disabled={!catOk || !can('setXit')} onClick={() => apply(setXit(xit - 10))} aria-label={t('cockpit.tuning.xit.down.aria')}>
+          <button type="button" disabled={!catOk} onClick={() => apply(setXit(xit - 10))} aria-label={t('cockpit.tuning.xit.down.aria')}>
             −
           </button>
           <span className="tuning-clar-val mono">{fmtOffset(xit)}</span>
-          <button type="button" disabled={!catOk || !can('setXit')} onClick={() => apply(setXit(xit + 10))} aria-label={t('cockpit.tuning.xit.up.aria')}>
+          <button type="button" disabled={!catOk} onClick={() => apply(setXit(xit + 10))} aria-label={t('cockpit.tuning.xit.up.aria')}>
             +
           </button>
         </span>

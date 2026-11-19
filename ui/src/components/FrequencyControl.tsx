@@ -10,14 +10,13 @@ import { bandChipInk, bandColor } from '../bandColors'
 import { t } from '../i18n'
 import { FrequencyReadout } from './FrequencyReadout'
 import { BandMenu } from './BandMenu'
-import { useOperateServices } from './operateServices'
 
 interface Props {
   channels: BandChannel[]
-  dialMhz: number | null
-  band: string | null
+  dialMhz: number
+  band: string
   /** current phone mode (USB / FM) as a free string from the snapshot/settings */
-  mode: string | null
+  mode: string
   /** compact = TopBar inline; full = Settings field block */
   variant?: 'compact' | 'full'
   /** Render the big MHz readout (default). Set false when a parent (the shared CockpitHeader)
@@ -71,9 +70,8 @@ export function FrequencyControl({
   showModeToggle = true,
   onSet,
 }: Props) {
-  const { canAction } = useOperateServices()
   const active = useMemo(
-    () => dialMhz == null || mode == null ? null : findActive(channels, dialMhz, mode),
+    () => findActive(channels, dialMhz, mode),
     [channels, dialMhz, mode],
   )
 
@@ -92,7 +90,7 @@ export function FrequencyControl({
   }
 
   const setMode = (next: RadioMode) => {
-    if (next === mode || dialMhz == null || band == null) return
+    if (next === mode) return
     onSet(dialMhz, band, next)
   }
 
@@ -101,7 +99,7 @@ export function FrequencyControl({
   // The band is a primary operating fact — color the control with the active
   // band's color (shared with the map spot dots + the CW/Phone BandPicker) so
   // FT8/FT4 and Tempo read the band the same way CW/Phone do.
-  const bandKey = band || (dialMhz == null ? null : bandLabelForMhz(dialMhz)) || ''
+  const bandKey = band || bandLabelForMhz(dialMhz) || ''
   const col = bandColor(bandKey)
 
   return (
@@ -112,7 +110,6 @@ export function FrequencyControl({
         // condition (BandMenu.tsx). The Settings `full` variant keeps its select below.
         <div className="freq-channel-wrap">
           <BandMenu
-            disabled={!canAction('radio')}
             triggerClassName="freq-channel"
             value={active ? chanKey(active) : null}
             onPick={selectChannel}
@@ -141,7 +138,6 @@ export function FrequencyControl({
         {variant === 'full' && <span className="settings-label">{t('freq.channel.label')}</span>}
         <select
           className="freq-channel"
-          disabled={!canAction('radio')}
           value={selectValue}
           onChange={(e) => selectChannel(e.target.value)}
           title={active ? active.note : t('freq.channel.title')}
@@ -181,14 +177,13 @@ export function FrequencyControl({
             dialMhz={dialMhz}
             size="hero"
             editable
-            disabled={!canAction('radio')}
-            onCommit={(v) => { if (mode != null) onSet(v, bandLabelForMhz(v), mode) }}
+            onCommit={(v) => onSet(v, bandLabelForMhz(v), mode)}
           />
         </div>
       )}
 
       <div className="freq-band-tag" title={active ? active.note : t('freq.band.title')}>
-        <span className={`band-chip${active ? ' active' : ''}`}>{band || (dialMhz == null ? null : bandLabelForMhz(dialMhz)) || '—'}</span>
+        <span className={`band-chip${active ? ' active' : ''}`}>{band || bandLabelForMhz(dialMhz) || '—'}</span>
       </div>
 
       {showModeToggle && (
@@ -200,7 +195,6 @@ export function FrequencyControl({
               className={`freq-mode-btn${mode === md ? ' active' : ''}`}
               aria-pressed={mode === md}
               onClick={() => setMode(md)}
-              disabled={!canAction('radio')}
             >
               {md}
             </button>

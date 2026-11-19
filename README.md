@@ -1,28 +1,19 @@
 # OM0RX-xNexus
 
-Standalone derivative of [KD9TAW's Nexus](https://github.com/kd9taw/Nexus), being
-integrated with OM0RX-xLog as the authority for logbook, needs, radio, rotator and
-cluster. Upstream history and attribution are preserved; this is not an upstream
-Nexus release.
+Derivative of [KD9TAW's Nexus](https://github.com/kd9taw/Nexus) for OM0RX's
+station. It is full upstream Nexus with its own name, data folders and version
+(`1.25.0-xlog.N`), so it installs beside upstream Nexus without sharing settings,
+plus CS and DS columns (call and DXCC status in your own Nexus log, in xLog's
+codes and colours) in the Call Roster and Band Activity, and the native-Windows
+build and installer tooling under `scripts/xnexus/`.
 
-**Integrated source in development; qualification is in progress.** See the
-[project plan](docs/xlog/PROJECT_PLAN.md), [execution ledger](docs/xlog/STATUS.md),
-and [bridge contract](docs/xlog/PROTOCOL.md). The default launch is an isolated
-xLog companion: native pairing, owner snapshots, explicit tuning and rotator
-commands. It does not start Nexus's own station, logbook or cluster services.
-An xLog version containing the companion bridge is required. No qualified
-installer or on-air transmission support is claimed.
+It works beside OM0RX-xLog as an ordinary WSJT-X-style client: Nexus reports each
+logged contact over its WSJT-X UDP API, and xLog's sync agent feeds new xLog
+contacts to Nexus's contact port. See [docs/xlog/README.md](docs/xlog/README.md).
+Upstream history and attribution are preserved; this is not an upstream Nexus
+release.
 
-The [companion operator guide](docs/xlog/OPERATOR_GUIDE.md) covers pairing, needed
-stations, maps, history, explicit controls and recoverable QSO submissions.
-
-The dependency-light native client lives in `integrations/xlog`; its synthetic
-tests do not require Nexus DSP, a radio, or a production xLog profile.
-Repeatable [paired acceptance](integrations/xlog-paired/README.md) also checks the
-actual xLog HTTP transport and an explicitly launched disposable SQLite owner.
-
-The remainder of this README is the retained upstream documentation and describes
-upstream Nexus, not completed OM0RX-xLog integration.
+The remainder of this README is the retained upstream documentation.
 
 ---
 

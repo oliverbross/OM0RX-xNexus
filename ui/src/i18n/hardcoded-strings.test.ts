@@ -178,12 +178,6 @@ const MIGRATED = [
   // The Logbook contact card (it took over #313's detail view) — born migrated: every string in it
   // is a catalog key.
   'components/ContactCard.tsx',
-  'components/OwnerContactCardBody.tsx',
-  'features/ownerEditorMessages.ts',
-  'xlog/manualCreateMessages.ts',
-  'components/LogbookForm.tsx',
-  'components/OwnerManualCreate.tsx',
-  'xlog/ownerBearingMessages.ts',
   'components/QsoHistory.tsx',
   'components/RecentlyDeleted.tsx',
   // The import preview and its no-loss report's words — born migrated.
@@ -651,6 +645,9 @@ const MIGRATED = [
   'components/DfField.tsx',
   'components/OperateDecodes.tsx',
   'components/OperateRoster.tsx',
+  // OM0RX-xNexus: the CS/DS status cell. Its status names and codes are data (xLog's
+  // vocabulary, shown as the station's classification); only the tooltip label is prose.
+  'components/LogStatusCell.tsx',
   'components/TxPanel.tsx',
   // Batch 20 (2026-08-19) — the CW cockpit. ONE file of the transmit half that graduates
   // straight to MIGRATED rather than to PARTIAL, and that is the batch's finding: CW's

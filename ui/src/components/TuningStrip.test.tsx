@@ -21,8 +21,6 @@ import { TuningStrip } from './TuningStrip'
 import { setFrequency, setVfo, swapVfo, setXit } from '../api'
 import { pushToast } from '../toast'
 import type { AppSnapshot } from '../types'
-import type { OperatingSnapshot } from './operatingView'
-import { OperateServices, type OperateServiceAdapter } from './operateServices'
 
 vi.mock('../api', () => ({
   setFrequency: vi.fn(() => Promise.resolve(null)),
@@ -70,42 +68,6 @@ beforeEach(() => {
   mockSetVfo.mockClear()
 })
 afterEach(cleanup)
-
-describe('owner tuning admission and native compatibility', () => {
-  const mountOwner = (transmitting: boolean | null) => {
-    const tune = vi.fn(async () => {})
-    const adapter: OperateServiceAdapter = {
-      actions: new Set(['radio']), handlers: { setFrequency: tune }, onDeniedAction: vi.fn(),
-    }
-    const snap = { ...snapWith({ transmitting }), backend: 'xlog' } as OperatingSnapshot
-    render(<OperateServices adapter={adapter}><TuningStrip snap={snap} /></OperateServices>)
-    return tune
-  }
-
-  it.each([true, null])('does not dispatch a dial change with owner transmitting=%s', (transmitting) => {
-    const tune = mountOwner(transmitting)
-    const up = screen.getByRole('button', { name: 'Tune up 100 Hz' }) as HTMLButtonElement
-    expect(up.disabled).toBe(true)
-    fireEvent.click(up)
-    expect(tune).not.toHaveBeenCalled()
-    expect(mockSetFreq).not.toHaveBeenCalled()
-  })
-
-  it('dispatches through the owner adapter when idle is positively observed', () => {
-    const tune = mountOwner(false)
-    fireEvent.click(screen.getByRole('button', { name: 'Tune up 100 Hz' }))
-    expect(tune).toHaveBeenCalledWith(14.2001, '20m', 'USB')
-    expect(mockSetFreq).not.toHaveBeenCalled()
-  })
-
-  it('preserves the original native nudge behavior independently of the owner-only gate', () => {
-    mount(snapWith({ transmitting: true }))
-    const up = screen.getByRole('button', { name: 'Tune up 100 Hz' }) as HTMLButtonElement
-    expect(up.disabled).toBe(false)
-    fireEvent.click(up)
-    expect(mockSetFreq).toHaveBeenCalledWith(14.2001, '20m', 'USB')
-  })
-})
 
 describe('typed entry', () => {
   it('an OFF-BAND frequency tunes there — 5.000 MHz is a receiver frequency, not an error', () => {

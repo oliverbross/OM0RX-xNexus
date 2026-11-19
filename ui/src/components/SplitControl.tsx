@@ -1,4 +1,3 @@
-import type { OperatingSnapshot } from './operatingView'
 // The manual split control — SPLIT toggle, ±1 kHz steps, and the live offset readout.
 //
 // ⭐ ONE COPY, USED BY THREE COCKPITS. It shipped in Phone only, so a CW operator working a
@@ -23,7 +22,7 @@ import type { OperatingSnapshot } from './operatingView'
 // sheet owns them.
 import { useEffect, useRef, useState } from 'react'
 import type { AppSnapshot } from '../types'
-import { OPERATE_UNAVAILABLE, useOperateServices } from './operateServices'
+import { setSplit } from '../api'
 import { t } from '../i18n'
 
 /** kHz per ± press. One is the pile-up convention; the operator holds for more. */
@@ -32,7 +31,7 @@ const SPLIT_STEP_KHZ = 1
 const SPLIT_LIMIT_KHZ = 90
 
 interface Props {
-  snap: OperatingSnapshot
+  snap: AppSnapshot
   /** Apply the snapshot the IPC returns, so the readout does not wait for the next poll. */
   onSnap?: (snap: AppSnapshot) => void
   /** Surface a failure to the operator — silence here reads as "the button is broken". */
@@ -53,9 +52,7 @@ interface Props {
 }
 
 export function SplitControl({ snap, onSnap, onError, unavailable }: Props) {
-  const { api: { setSplit }, can } = useOperateServices()
-  unavailable = unavailable ?? (can('setSplit') ? undefined : { title: OPERATE_UNAVAILABLE })
-  const allowed = unavailable == null && snap.radio.dialMhz != null
+  const allowed = unavailable == null
   // Dead with no printed mark: the reason rides on each disabled button instead.
   const quietReason = unavailable && !unavailable.mark ? unavailable.title : undefined
   const failed = (local: string) => () => onError?.(local)
@@ -72,7 +69,7 @@ export function SplitControl({ snap, onSnap, onError, unavailable }: Props) {
   // offset so the readout and the next bump start from the truth, not a stale default.
   const wasSplitOn = useRef(false)
   useEffect(() => {
-    if (splitOn && !wasSplitOn.current && splitTxMhz != null && snap.radio.dialMhz != null) {
+    if (splitOn && !wasSplitOn.current && splitTxMhz != null) {
       setSplitOffsetKhz(Math.round((splitTxMhz - snap.radio.dialMhz) * 1000))
     }
     wasSplitOn.current = splitOn
@@ -81,20 +78,18 @@ export function SplitControl({ snap, onSnap, onError, unavailable }: Props) {
   // A press the licence refuses (outside the operator's privileges, past a band edge) is refused
   // by the backend with its reason, which is shown as it is; and the readout goes back to the
   // offset the radio really has, so it never shows a split that was not set.
-  const applySplitTx = (offsetKhz: number) => {
-    if (!allowed || snap.radio.dialMhz == null) return
-    return setSplit(snap.radio.dialMhz + offsetKhz / 1000)
+  const applySplitTx = (offsetKhz: number) =>
+    setSplit(snap.radio.dialMhz + offsetKhz / 1000)
       .then((s) => onSnap?.(s))
       .catch((e: unknown) => {
         onError?.(typeof e === 'string' && e ? e : t('phone.split.setFailed'))
         // The LATEST snapshot, not the one this press was made from: after an accepted press
         // and a refused one in quick succession, the radio is on the accepted one.
         const radio = latestRadio.current
-        if (radio.splitTxMhz != null && radio.dialMhz != null) {
+        if (radio.splitTxMhz != null) {
           setSplitOffsetKhz(Math.round((radio.splitTxMhz - radio.dialMhz) * 1000))
         }
       })
-  }
 
   const toggleSplit = () =>
     splitOn

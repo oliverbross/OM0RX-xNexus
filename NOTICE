@@ -2030,20 +2030,11 @@ corresponding source is the upstream e04/deepcw-engine repository above.
 
 ## OM0RX-xNexus derivative (14 November 2026)
 
-The OM0RX-xNexus fork preserves the Nexus and WSJT-X attribution above.
-New original integration code in integrations/xlog is Copyright (C) 2026 OM0RX,
-GPL-3.0-only. It implements a draft, independent-process xLog protocol; it does
-not incorporate xLog implementation code. Fork documentation and workflow
-changes are identified in Git history.
-
-The client uses registry dependencies including base64, reqwest, serde and
-serde_json. Its standalone resolution is in integrations/xlog/Cargo.lock;
-packaged desktop resolution is in src-tauri/Cargo.lock. No third-party source
-was copied into that module. Exact desktop dependency notices are generated
+The OM0RX-xNexus fork preserves the Nexus and WSJT-X attribution above. Fork
+changes (identity, the CS/DS status columns, build and installer tooling) are
+Copyright (C) 2026 OM0RX, GPL-3.0-only, and are identified in Git history. The
+fork adds no third-party source. Exact desktop dependency notices are generated
 with scripts/gen-rust-licenses.py and bundled in resources/rust/THIRD-PARTY.txt.
-Private development candidates do not establish completed corresponding-source
-delivery or redistribution review; unresolved material provenance is recorded
-in docs/xlog/SOURCE_DELIVERY_GAPS.md.
 
 
 ## Fork Windows installer template

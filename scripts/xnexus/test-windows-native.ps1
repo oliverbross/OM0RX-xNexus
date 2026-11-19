@@ -27,8 +27,7 @@ if (!$mt) { throw 'Windows SDK x64 mt.exe is required for the native test harnes
 $evidence = Join-Path $repo "target\xnexus-native-tests\$source"
 New-Item -ItemType Directory -Force -Path $evidence | Out-Null
 $manifest = Join-Path $PSScriptRoot 'native-test.manifest'
-$filters = @('xlog_mode::tests', 'xlog_decode::tests',
-    'fork_self_update_is_disabled_for_every_package',
+$filters = @('fork_self_update_is_disabled_for_every_package',
     'profile_dir_name_default_matches_the_shared_root', 'sstv_scope_test::')
 $receipt = [ordered]@{
     source = $source; timestampUtc = [DateTime]::UtcNow.ToString('o')

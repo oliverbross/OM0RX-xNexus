@@ -38,14 +38,10 @@ const old = vi.hoisted(() => ({
   setSatTag: vi.fn(),
   deleteQso: vi.fn(),
 }))
-// qrzPageOf captures this dependency while a row is rendered. These by-ID
-// flows must never actually open a page; expose it without permitting dispatch.
-const unexpectedQrzPage = vi.hoisted(() => vi.fn(() => { throw new Error('Unexpected QRZ page dispatch in by-ID flow') }))
 vi.mock('../api', () => {
   const noop = () => vi.fn()
   return {
     ...old,
-    openQrzPage: unexpectedQrzPage,
     editQsoById: vi.fn(),
     markQslSentById: vi.fn(),
     markQslCardById: vi.fn(),
@@ -89,7 +85,6 @@ const keyOf = (id: string) => `ek:${id}@${engine.changedAt.get(id) ?? 1}`
 const pagesAsked: number[] = []
 
 beforeEach(() => {
-  unexpectedQrzPage.mockClear()
   engine.log = [contact(0), contact(1), contact(2)]
   engine.rev = 1
   engine.changedAt.clear()
@@ -106,7 +101,6 @@ beforeEach(() => {
 })
 afterEach(() => {
   cleanup()
-  expect(unexpectedQrzPage).not.toHaveBeenCalled()
   vi.clearAllMocks()
   localStorage.clear()
 })

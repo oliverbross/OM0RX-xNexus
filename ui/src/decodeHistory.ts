@@ -28,27 +28,6 @@ export interface DecodeEntry extends DecodeRow {
   refilled?: true
 }
 
-/** External rows carry their producer's immutable identity and period time.
- * They never enter the native history/refill ring or acquire its inferred IDs. */
-export interface ExternalDecodeEntry extends Omit<DecodeEntry, 'worked' | 'rv' | 'directedToMe'> {
-  worked: boolean | null
-  rv: null
-  directedToMe: boolean | null
-  external: {
-    periodStartMs: number
-    status: 'needed' | 'worked' | 'unknown'
-    score: number | null
-    reasons: readonly string[]
-    reason: string | null
-    /** Authoritative xLog call/DXCC classifications; mode is its award family. */
-    callStatus?: string | null
-    dxccStatus?: string | null
-    classificationMode?: string | null
-    band?: string | null
-  }
-}
-export type DisplayDecodeEntry = DecodeEntry | ExternalDecodeEntry
-
 /** A run of periods (ingest slots, inclusive) this pane missed that the station no longer held,
  *  so they could not be filled in (#452). */
 export interface HistoryGap {
@@ -194,8 +173,7 @@ export function ownTxSlot(txAtSec: number, clock: SlotClock): number {
  * the period separator. A row heard before a band or mode change keeps the period it was heard in;
  * an own transmission shows when it was sent.
  */
-export function rowTimeMs(d: DisplayDecodeEntry, tier: Tier, periodSecs?: number): number {
-  if ('external' in d) return d.external.periodStartMs
+export function rowTimeMs(d: DecodeEntry, tier: Tier, periodSecs?: number): number {
   if (d.heard) return d.heard.periodStartMs
   if (d.mine) return d.at
   return periodStartMs(d.slot - 1, tier, periodSecs)
@@ -214,7 +192,7 @@ export function fmtUtc(atMs: number): string {
  * offset — a caller off-frequency must never be missed), and anything within
  * ±RX_TOL_HZ of the RX marker.
  */
-export function passesFilter(d: DecodeRow | ExternalDecodeEntry, filter: DecodeFilter, rxOffsetHz: number): boolean {
+export function passesFilter(d: DecodeRow, filter: DecodeFilter, rxOffsetHz: number): boolean {
   switch (filter) {
     case 'cq':
       return d.isCq
@@ -225,11 +203,11 @@ export function passesFilter(d: DecodeRow | ExternalDecodeEntry, filter: DecodeF
       // engine's parse-typed classification (Msg::is_signoff), not a text match.
       return d.isCq || Boolean(d.signoff)
     case 'me':
-      return d.directedToMe === true
+      return d.directedToMe
     case 'rx':
-      return Boolean(d.mine) || d.directedToMe === true || Math.abs(d.freqHz - rxOffsetHz) <= RX_TOL_HZ
+      return Boolean(d.mine) || d.directedToMe || Math.abs(d.freqHz - rxOffsetHz) <= RX_TOL_HZ
     case 'b4':
-      return d.worked === true
+      return d.worked
     case 'new':
       // STRICTLY new ones (entity/grid) — a plain unworked CQ is not a "new one",
       // and including it diluted the chaser's most-used filter into noise.
@@ -247,7 +225,7 @@ export function passesFilter(d: DecodeRow | ExternalDecodeEntry, filter: DecodeF
  * two `at` clocks cannot order them: a decode's is when it reached the pane (a later pass lands
  * seconds into s), an over's is its whole transmit second (often s+0). Compared directly, the 73
  * sent in reply to a station's RR73 drew ABOVE that RR73. */
-export function orderEntries<T extends DisplayDecodeEntry>(list: T[], sort: DecodeSort): T[] {
+export function orderEntries(list: DecodeEntry[], sort: DecodeSort): DecodeEntry[] {
   const out = [...list]
   out.sort((a, b) => {
     switch (sort) {

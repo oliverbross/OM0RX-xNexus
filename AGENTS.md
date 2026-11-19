@@ -1,21 +1,22 @@
 # OM0RX-xNexus fork workflow
 
-This is OM0RX's independent derivative of kd9taw/Nexus. The user's instruction
-authorizes developing and pushing completed changes to this fork. Never push to
-upstream. Use project author OM0RX <oliverbross@users.noreply.github.com>, not the
-upstream maintainer's identity. Upstream-specific publishing/identity instructions
-below apply to the upstream project, not to impersonating its maintainer here.
-Use absolute git -C paths, explicit staging, one logical change per commit, and
-push each completed commit immediately. No force push or upstream publication.
-The fork uses .xnexus-hooks/pre-push for its target/source gates; preserve the
-upstream .githooks source unchanged for future merges.
+This is OM0RX's independent derivative of kd9taw/Nexus: upstream Nexus with its
+own identity (name, bundle identifier, data folders, keychain service, version
+suffix `-xlog.N`), the CS/DS columns in the Call Roster and Band Activity, and
+the native-Windows build tooling under `scripts/xnexus/`. It runs as full Nexus
+beside OM0RX-xLog (see docs/xlog/README.md); the earlier xLog companion mode was
+removed in 1.25.0-xlog.17.
 
-Read docs/xlog/PROJECT_PLAN.md and STATUS.md before integration work. Preserve
-licenses and history. Never open xLog's database, compete for its hardware,
-copy its private credentials, or bypass its station owners. No production UI
-launch during bootstrap. Build qualification is distinct from source tests.
-Keep imported deployment workflows disabled until audited. Tests proportional
-to fork changes are required; report unrun upstream gates explicitly.
+Never push to upstream. Use project author OM0RX
+<oliverbross@users.noreply.github.com>, not the upstream maintainer's identity.
+Upstream-specific publishing/identity instructions below apply to the upstream
+project, not to impersonating its maintainer here. Use absolute git -C paths,
+explicit staging and one logical change per commit. Pushes need the owner's
+approval for each push; no force push and no upstream publication.
+The fork uses .xnexus-hooks/pre-push for its target/source gates; preserve the
+upstream .githooks source unchanged for future merges. Keep imported deployment
+workflows disabled (guarded to kd9taw/Nexus). Tests proportional to fork changes
+are required; report unrun upstream gates explicitly.
 
 ---
 

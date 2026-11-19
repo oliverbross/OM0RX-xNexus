@@ -31,25 +31,13 @@ beforeAll(() => {
 // Each test's Logbook unmounted when the test ends. Left mounted, it stays subscribed to the log
 // answers still on their way, and one landing after this file's window is gone re-renders it
 // there: "window is not defined", counted as an uncaught error against the run.
-afterEach(() => {
-  expect(qrzPageGuard.state.calls).toBe(0)
-  expect(qrzPageGuard.open).not.toHaveBeenCalled()
-  qrzPageGuard.state.calls = 0
-  qrzPageGuard.open.mockClear()
-  cleanup()
-})
+afterEach(cleanup)
 
 /** The log the engine holds: `askLog` answers from it as the engine does (features/logAnswers.testkit). */
 const engineLog = vi.hoisted(() => vi.fn())
-// Explicit unused native leaf: reading the callback is allowed; invoking it is not.
-const qrzPageGuard = vi.hoisted(() => {
-  const state = { calls: 0 }
-  return { state, open: vi.fn(() => { state.calls++; throw new Error('Unexpected openQrzPage invocation') }) }
-})
 vi.mock('../api', () => {
   const noop = () => vi.fn()
   return {
-    openQrzPage: qrzPageGuard.open,
     askLog: vi.fn(async (q: LogQuestion) => (await import('../features/logAnswers.testkit')).answerAs(q, await engineLog())),
     deleteQsoById: noop(), editQsoById: noop(), exportGeneralLog: noop(), importAdif: noop(),
     logOperators: vi.fn(() => Promise.resolve([] as string[])), exportLogForOperator: noop(),

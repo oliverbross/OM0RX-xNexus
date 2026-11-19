@@ -9,7 +9,7 @@
 // `waterfall.ts` and are not this batch's file. The one thing drawn on the canvas that IS prose
 // is the paused chip, and it comes from the catalog.
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type Ref } from 'react'
-import { useOperateServices } from './operateServices'
+import { getSpectrumRow } from '../api'
 import { sampleLut, type ColormapName } from '../colormaps'
 import { drawScaleStrip, scaleStripHeight, scaleTicks, SCALE_MIN_GAP_PX } from '../freqScale'
 import {
@@ -156,13 +156,11 @@ function readOverlayInks(el: Element): OverlayInks {
 }
 
 interface Props {
-  /** Retire all retained pixels/history when the external source lease changes. */
-  resetKey?: string | number
-  transmitting: boolean | null
+  transmitting: boolean
   /** Receive audio offset (Hz) — the green marker (where we listen). */
   rxOffsetHz: number
   /** Transmit audio offset (Hz) — the red marker (where we transmit). */
-  txOffsetHz: number | null
+  txOffsetHz: number
   theme: string
   /** Tune from a waterfall click: set the TX offset, the RX offset, or both. */
   onTune?: (freqHz: number, target: 'tx' | 'rx' | 'both') => void
@@ -385,7 +383,6 @@ function xToFreq(x: number, width: number, lo = F_MIN, hi = F_MAX): number {
 }
 
 export function Waterfall({
-  resetKey,
   transmitting,
   rxOffsetHz,
   txOffsetHz,
@@ -420,7 +417,6 @@ export function Waterfall({
   passbandHz,
   passbandMode,
 }: Props) {
-  const { api: { getSpectrumRow } } = useOperateServices()
   const canvasRef = useRef<HTMLCanvasElement>(null)
   // Separate transparent overlay for the axis + Rx/Tx markers, so they are NEVER baked into
   // the scrolling spectrum canvas (a moved marker used to freeze into the image and scroll up
@@ -647,13 +643,12 @@ export function Waterfall({
     return `linear-gradient(to top, ${stops.join(', ')})`
   }, [palette, theme, night, skin, contrastCurve])
 
-  useLayoutEffect(() => {
+  useEffect(() => {
     const canvas = canvasRef.current
     const host = renderHostRef.current
     if (!canvas || !host) return
     // `canvas` is the gesture box and is measured, never painted; the renderer puts its own canvas
     // in `host` (see `renderHostRef`) and draws the picture there.
-    offsetRef.current = 0
     const renderer = createSpectrumRenderer(host)
     rendererRef.current = renderer
     // Marker/axis overlay context (transparent, cleared when it redraws). Optional — if it can't be
@@ -662,7 +657,6 @@ export function Waterfall({
     const octx = overlay?.getContext('2d') ?? null
     const release = () => {
       renderer.destroy()
-      if (overlay && octx) octx.clearRect(0, 0, overlay.width, overlay.height)
       if (rendererRef.current === renderer) rendererRef.current = null
     }
     // Nothing to draw on at all (no canvas context of either kind, as under jsdom): no loop, as the
@@ -833,7 +827,7 @@ export function Waterfall({
       // bottom line and desync the AGC/legend from the displayed pixels).
       let spec
       try {
-        spec = await getSpectrumRow(txRef.current === true)
+        spec = await getSpectrumRow(txRef.current)
       } catch {
         return
       }
@@ -841,7 +835,6 @@ export function Waterfall({
       // waterfall has moved on. Resolving late must not append a row out of order — a stale
       // row would put a wrong scanline into the history every picture is drawn from.
       if (!latch.owns(myGen)) return
-      if (!spec) return
       const row = spec.row
       if (!row || row.length === 0) return
       // The FT8/FT4 waterfall shows the AUDIO passband (0–5000 Hz) and is NOT source-aware, so a
@@ -1160,7 +1153,7 @@ export function Waterfall({
         }
 
         const txOff = txOffRef.current
-        if (txOff != null && txOff + bw >= vlo && txOff <= vhi) {
+        if (txOff + bw >= vlo && txOff <= vhi) {
           octx.globalAlpha = txRef.current ? 0.95 : 0.7
           const txx = drawMarker(txOff, ink.tx, 0, 2)
           octx.globalAlpha = 1
@@ -1281,9 +1274,9 @@ export function Waterfall({
       rowTimeAtRef.current = null
       release()
     }
-    // Live display props read via refs; replace the loop when its station service changes.
+    // intentionally run once; live props read via refs
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [getSpectrumRow, resetKey])
+  }, [])
 
   // Shown again: restart the loop that stopped while hidden (after the canvas effect, so on the
   // mount it finds the loop already running and does nothing).

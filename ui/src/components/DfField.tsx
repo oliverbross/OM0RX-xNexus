@@ -28,12 +28,12 @@ export function DfField({
   title,
 }: {
   label: string
-  hz: number | null
+  hz: number
   onCommit: (hz: number) => void
   disabled?: boolean
   title?: string
 }) {
-  const [text, setText] = useState(() => hz == null ? '' : String(Math.round(hz)))
+  const [text, setText] = useState(() => String(Math.round(hz)))
   const [editing, setEditing] = useState(false)
   const editingRef = useRef(editing)
   editingRef.current = editing
@@ -41,18 +41,17 @@ export function DfField({
   // `editing` too made the blur's clamped value flash back to the stale prop
   // for the IPC round-trip (commit sets text + editing in the same render).
   useEffect(() => {
-    if (!editingRef.current) setText(hz == null ? '' : String(Math.round(hz)))
+    if (!editingRef.current) setText(String(Math.round(hz)))
   }, [hz])
   const commit = () => {
     setEditing(false)
-    if (disabled || hz == null) return
     const n = Number(text)
     if (text.trim() !== '' && Number.isFinite(n)) {
       const clamped = clampOffsetHz(n)
       setText(String(clamped))
       if (clamped !== Math.round(hz)) onCommit(clamped)
     } else {
-      setText(hz == null ? '' : String(Math.round(hz))) // revert garbage
+      setText(String(Math.round(hz))) // revert garbage
     }
   }
   return (
@@ -65,8 +64,7 @@ export function DfField({
         max={4000}
         step={1}
         value={text}
-        placeholder={hz == null ? '—' : undefined}
-        disabled={disabled || hz == null}
+        disabled={disabled}
         aria-label={t('operate.header.df.aria', { label })}
         onFocus={() => setEditing(true)}
         onChange={(e) => setText(e.target.value)}

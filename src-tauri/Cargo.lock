@@ -4067,7 +4067,6 @@ checksum = "16a1cfa75cc186dd73d5818e510e042e40927bccc9c236b061cea97e1eb08029"
 dependencies = [
  "base64 0.23.1",
  "bytes",
- "futures-channel",
  "futures-core",
  "futures-util",
  "http",
@@ -5397,12 +5396,11 @@ dependencies = [
 
 [[package]]
 name = "tempo"
-version = "1.25.0-xlog.16"
+version = "1.25.0-xlog.17"
 dependencies = [
  "futures-util",
  "gdk",
  "keyring",
- "objc2-foundation",
  "propagation",
  "reqwest 0.12.28",
  "ring",
@@ -5410,7 +5408,6 @@ dependencies = [
  "semver",
  "serde",
  "serde_json",
- "sha2",
  "street-map",
  "tauri",
  "tauri-build",
@@ -5432,9 +5429,6 @@ dependencies = [
  "webview2-com",
  "windows-core 0.61.2",
  "windows-sys 0.59.0",
- "xnexus-tx-prepare",
- "xnexus-xlog-client",
- "xnexus-xlog-rx",
 ]
 
 [[package]]
@@ -7270,32 +7264,6 @@ checksum = "32e45ad4206f6d2479085147f02bc2ef834ac85886624a23575ae137c8aa8156"
 dependencies = [
  "libc",
  "rustix",
-]
-
-[[package]]
-name = "xnexus-tx-prepare"
-version = "0.1.0"
-dependencies = [
- "modes",
- "sha2",
-]
-
-[[package]]
-name = "xnexus-xlog-client"
-version = "0.1.0"
-dependencies = [
- "base64 0.23.1",
- "reqwest 0.13.5",
- "serde",
- "serde_json",
- "sha2",
-]
-
-[[package]]
-name = "xnexus-xlog-rx"
-version = "0.1.0"
-dependencies = [
- "tempo-codec",
 ]
 
 [[package]]

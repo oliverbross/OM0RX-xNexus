@@ -1,5 +1,3 @@
-import { OwnerNeedBadge } from './OwnerNeedBadge'
-import type { OperatingStation } from './operatingView'
 // ⚠️ THIS FILE IS ON THE MIGRATED LIST (i18n/hardcoded-strings.test.ts). Every operator-visible
 // string comes from the catalog; a hardcoded one fails CI. What does NOT come from it: the
 // callsign, grid, country, distance, bearing and SNR the card prints (data), the `B4` shorthand
@@ -8,8 +6,7 @@ import type { OperatingStation } from './operatingView'
 // migrated with that registry, not here.
 
 import { useCallMenu } from './useCallMenu'
-import { useOperateServices } from './operateServices'
-import type { NeedTag, Tier } from '../types'
+import type { NeedTag, Station, Tier } from '../types'
 import { callCardTrigger, qrzPageOf } from './CallCard'
 import { t } from '../i18n'
 import { azimuthLabel, azimuthTitle, azimuthTo, distanceLabel } from '../grid'
@@ -24,9 +21,9 @@ import { PathRoute } from './prop/PathRoute'
 import { pathWhyDetail, pathWhyFacts, pathWhyLine } from '../features/pathWhy'
 
 interface Props {
-  station: OperatingStation
+  station: Station
   myGrid: string
-  currentSlot: number | null
+  currentSlot: number
   selected: boolean
   unread: number
   /** Top award-need tier for this call (null = nothing needed / not resolvable) —
@@ -69,8 +66,7 @@ const QRZ_LABEL = 'QRZ'
 /** Worked-before shorthand — the same two characters on every band and in every language. */
 const B4_LABEL = 'B4'
 
-function lastHeardLabel(lastHeardSlot: number, currentSlot: number | null): string {
-  if (currentSlot == null) return '—'
+function lastHeardLabel(lastHeardSlot: number, currentSlot: number): string {
   const slots = currentSlot - lastHeardSlot
   if (slots <= 0) return t('roster.card.heard.now')
   if (slots < 60) return t('roster.card.heard.slots', { count: slots })
@@ -89,7 +85,6 @@ export function StationCard({
   onSelect,
   onCall,
 }: Props) {
-  const { api: { openQrzPage }, adapter, canAction } = useOperateServices()
   const units = useUnits()
   const centroids = useEntityCentroids()
   // A right-click on the card: the call menu every list shares (Best times first).
@@ -103,7 +98,7 @@ export function StationCard({
   const chip = need ? NEED_CHIP[need] : null
   // The path "why" line, on the SELECTED card only: one outlook request for the station the
   // operator is looking at (the same keyed feed the Path card reads), never one per row.
-  const pathPred = useKeyedFeed(PATH_OUTLOOK, !adapter && selected && station.grid ? station.grid : null).value
+  const pathPred = useKeyedFeed(PATH_OUTLOOK, selected && station.grid ? station.grid : null).value
   const whyFacts = selected ? pathWhyFacts(pathPred) : null
   const why = pathWhyLine(whyFacts)
   // ONE definition of "work this station" for both gestures the card offers — the Work button
@@ -111,7 +106,6 @@ export function StationCard({
   // could have drifted apart; a caller that gets one right and the other wrong is exactly the
   // bug #183 was, one level down.
   const workThisStation = () => {
-    if (!canAction('transmit')) { adapter?.onDeniedAction('transmit'); return }
     onCall(
       station.call,
       station.grid ?? undefined,
@@ -155,8 +149,7 @@ export function StationCard({
                 </span>
               ) : null
             })}
-            {station.external && <OwnerNeedBadge facts={station.external} />}
-            {!station.external && station.worked && (
+            {station.worked && (
               <span
                 className={`b4-chip${station.workedBand ? ' b4-band' : ''}`}
                 title={
@@ -192,7 +185,6 @@ export function StationCard({
       <button
         type="button"
         className="station-work"
-        disabled={!canAction('transmit')}
         onClick={() => workThisStation()}
         title={t('roster.card.work.title', { call: station.call })}
       >
@@ -202,7 +194,7 @@ export function StationCard({
         type="button"
         className="station-qrz"
         // The station's card, where its QRZ button opens the page this one used to.
-        {...callCardTrigger(station.call, qrzPageOf(station.call, openQrzPage), true)}
+        {...callCardTrigger(station.call, qrzPageOf(station.call), true)}
         onDoubleClick={(e) => e.stopPropagation()}
       >
         {QRZ_LABEL}

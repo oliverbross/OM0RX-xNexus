@@ -30,15 +30,9 @@ import type { LoggedQso } from '../types'
 vi.setConfig({ testTimeout: 15_000 })
 
 const engine = vi.hoisted(() => ({ log: [] as unknown[], revision: 1 }))
-// Explicit unused native leaf: reading the callback is allowed; invoking it is not.
-const qrzPageGuard = vi.hoisted(() => {
-  const state = { calls: 0 }
-  return { state, open: vi.fn(() => { state.calls++; throw new Error('Unexpected openQrzPage invocation') }) }
-})
 vi.mock('../api', () => {
   const noop = () => vi.fn()
   return {
-    openQrzPage: qrzPageGuard.open,
     // The engine answers each question from its log (features/logAnswers.testkit).
     askLog: vi.fn(async (q: LogQuestion) => (await import('../features/logAnswers.testkit')).answerAs(q, engine.log as LoggedQso[], engine.revision)),
     deleteQsoById: noop(), editQsoById: noop(), exportGeneralLog: noop(), importAdif: noop(),
@@ -86,10 +80,6 @@ beforeEach(() => {
   engine.revision = 1
 })
 afterEach(() => {
-  expect(qrzPageGuard.state.calls).toBe(0)
-  expect(qrzPageGuard.open).not.toHaveBeenCalled()
-  qrzPageGuard.state.calls = 0
-  qrzPageGuard.open.mockClear()
   cleanup()
   vi.clearAllMocks()
   localStorage.clear()

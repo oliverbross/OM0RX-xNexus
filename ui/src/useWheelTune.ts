@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { RefObject } from 'react'
 import type { AppSnapshot } from './types'
-import { useOperateServices } from './components/operateServices'
+import { setFrequency } from './api'
 import { bandLabelForMhz } from './band'
 import { clampWheelTarget, stepFrom } from './wheelTuningPolicy'
 import { showWhenDriving } from './features/drivingRefusal'
@@ -25,9 +25,9 @@ const MAX_HZ_PER_EVENT = 500_000
 
 interface WheelTuneOpts {
   /** Current rig dial (MHz) from the snapshot — the seed for a fresh wheel burst. */
-  dialMhz: number | null
+  dialMhz: number
   /** Sideband to preserve so an in-band wheel never flips the mode. */
-  sideband: string | null
+  sideband: string
   /** Only tune when CAT is up AND we're not transmitting (never move the VFO under a live over). */
   enabled: boolean
   /** Hz per tuning step (Shift = ×10). Shared with the tuning strip's step selector. */
@@ -80,11 +80,6 @@ export function useWheelTune(
   ref: RefObject<HTMLElement | null>,
   opts: WheelTuneOpts,
 ): (deltaHz: number) => void {
-  const { api, adapter, can } = useOperateServices()
-  const serviceRef = useRef({ api, adapter, can })
-  serviceRef.current = { api, adapter, can }
-  const generation = useRef(0)
-  const targetSource = useRef<typeof serviceRef.current | null>(null)
   // The listener attaches once; a ref keeps it reading the latest props each event.
   const stateRef = useRef<WheelTuneOpts>(opts)
   stateRef.current = opts
@@ -103,22 +98,6 @@ export function useWheelTune(
    *  coalescer last flushed. A step OFF the band plan is allowed only from here — see
    *  `clampToBand`, which is the whole of what keeps the runaway guard alive. */
   const committedHzRef = useRef<number | null>(null)
-  useLayoutEffect(() => {
-    const retire = () => {
-      generation.current++
-      if (timerRef.current != null) window.clearTimeout(timerRef.current)
-      timerRef.current = null
-      targetHzRef.current = null
-      targetSource.current = null
-      committedHzRef.current = null
-      accumRef.current = 0
-      accumStepRef.current = null
-      edgeSaidRef.current = false
-      lastWheelRef.current = 0
-    }
-    retire()
-    return retire
-  }, [api, adapter])
 
   // Hoisted out of the effect so the keyboard applier below shares the ONE flush — a second
   // copy is a second coalescer, which is the whole failure mode this hook exists to avoid.
@@ -126,16 +105,12 @@ export function useWheelTune(
     timerRef.current = null
     const t = targetHzRef.current
     if (t == null) return
-    const dispatch = serviceRef.current
-    const source = targetSource.current
-    if (!source || source.api !== dispatch.api || source.adapter !== dispatch.adapter) return
-    const epoch = generation.current
     const { sideband, onSnap, enabled } = stateRef.current
     // Re-check the gate HERE, not only at event time. The flush lands up to FLUSH_MS after the
     // last notch, so a burst that ends just as the operator keys up would otherwise put a CAT
     // set_frequency out DURING a live over — and with a digit step that can be a band change,
     // which halts the over on the engine side.
-    if (!enabled || stateRef.current.dialMhz == null || sideband == null || !serviceRef.current.can('setFrequency')) {
+    if (!enabled) {
       targetHzRef.current = null
       return
     }
@@ -146,9 +121,9 @@ export function useWheelTune(
     // the engine routes a bandless dial without wiping the decode context. This used to drop the
     // target and report the edge instead, which is why the only way out of a band was the rig's
     // own knob. What still bounds a burst is `clampToBand`, not this.
-    void dispatch.api.setFrequency(mhz, bandLabelForMhz(mhz), sideband || 'USB')
-      .then((s) => { if (generation.current === epoch && s) onSnap?.(s) })
-      .catch(e => { if (generation.current === epoch) showWhenDriving(e) })
+    void setFrequency(mhz, bandLabelForMhz(mhz), sideband || 'USB')
+      .then((s) => s && onSnap?.(s))
+      .catch(showWhenDriving)
   }, [])
 
   /** Seed the optimistic target for a fresh burst (or one resumed after a pause) from the live
@@ -157,14 +132,11 @@ export function useWheelTune(
    *  DOMHighResTimeStamp timeline in a browser but NOT under jsdom's fake timers, and a hook
    *  whose two entry points measure idleness against different clocks re-seeds mid-burst. */
   const seed = useCallback(() => {
-    const dial = stateRef.current.dialMhz
-    if (dial == null) return
     const now = performance.now()
     const idle = now - lastWheelRef.current > IDLE_RESEED_MS
     lastWheelRef.current = now
     if (targetHzRef.current == null || idle) {
-      targetHzRef.current = Math.round(dial * 1e6)
-      targetSource.current = serviceRef.current
+      targetHzRef.current = Math.round(stateRef.current.dialMhz * 1e6)
       committedHzRef.current = targetHzRef.current // the live dial IS where the rig is
       accumRef.current = 0
       accumStepRef.current = null
@@ -219,7 +191,7 @@ export function useWheelTune(
    *  of its own: two optimistic targets on one dial is exactly the bug above. */
   const tuneBy = useCallback(
     (deltaHz: number) => {
-      if (!stateRef.current.enabled || stateRef.current.dialMhz == null || stateRef.current.sideband == null || !deltaHz) return
+      if (!stateRef.current.enabled || !deltaHz) return
       seed()
       const from = targetHzRef.current ?? 0
       const { hz, hitEdge } = clampToBand(from + deltaHz, from)
@@ -254,7 +226,7 @@ export function useWheelTune(
 
     const onWheel = (e: WheelEvent) => {
       const { enabled, stepHz, resolveStepHz } = stateRef.current
-      if (!enabled || stateRef.current.dialMhz == null || stateRef.current.sideband == null) return
+      if (!enabled) return
       // Direction from the dominant axis: Shift+wheel arrives as horizontal scroll on Chromium.
       const raw = Math.abs(e.deltaY) >= Math.abs(e.deltaX) ? e.deltaY : e.deltaX
       if (raw === 0) return

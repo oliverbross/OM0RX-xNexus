@@ -1,4 +1,3 @@
-import type { OperatingSnapshot } from './operatingView'
 // ⚠️ THIS FILE IS **PARTIAL** ON THE i18n LIST (i18n/hardcoded-strings.test.ts) for the CAT
 // pill's two plates alone. The TX-enable latch, Tune, ATU and Stop TX it used to draw for six
 // cockpits — and their deferred labels — moved to the TX strip under the scope
@@ -13,14 +12,13 @@ import { AmpStrip } from './AmpStrip'
 import { WheelRange } from './WheelRange'
 import type { ReactNode, RefObject } from 'react'
 import type { AppSnapshot } from '../types'
-import { observedOnAir } from './operatingView'
+import { isOnAir } from '../types'
 import { bandLabelForMhz, bandRangeForLabel } from '../band'
 import { pushToast } from '../toast'
 import { FrequencyReadout } from './FrequencyReadout'
 import { useWheelTune } from '../useWheelTune'
 import { t } from '../i18n'
 import { catDetailText } from '../features/catDetail'
-import { useOperateServices } from './operateServices'
 
 /** The header's annunciator plates — state, not prose: the CAT link's ✓/✗ pill. */
 const CAT_OK = 'CAT ✓'
@@ -65,7 +63,7 @@ export interface CockpitHeaderPower {
 }
 
 export interface CockpitHeaderProps {
-  snap: OperatingSnapshot
+  snap: AppSnapshot
   onSnap?: (s: AppSnapshot) => void
   /** Mode/tier indicator, fixed left region (FT8/FT4 tier · Phone AUTO/USB/LSB/FM · CW badge). */
   modeIndicator: ReactNode
@@ -191,7 +189,6 @@ export function CockpitHeader({
   catStatus,
   pinned = false,
 }: CockpitHeaderProps) {
-  const { canAction } = useOperateServices()
   const powerValue = power?.value
   const radio = snap.radio
   const catOk = radio.catOk === true
@@ -225,12 +222,12 @@ export function CockpitHeader({
   // Do NOT re-derive this from flags. Ask the arbiter; it ships the reason with the answer.
   const tuneBy = useWheelTune(readoutRef, {
     dialMhz: dial,
-    sideband: radio.sideband,
+    sideband: radio.sideband || 'USB',
     enabled:
       (wheelTune || digitTune) &&
       catOk &&
       !radio.txBusyReason &&
-      radio.transmitting === false &&
+      !radio.transmitting &&
       !radio.rigKeyed && // radio-side keying (mic/straight key, #57) — same live-over rule
       !radio.tuning,
     stepHz: wheelStepHz,
@@ -253,7 +250,6 @@ export function CockpitHeader({
     // `error`: nothing was refused, and an error toast is routed to the assertive live region
     // (i.e. spoken), which would announce a supported destination as a failure.
     onEdge: (mhz) => {
-      if (dial == null) return
       const said = edgeMessage(dial, mhz)
       if (said) pushToast(said, 'info', 3000)
     },
@@ -265,7 +261,7 @@ export function CockpitHeader({
   // key and SSTV all read as "RX" through it — the #57 report (FTdx10, Phone/CW showed no
   // TX). `txBusyReason` ships whenever ANY of the seven owners holds the transmitter; the
   // same rule the wheel-tune gate above already follows.
-  const onAir = observedOnAir(radio)
+  const onAir = isOnAir(radio)
 
   const actionsBox = (
         <div className="ch-actions">
@@ -281,7 +277,7 @@ export function CockpitHeader({
               Elecraft has none). Operator, 2026-09-27: it only ever refuses more. */}
           <AmpStrip
             amp={snap?.radio?.amp ?? null}
-            radioTransmitting={onAir !== false}
+            radioTransmitting={onAir}
           />
 
           {power && (
@@ -295,7 +291,7 @@ export function CockpitHeader({
               }
             >
               <span>{power.label ?? t('cockpit.header.power.label')}</span>
-              <WheelRange wheelStep={power.wheelStep} disabled={powerValue == null || !canAction('transmit')}
+              <WheelRange wheelStep={power.wheelStep} disabled={powerValue == null}
                 type="range"
                 min={0}
                 max={power.unit === '%' ? 100 : 1}
@@ -374,7 +370,7 @@ export function CockpitHeader({
             dialMhz={dial}
             size="hero"
             editable={onCommitDial != null}
-            disabled={!catOk || !canAction('radio')}
+            disabled={!catOk}
             // TX-red means "you must not key here", so it is the LICENCE's answer, not the UI
             // band table's. Derived from `!bandLabelForMhz(dial)` it alarm-coloured the readout
             // for a whole off-band session — and receiving off the ham bands (WWV, shortwave,

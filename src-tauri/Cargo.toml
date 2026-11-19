@@ -9,7 +9,7 @@
 [package]
 publish = false
 name = "tempo"
-version = "1.25.0-xlog.16"
+version = "1.25.0-xlog.17"
 edition = "2021"
 license = "GPL-3.0-only"
 authors = ["KD9TAW <kd9taw@protonmail.com>"]
@@ -65,9 +65,6 @@ crate-type = ["rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-# xLog authority bridge: no direct hardware or shared database.
-xnexus-xlog-client = { path = "../integrations/xlog" }
-xnexus-xlog-rx = { path = "../integrations/xlog-rx" }
 # protocol-asset backs tauri.conf.json's assetProtocol (SSTV gallery BMPs served
 # to the webview via convertFileSrc under the sstv-gallery scope).
 tauri = { version = "2", features = ["protocol-asset"] }
@@ -100,7 +97,6 @@ serde = { version = "1", features = ["derive"] }
 semver = "1"
 # `raw_value`: a relay lane's proof covers an operation request exactly as the relay wrote it
 # (remote_service/lanes.rs). Already compiled in through tauri; named here so nothing leans on that.
-sha2 = "0.10.9"
 serde_json = { version = "1", features = ["raw_value"] }
 # Remote's outbound task is isolated from CAT/audio. These packages are already
 # in the graph except the reviewed WebSocket adapter and its framing dependencies.
@@ -181,11 +177,6 @@ tempo-audio = { path = "../crates/tempo-audio", optional = true }
 [target.'cfg(target_os = "linux")'.dependencies]
 gdk = "0.18"
 
-# Already a locked Tauri dependency (MIT). Query the native OS version before
-# requesting an isolated WKWebView store; macOS <14 must never silently share it.
-[target.'cfg(target_os = "macos")'.dependencies]
-objc2-foundation = { version = "=0.3.2", default-features = false, features = ["std", "NSProcessInfo"] }
-
 # The windows' keys: WebView2's own browser accelerators switched off in every Nexus window
 # (`ICoreWebView2Settings3::SetAreBrowserAcceleratorKeysEnabled`, `src/browser_keys.rs`), and F11
 # kept for the Stations on this network window's full screen (`AcceleratorKeyPressed`,
@@ -221,8 +212,6 @@ tauri = { version = "2", features = ["protocol-asset", "test"] }
 # The same again: `test-util`, the client core's test hooks (a stand-in headset, a hold on the audio
 # road's sender, the off halves' arguments), which this crate's tests reach the roads through.
 tempo-client = { path = "../crates/tempo-client", features = ["test-util"] }
-# The fork's owner TX preparation, which the companion FT runtime tests build PCM with.
-xnexus-tx-prepare = { path = "../integrations/xlog-tx-prepare" }
 
 [features]
 # FT-710 waterfall over the radio's internal FT4222 USB→SPI bridge. OFF by default: it links

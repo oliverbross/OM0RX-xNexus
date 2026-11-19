@@ -9,7 +9,6 @@
 import { describe, it, expect, afterEach, vi } from 'vitest'
 import { render, screen, cleanup } from '@testing-library/react'
 
-import { OperateServices } from './operateServices'
 import { OperateQsoStrip } from './OperateQsoStrip'
 import type { QsoStatus, RadioStatus } from '../types'
 
@@ -32,8 +31,9 @@ const radioWith = (over: Record<string, unknown> = {}) =>
     ...over,
   }) as unknown as RadioStatus
 
-function strip(radio: RadioStatus, external = false) {
-  const element = <OperateQsoStrip
+function strip(radio: RadioStatus) {
+  return render(
+    <OperateQsoStrip
       qso={qso}
       radio={radio}
       onSetMode={vi.fn()}
@@ -45,8 +45,8 @@ function strip(radio: RadioStatus, external = false) {
       onSetTune={vi.fn()}
       onHaltTx={vi.fn()}
       onSetHoldTxFreq={vi.fn()}
-    />
-  return render(external ? <OperateServices adapter={{actions:new Set(['stopTransmit']), handlers:{}, onDeniedAction:vi.fn()}}>{element}</OperateServices> : element)
+    />,
+  )
 }
 
 describe('the FT8/FT4 strip on a connection that transmits nothing', () => {
@@ -74,15 +74,5 @@ describe('the FT8/FT4 strip on a connection that transmits nothing', () => {
     strip(radioWith({ txAllowed: false, txRefusal: REFUSED, rigKeyed: true }))
     expect(screen.queryByText('No TX on this connection')).toBeNull()
     expect(screen.getByText('▲ TRANSMITTING').getAttribute('title')).toBeNull()
-  })
-})
-
-describe('xLog TX setup refusal', () => {
-  it('shows the actual setup reason instead of calling FT8 receive-only and keeps Stop available', () => {
-    const reason = 'Enable digital TX in xLog companion settings (FLEX A / DAX TX).'
-    strip(radioWith({txAllowed:false, txEnabled:false, txRefusal:reason, source:'xlog'}), true)
-    expect(screen.getByText(reason)).toBeTruthy()
-    expect(screen.queryByText(/receive-only, not transmit/i)).toBeNull()
-    expect((screen.getByRole('button', {name:'Stop TX'}) as HTMLButtonElement).disabled).toBe(false)
   })
 })

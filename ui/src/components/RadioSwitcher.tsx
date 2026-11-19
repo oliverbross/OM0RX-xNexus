@@ -6,7 +6,6 @@
 // no cockpit's stop-line census; `transmitting` is read here only to colour the pill.
 import type { RadioSummary } from '../types'
 import { t } from '../i18n'
-import { useOperateServices } from './operateServices'
 
 interface Props {
   radios: RadioSummary[]
@@ -20,7 +19,6 @@ interface Props {
  * auto-switch it (P4). Rendered ONLY when there's more than one radio — a single-radio station
  * never sees this (the whole multi-radio surface stays invisible until a 2nd radio is added). */
 export function RadioSwitcher({ radios, pegged, onSwitch, onTogglePeg }: Props) {
-  const { canAction } = useOperateServices()
   if (radios.length < 2) return null
   return (
     <div className="radio-switcher" role="group" aria-label={t('radios.switcher.aria')}>
@@ -37,7 +35,6 @@ export function RadioSwitcher({ radios, pegged, onSwitch, onTogglePeg }: Props) 
             className={`radio-pill${r.isActive ? ' active' : ''}${r.transmitting ? ' tx' : ''}${catDead ? ' cat-dead' : ''}`}
             aria-pressed={r.isActive}
             onClick={() => !r.isActive && onSwitch(r.id)}
-            disabled={!canAction('radio')}
             title={
               r.isActive
                 ? t('radios.switcher.active.title', { name: r.name, band: r.band, freq })
@@ -72,7 +69,6 @@ export function RadioSwitcher({ radios, pegged, onSwitch, onTogglePeg }: Props) 
         className={`radio-peg${pegged ? ' on' : ''}`}
         aria-pressed={pegged}
         onClick={() => onTogglePeg(!pegged)}
-        disabled={!canAction('radio')}
         title={pegged ? t('radios.peg.on.title') : t('radios.peg.off.title')}
       >
         {pegged ? t('radios.peg.on.label') : t('radios.peg.off.label')}

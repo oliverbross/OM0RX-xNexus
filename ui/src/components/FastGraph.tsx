@@ -2,7 +2,7 @@
 // operator-visible string — the canvas's accessible name — is in the catalog. The callsigns
 // and the second ticks drawn into the bitmap are data and a measurement scale.
 import { useEffect, useRef } from 'react'
-import { useOperateServices } from './operateServices'
+import { getFastPower } from '../api'
 import type { DecodeRow } from '../types'
 import { t } from '../i18n'
 
@@ -37,7 +37,6 @@ const DB_FLOOR = -60
 const POLL_MS = 100
 
 export function FastGraph({ periodS, decodes, theme }: Props) {
-  const { api: { getFastPower } } = useOperateServices()
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const periodRef = useRef(periodS)
   periodRef.current = periodS
@@ -172,7 +171,7 @@ export function FastGraph({ periodS, decodes, theme }: Props) {
     }
     // run once; live props via refs
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [getFastPower])
+  }, [])
 
   // A theme change repaints from the tokens at once. A quiet band brings no new sample, and
   // without this the old ground would stay up until one did.

@@ -24,10 +24,6 @@ import { viaOf } from '../features/logIntake'
 import { useId, useMemo, useState, useSyncExternalStore } from 'react'
 import type { FieldEdit, QsoEdit, RowAnswer, RowRef } from '../api'
 import { qrzLookup } from '../api'
-import type { OwnerContactRead } from '../features/ownerContactDetail'
-import type { OwnerContactEditor } from '../features/ownerContactEditor'
-import { OwnerContactCardBody } from './OwnerContactCardBody'
-import type { ReactNode } from 'react'
 import type { LoggedQso } from '../types'
 import { Dialog } from './ui/Dialog'
 import { QsoHistory } from './QsoHistory'
@@ -166,23 +162,7 @@ function errorText(e: CardError): string {
   }
 }
 
-export interface OwnerContactCardProps {
-  external: { contactId: string; scopeKey: string; read: OwnerContactRead }
-  /** Caller-owned outside the read-key remount; omitted means read-only. */
-  editor?: OwnerContactEditor
-  refresh?: { run: () => void; disabled: boolean }
-  /** Explicit owner connection controls above this retained card, never an automatic reconnect. */
-  connection?: () => void
-  onClose: () => void
-}
-
-export function ContactCard(props: ContactCardProps | OwnerContactCardProps) {
-  return 'external' in props
-    ? <OwnerContactCardBody key={`${props.external.scopeKey}|${props.external.contactId}`} {...props} />
-    : <NativeContactCard {...props} />
-}
-
-function NativeContactCard({ open, onClose, onSwitch, save, onChanged, onReload, logTick }: ContactCardProps) {
+export function ContactCard({ open, onClose, onSwitch, save, onChanged, onReload, logTick }: ContactCardProps) {
   const returnFocus = useFocusReturn(!!open)
   if (!open) return null
   return (
@@ -422,8 +402,19 @@ function CardBody({
   const marks = (r: LoggedQso) =>
     [r.qslRcvd?.lotw && 'L', r.qslRcvd?.eqsl && 'E', r.qslRcvd?.qrz && 'Q', r.qslRcvd?.card && 'C'].filter(Boolean).join('')
 
-  const header = (
-<div className="callcard-head contact-card-head">
+  return (
+    <Dialog
+      open
+      onOpenChange={(o) => {
+        if (!o) void leave(onClose)
+      }}
+      title={t('contactCard.title', { call: q.call })}
+      hideTitle
+      className="contact-card-dialog"
+      onCloseAutoFocus={returnFocus}
+    >
+      <form className="contact-card" onSubmit={onSave}>
+        <div className="callcard-head contact-card-head">
           <CallbookPhoto call={q.call} book={book} />
           <div className="callcard-id">
             <div className="callcard-title">
@@ -443,9 +434,34 @@ function CardBody({
             </div>
           </div>
         </div>
-  )
-  const iota = (
-(draft.iota.trim() !== '' || filled) && (
+
+        <section className="qso-detail-section">
+          <h3 className="qso-detail-heading">{t('qso.detail.section.contact.radio')}</h3>
+          <div className="logbook-form-grid">
+            {box('call', t('logbook.field.call.label'))}
+            {box('date', t('logbook.field.date.label'), { placeholder: UTC_DATE_FORMAT, maxLength: 10, className: 'settings-input mono' })}
+            {box('timeOn', t('logbook.field.time.label'), { placeholder: UTC_TIME_FORMATS.short, maxLength: 8, className: 'settings-input mono', title: q.timeKnown === false ? t('contactCard.dateOnly') : undefined })}
+            {box('timeOff', t('logbook.field.end.label'), { placeholder: UTC_TIME_FORMATS.short, maxLength: 8, className: 'settings-input mono' })}
+            {box('band', t('logbook.field.band.label'))}
+            {box('freq', t('logbook.field.freq.label'), { inputMode: 'decimal', className: 'settings-input mono' })}
+            {box('mode', t('logbook.field.mode.label'))}
+            {box('rstSent', t('logbook.field.rstSent.label'))}
+            {box('rstRcvd', t('logbook.field.rstRcvd.label'))}
+            {box('txPower', t('logbook.field.txPower.label'), { inputMode: 'decimal' })}
+          </div>
+        </section>
+
+        <section className="qso-detail-section">
+          <h3 className="qso-detail-heading">{t('qso.detail.section.contact')}</h3>
+          <div className="logbook-form-grid">
+            {box('name', t('logbook.field.name.label'))}
+            {box('qth', t('logbook.field.qth.label'))}
+            {box('grid', t('logbook.field.grid.label'))}
+            {box('state', t('logbook.field.state.label'), { maxLength: 2 })}
+            {program('theirProgram', t('contactCard.program.theirs'))}
+            {box('theirRef', t('logbook.field.parkTheirs.label'))}
+            {box('iota', t('logbook.field.iota.label'), { maxLength: 6 })}
+            {(draft.iota.trim() !== '' || filled) && (
               <div className="logbook-field logbook-field-wide iota-card-note">
                 <IotaReferenceNote reference={draft.iota.trim().toUpperCase()} />
                 <IotaIslandPick
@@ -466,10 +482,12 @@ function CardBody({
                   </span>
                 )}
               </div>
-            )
-  )
-  const confirmation = (
-<><div className="logbook-field">
+            )}
+            {program('myProgram', t('contactCard.program.mine'))}
+            {box('myRef', t('logbook.field.parkMine.label'))}
+            {box('myGrid', t('logbook.field.myGrid.label'))}
+            {box('myRig', t('logbook.field.myRig.label'))}
+            <div className="logbook-field">
               <label htmlFor={`${id}-qsl`}>{t('logbook.field.qslSent.label')}</label>
               <select id={`${id}-qsl`} className="settings-input" value={draft.qslSentVia} onChange={(e) => set('qslSentVia', e.target.value)} disabled={!canSave}>
                 <option value="">{t('logbook.field.qslSent.none')}</option>
@@ -482,18 +500,124 @@ function CardBody({
             <label className="logbook-field">
               <span>{t('logbook.field.qslCard.label')}</span>
               <input type="checkbox" checked={draft.qslCard === '1'} onChange={(e) => set('qslCard', e.target.checked ? '1' : '')} disabled={!canSave} />
-            </label></>
-  )
-  const path = (
-<ContactPath
+            </label>
+            {/* The shared comment: full width, directly above Notes. It wraps over lines but holds
+                ONE, as ADIF's COMMENT does — the log strip's and the edit form's rule. */}
+            <label className="logbook-field logbook-field-wide">
+              <span>{t('logbook.field.comment.label')}</span>
+              <textarea
+                className="settings-input logbook-comment"
+                value={draft.comment}
+                onChange={(e) => set('comment', oneLineTyped(e.target))}
+                onKeyDown={(e) => {
+                  if (e.key !== 'Enter') return
+                  e.preventDefault()
+                  e.currentTarget.form?.requestSubmit()
+                }}
+                rows={2}
+                readOnly={!canSave}
+              />
+            </label>
+            <label className="logbook-field logbook-field-wide">
+              <span>{t('logbook.field.notes.label')}</span>
+              <textarea className="settings-input logbook-notes" value={draft.notes} onChange={(e) => set('notes', e.target.value)} rows={3} readOnly={!canSave} />
+            </label>
+          </div>
+        </section>
+
+        <ContactPath
           q={q}
           canPick={canSave}
           picked={fields.find((f) => f.tag === 'ANT_PATH' && !f.removed)?.value ?? null}
           onPick={(path) => setFields((fs) => [...fs, { tag: 'ANT_PATH', orig: null, value: path, removed: false }])}
         />
-  )
-  const awards = (
-<CardAwardStatus
+
+        <details className="qso-detail-section contact-card-more">
+          <summary className="qso-detail-heading">{t('contactCard.more')}</summary>
+          <p className="qso-detail-bare">{t('contactCard.more.hint')}</p>
+          <div className="contact-card-fields">
+            {fields.map((f, i) => {
+              const own = ownField(f.tag) && f.orig !== null
+              return (
+                <div key={i} className={`contact-card-field${f.removed ? ' removed' : ''}`}>
+                  {f.orig === null ? (
+                    <input
+                      className="settings-input mono"
+                      value={f.tag}
+                      onChange={(e) => setField(i, { tag: e.target.value.toUpperCase() })}
+                      placeholder={t('contactCard.field.tag')}
+                      aria-label={t('contactCard.field.tag')}
+                      spellCheck={false}
+                      autoComplete="off"
+                    />
+                  ) : (
+                    <span className="mono contact-card-tag">{f.tag}</span>
+                  )}
+                  {multiLine(f) ? (
+                    // A field that holds lines (an address, a QSL message): edited with its lines.
+                    <textarea
+                      className="settings-input mono"
+                      value={f.value}
+                      onChange={(e) => setField(i, { value: typedLines(f, e.target.value) })}
+                      readOnly={own || f.removed || !canSave}
+                      aria-label={f.tag || t('contactCard.field.value')}
+                      spellCheck={false}
+                      rows={Math.min(6, Math.max(2, f.value.split('\n').length))}
+                    />
+                  ) : (
+                    <input
+                      className="settings-input mono"
+                      value={f.value}
+                      onChange={(e) => setField(i, { value: e.target.value })}
+                      readOnly={own || f.removed || !canSave}
+                      aria-label={f.tag || t('contactCard.field.value')}
+                      spellCheck={false}
+                      autoComplete="off"
+                    />
+                  )}
+                  {!own && canSave && (
+                    <button
+                      type="button"
+                      className="log-rowbtn"
+                      onClick={() =>
+                        f.orig === null
+                          ? setFields((fs) => fs.filter((_, j) => j !== i))
+                          : setField(i, { removed: !f.removed })
+                      }
+                      title={f.removed ? t('contactCard.field.keep', { tag: f.tag }) : t('contactCard.field.remove', { tag: f.tag })}
+                      aria-label={f.removed ? t('contactCard.field.keep', { tag: f.tag }) : t('contactCard.field.remove', { tag: f.tag })}
+                    >
+                      {f.removed ? '↺' : '✕'}
+                    </button>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+          {canSave && (
+            <button
+              type="button"
+              className="export-btn"
+              onClick={() => setFields((fs) => [...fs, { tag: '', orig: null, value: '', removed: false }])}
+            >
+              {t('contactCard.field.add')}
+            </button>
+          )}
+          {facts.length > 0 && (
+            <dl className="qso-detail-fields contact-card-facts">
+              {facts.map(([label, value], i) => (
+                <div key={`${i}-${label}`} className="qso-detail-field">
+                  <dt>{label}</dt>
+                  <dd className="mono">{value}</dd>
+                </div>
+              ))}
+            </dl>
+          )}
+        </details>
+
+        {/* Each award's status, set at once (it asks first) and undone from the History below. Not
+            while the card holds unsaved typing: reading the contact again would drop it. */}
+        <CardAwardStatus
           q={q}
           canSave={canSave && !dirty}
           onChanged={() => {
@@ -501,9 +625,8 @@ function CardBody({
             if (q.id) onReload(q.id)
           }}
         />
-  )
-  const recentPane = (
-<section className="qso-detail-section">
+
+        <section className="qso-detail-section">
           <h3 className="qso-detail-heading">{t('contactCard.recent')}</h3>
           <table className="contact-card-recent mono">
             <thead>
@@ -547,9 +670,9 @@ function CardBody({
             </tbody>
           </table>
         </section>
-  )
-  const history = (
-q.id && (
+
+        {/* An Undo here changes the contact the card shows: the card reads it again. */}
+        {q.id && (
           <QsoHistory
             id={q.id}
             onChanged={() => {
@@ -557,211 +680,7 @@ q.id && (
               if (q.id) onReload(q.id)
             }}
           />
-        )
-  )
-  return <ContactCardSurface
-    call={q.call} timeKnown={q.timeKnown} draft={draft} fields={fields}
-    err={err} busy={busy} dirty={dirty} canSave={canSave} notResent={notResent} facts={facts}
-    box={box} program={program} set={set} setField={setField} setFields={setFields}
-    leave={leave} onClose={onClose} onSave={onSave} returnFocus={returnFocus}
-    header={header} iota={iota} confirmation={confirmation} path={path}
-    awards={awards} recent={recentPane} history={history}
-  />
-}
-
-/** The original card markup. Services stay in the native or explicit owner body;
- * this surface has no read/write APIs, subscriptions or authority inference. */
-export interface ContactCardSurfaceProps {
-  /** Native entry keeps its established one-line/Enter-submit behavior. Owner
-   * details are inert multiline presentation, even if edit controls evolve. */
-  commentPolicy?: 'native' | 'readonly-multiline' | 'owner-multiline'
-  commentEditable?: boolean
-  extendedEditing?: boolean
-  editingNote?: ReactNode
-  extraActions?: ReactNode
-  saveLabel?: string
-  call: string; timeKnown?: boolean; draft: CardDraft; fields: CardField[]
-  err: string | null; busy: boolean; dirty: boolean; canSave: boolean
-  notResent: string[]; facts: [string, string][]
-  box: (key: keyof CardDraft, label: string, extra?: React.InputHTMLAttributes<HTMLInputElement>) => ReactNode
-  program: (key: 'theirProgram' | 'myProgram', label: string) => ReactNode
-  set: (key: keyof CardDraft, value: string) => void
-  setField: (index: number, patch: Partial<CardField>) => void
-  setFields: React.Dispatch<React.SetStateAction<CardField[]>>
-  leave: (then: () => void) => Promise<void>
-  onClose: () => void; onSave: (event?: React.FormEvent) => void | Promise<void>
-  returnFocus: (event: Event) => void
-  header: ReactNode; iota: ReactNode; confirmation: ReactNode; path: ReactNode
-  awards: ReactNode; recent: ReactNode; history: ReactNode
-}
-
-export function ContactCardSurface({call, timeKnown, draft, fields, err, busy, dirty, canSave, notResent, facts,
-  box, program, set, setField, setFields, leave, onClose, onSave, returnFocus,
-  header, iota, confirmation, path, awards, recent, history, commentPolicy = 'native',
-  commentEditable = canSave, extendedEditing = true, editingNote, extraActions, saveLabel}: ContactCardSurfaceProps) {
-  return (
-    <Dialog
-      open
-      onOpenChange={(o) => {
-        if (!o) void leave(onClose)
-      }}
-      title={t('contactCard.title', { call: call })}
-      hideTitle
-      className="contact-card-dialog"
-      onCloseAutoFocus={returnFocus}
-    >
-      <form className="contact-card" onSubmit={onSave}>
-        {header}
-
-        <section className="qso-detail-section">
-          <h3 className="qso-detail-heading">{t('qso.detail.section.contact.radio')}</h3>
-          <div className="logbook-form-grid">
-            {box('call', t('logbook.field.call.label'))}
-            {box('date', t('logbook.field.date.label'), { placeholder: UTC_DATE_FORMAT, maxLength: 10, className: 'settings-input mono' })}
-            {box('timeOn', t('logbook.field.time.label'), { placeholder: UTC_TIME_FORMATS.short, maxLength: 8, className: 'settings-input mono', title: timeKnown === false ? t('contactCard.dateOnly') : undefined })}
-            {box('timeOff', t('logbook.field.end.label'), { placeholder: UTC_TIME_FORMATS.short, maxLength: 8, className: 'settings-input mono' })}
-            {box('band', t('logbook.field.band.label'))}
-            {box('freq', t('logbook.field.freq.label'), { inputMode: 'decimal', className: 'settings-input mono' })}
-            {box('mode', t('logbook.field.mode.label'))}
-            {box('rstSent', t('logbook.field.rstSent.label'))}
-            {box('rstRcvd', t('logbook.field.rstRcvd.label'))}
-            {box('txPower', t('logbook.field.txPower.label'), { inputMode: 'decimal' })}
-          </div>
-        </section>
-
-        <section className="qso-detail-section">
-          <h3 className="qso-detail-heading">{t('qso.detail.section.contact')}</h3>
-          <div className="logbook-form-grid">
-            {box('name', t('logbook.field.name.label'))}
-            {box('qth', t('logbook.field.qth.label'))}
-            {box('grid', t('logbook.field.grid.label'))}
-            {box('state', t('logbook.field.state.label'), { maxLength: 2 })}
-            {program('theirProgram', t('contactCard.program.theirs'))}
-            {box('theirRef', t('logbook.field.parkTheirs.label'))}
-            {box('iota', t('logbook.field.iota.label'), { maxLength: 6 })}
-            {iota}
-
-        {program('myProgram', t('contactCard.program.mine'))}
-            {box('myRef', t('logbook.field.parkMine.label'))}
-            {box('myGrid', t('logbook.field.myGrid.label'))}
-            {box('myRig', t('logbook.field.myRig.label'))}
-            {confirmation}
-
-        {/* The shared comment: full width, directly above Notes. It wraps over lines but holds
-                ONE, as ADIF's COMMENT does — the log strip's and the edit form's rule. */}
-            <label className="logbook-field logbook-field-wide">
-              <span>{t('logbook.field.comment.label')}</span>
-              <textarea
-                className="settings-input logbook-comment"
-                value={draft.comment}
-                onChange={commentPolicy === 'native' ? (e) => set('comment', oneLineTyped(e.target))
-                  : commentPolicy === 'owner-multiline' ? (e) => set('comment', e.target.value) : undefined}
-                onKeyDown={commentPolicy === 'native' ? (e) => {
-                  if (e.key !== 'Enter') return
-                  e.preventDefault()
-                  e.currentTarget.form?.requestSubmit()
-                } : undefined}
-                rows={2}
-                readOnly={commentPolicy === 'readonly-multiline' || !commentEditable}
-              />
-            </label>
-            <label className="logbook-field logbook-field-wide">
-              <span>{t('logbook.field.notes.label')}</span>
-              <textarea className="settings-input logbook-notes" value={draft.notes} onChange={(e) => set('notes', e.target.value)} rows={3} readOnly={!extendedEditing || !canSave} />
-            </label>
-          </div>
-        </section>
-
-        {path}
-
-        <details className="qso-detail-section contact-card-more">
-          <summary className="qso-detail-heading">{t('contactCard.more')}</summary>
-          <p className="qso-detail-bare">{t('contactCard.more.hint')}</p>
-          <div className="contact-card-fields">
-            {fields.map((f, i) => {
-              const own = ownField(f.tag) && f.orig !== null
-              return (
-                <div key={i} className={`contact-card-field${f.removed ? ' removed' : ''}`}>
-                  {f.orig === null ? (
-                    <input
-                      className="settings-input mono"
-                      value={f.tag}
-                      onChange={(e) => setField(i, { tag: e.target.value.toUpperCase() })}
-                      placeholder={t('contactCard.field.tag')}
-                      aria-label={t('contactCard.field.tag')}
-                      spellCheck={false}
-                      autoComplete="off"
-                    />
-                  ) : (
-                    <span className="mono contact-card-tag">{f.tag}</span>
-                  )}
-                  {multiLine(f) ? (
-                    // A field that holds lines (an address, a QSL message): edited with its lines.
-                    <textarea
-                      className="settings-input mono"
-                      value={f.value}
-                      onChange={(e) => setField(i, { value: typedLines(f, e.target.value) })}
-                      readOnly={!extendedEditing || own || f.removed || !canSave}
-                      aria-label={f.tag || t('contactCard.field.value')}
-                      spellCheck={false}
-                      rows={Math.min(6, Math.max(2, f.value.split('\n').length))}
-                    />
-                  ) : (
-                    <input
-                      className="settings-input mono"
-                      value={f.value}
-                      onChange={(e) => setField(i, { value: e.target.value })}
-                      readOnly={!extendedEditing || own || f.removed || !canSave}
-                      aria-label={f.tag || t('contactCard.field.value')}
-                      spellCheck={false}
-                      autoComplete="off"
-                    />
-                  )}
-                  {extendedEditing && !own && canSave && (
-                    <button
-                      type="button"
-                      className="log-rowbtn"
-                      onClick={() =>
-                        f.orig === null
-                          ? setFields((fs) => fs.filter((_, j) => j !== i))
-                          : setField(i, { removed: !f.removed })
-                      }
-                      title={f.removed ? t('contactCard.field.keep', { tag: f.tag }) : t('contactCard.field.remove', { tag: f.tag })}
-                      aria-label={f.removed ? t('contactCard.field.keep', { tag: f.tag }) : t('contactCard.field.remove', { tag: f.tag })}
-                    >
-                      {f.removed ? '↺' : '✕'}
-                    </button>
-                  )}
-                </div>
-              )
-            })}
-          </div>
-          {extendedEditing && canSave && (
-            <button
-              type="button"
-              className="export-btn"
-              onClick={() => setFields((fs) => [...fs, { tag: '', orig: null, value: '', removed: false }])}
-            >
-              {t('contactCard.field.add')}
-            </button>
-          )}
-          {facts.length > 0 && (
-            <dl className="qso-detail-fields contact-card-facts">
-              {facts.map(([label, value], i) => (
-                <div key={`${i}-${label}`} className="qso-detail-field">
-                  <dt>{label}</dt>
-                  <dd className="mono">{value}</dd>
-                </div>
-              ))}
-            </dl>
-          )}
-        </details>
-
-        {awards}
-
-        {recent}
-
-        {history}
+        )}
 
         <div className="contact-card-actions">
           {err && (
@@ -769,7 +688,7 @@ export function ContactCardSurface({call, timeKnown, draft, fields, err, busy, d
               {err}
             </span>
           )}
-          {editingNote ?? (!canSave && <span className="logbook-editing-note">{t('contactCard.readOnly')}</span>)}
+          {!canSave && <span className="logbook-editing-note">{t('contactCard.readOnly')}</span>}
           {/* Your own station's fields are saved, and LoTW keeps the contact it was sent: say so. */}
           {canSave && notResent.length > 0 && (
             <span className="logbook-editing-note contact-card-lotw-note" role="status">
@@ -779,9 +698,8 @@ export function ContactCardSurface({call, timeKnown, draft, fields, err, busy, d
           <button type="button" className="logconfirm-discard" onClick={() => void leave(onClose)}>
             {t('contactCard.cancel')}
           </button>
-          {extraActions}
           <button type="submit" className="settings-save" disabled={!canSave || !dirty || busy}>
-            {saveLabel ?? t('logbook.form.save')}
+            {t('logbook.form.save')}
           </button>
         </div>
       </form>

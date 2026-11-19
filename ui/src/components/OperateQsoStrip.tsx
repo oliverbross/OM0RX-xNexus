@@ -1,4 +1,3 @@
-import type { OperatingRadio } from './operatingView'
 import { FtStopControl } from './FtStopControl'
 // ⚠️ THIS FILE IS **PARTIAL** ON THE i18n LIST (i18n/hardcoded-strings.test.ts), and the part
 // that is deferred is deliberate: STOP TX, TUNE, ATU and the TX On/Off tooltip stay written
@@ -14,9 +13,9 @@ import { FtStopControl } from './FtStopControl'
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
 import { t } from '../i18n'
 import { catSaysTxOff } from '../features/catDetail'
-import { OPERATE_UNAVAILABLE, useOperateServices } from './operateServices'
-import type { ModeRequest, QsoStatus } from '../types'
-import { observedOnAir } from './operatingView'
+import { requestWindowAttention } from '../api'
+import type { ModeRequest, QsoStatus, RadioStatus } from '../types'
+import { isOnAir } from '../types'
 import { modeMismatch } from './TopBar'
 import { RadioTuneNote } from './RadioTuneNote'
 import { AtuSwitchOutMenu, useAtuSwitchOutMenu } from './AtuSwitchOutMenu'
@@ -64,7 +63,7 @@ interface Props {
   logWaiting?: number
   /** TX controls consolidated beside CQ/S&P (operator request: one cluster,
    * no mousing to the top bar). Present only in the digital cockpit. */
-  radio?: OperatingRadio
+  radio?: RadioStatus
   onSetTxEnabled?: (on: boolean) => void
   onSetTune?: (on: boolean) => void
   /** Run the RADIO's own built-in ATU (Phone/CW/SSTV have carried this since #19; the FT
@@ -107,7 +106,7 @@ interface Props {
   skipTx1?: boolean
   onSkipTx1?: (v: boolean) => void
   /** Live next-slot countdown (seconds). */
-  nextSlotSec?: number | null
+  nextSlotSec?: number
   /** Active DXpedition badge (HOUND), rotor strip, and the fixed-width TX
    *  telemetry cell — slotted nodes owned by the cockpit. */
   specialOpBadge?: ReactNode
@@ -236,7 +235,6 @@ export function OperateQsoStrip({
   rotor,
   telemetry,
 }: Props) {
-  const { api: { requestWindowAttention }, can, canAction } = useOperateServices()
   const meterStyle = useTxMeterStyle()
   const stripRef = useRef<HTMLElement>(null)
   useParkLine(stripRef)
@@ -260,13 +258,13 @@ export function OperateQsoStrip({
   const watchdogStopped = qso?.watchdogStopped ?? false
   const txCount = qso?.txCount ?? 0
   const rpt = reportLabel(qso?.rxReport)
-  const noTx = (rxOnly ?? false) || !canAction('transmit')
+  const noTx = rxOnly ?? false
   // ATU ON (#344): `CockpitTxStrip`'s rule — a click always tunes; the menu switches the tuner out.
-  const atuMenu = useAtuSwitchOutMenu(radio?.atu === true && radio?.atuSwitchOut === true && !!onAtuBypass && can('atuBypass'))
-  const atuTuneBlocked = noTx || !!radio?.atuStartTuneUnsupported || !can('atuTune')
+  const atuMenu = useAtuSwitchOutMenu(radio?.atu === true && radio?.atuSwitchOut === true && !!onAtuBypass)
+  const atuTuneBlocked = noTx || !!radio?.atuStartTuneUnsupported
   // WHY a mode cannot transmit / cannot run a QSO — prose about the MODE, shown on every
   // control it disables, so it moves with the strip rather than with the TX controls.
-  const noTxWhy = rxOnly ? t('operate.strip.rxOnly.why') : radio?.txRefusal || OPERATE_UNAVAILABLE
+  const noTxWhy = t('operate.strip.rxOnly.why')
   const isBeacon = beacon ?? false
   const beaconWhy = t('operate.strip.beacon.why')
   // No QSO to run on a beacon, and nothing to send on a receive-only tier.
@@ -282,12 +280,12 @@ export function OperateQsoStrip({
   // which is shown NOWHERE in this cockpit today).
   //
   // Same verdict function as the TopBar — imported, not re-derived, so the two can never drift.
-  const rigDiverged = radio?.sideband != null ? modeMismatch(radio.rigMode, radio.sideband, radio.rigConfirmed) : null
+  const rigDiverged = radio ? modeMismatch(radio.rigMode, radio.sideband, radio.rigConfirmed) : null
   // The strip's ON AIR wash and "▲ TRANSMITTING" read the arbiter the header's sign reads, never
   // the FT slot flag alone: that said "▼ Receiving" through this cockpit's own Tune, a key held at
   // the radio and an over another screen started. Paint only — no control here keys, enables or
   // routes on it.
-  const onAir = radio ? observedOnAir(radio) : null
+  const onAir = radio ? isOnAir(radio) : false
   const filterHz = radio?.filterWidthHz ?? null
   const narrowFilter = filterHz != null && filterHz > 0 && filterHz < NARROW_FILTER_HZ
 
@@ -314,7 +312,7 @@ export function OperateQsoStrip({
   const catOff = radio && !radio.txEnabled ? catSaysTxOff(radio.catDetail) : null
 
   return (
-    <section ref={stripRef} className={`cockpit-qso cockpit-ftstrip panel${radio && onAir != null ? (onAir ? ' tx' : ' rx') : ''}`}>
+    <section ref={stripRef} className={`cockpit-qso cockpit-ftstrip panel${radio ? (onAir ? ' tx' : ' rx') : ''}`}>
       {/* POSITION-STABILITY ORDER (OperateQsoStrip.geometry.test): the two button
           clusters render FIRST, so the six panic-adjacent controls are anchored at
           the strip's start. Every state-variable readout member (state cap,
@@ -334,7 +332,7 @@ export function OperateQsoStrip({
             className={`op-btn monitor${radio.txEnabled ? ' on' : ''}`}
             aria-pressed={radio.txEnabled}
             onClick={() => onSetTxEnabled?.(!radio.txEnabled)}
-            disabled={radio.txEnabled ? !canAction('stopTransmit') : noTx}
+            disabled={noTx}
             title={
               noTx
                 ? noTxWhy
@@ -348,9 +346,9 @@ export function OperateQsoStrip({
           <button
             type="button"
             className={`op-btn tune${radio.tuning ? ' keyed' : ''}`}
-            aria-pressed={radio.tuning ?? undefined}
+            aria-pressed={radio.tuning}
             onClick={() => onSetTune?.(!radio.tuning)}
-            disabled={radio.tuning ? !canAction('stopTransmit') : noTx}
+            disabled={noTx}
             title={noTx ? noTxWhy : 'Key a tune carrier'}
           >
             Tune
@@ -398,7 +396,6 @@ export function OperateQsoStrip({
             className={`op-btn hold${radio.holdTxFreq ? ' on' : ''}`}
             aria-pressed={radio.holdTxFreq}
             onClick={() => onSetHoldTxFreq?.(!radio.holdTxFreq)}
-            disabled={!canAction('transmit')}
             title={t('operate.strip.holdTx.title')}
           >
             {t('operate.strip.holdTx.label')}
@@ -521,7 +518,7 @@ export function OperateQsoStrip({
         <span className="cq-now-label">{stalled ? t('operate.strip.now.stalled') : TX_LABEL}</span>
         <span className="cq-now-msg mono">
           {noTx
-            ? (rxOnly ? t('operate.strip.now.rxOnly') : noTxWhy)
+            ? t('operate.strip.now.rxOnly')
             : isBeacon
               ? t('operate.strip.now.beacon')
               : (txNow ?? t('operate.strip.now.listening'))}
@@ -536,7 +533,7 @@ export function OperateQsoStrip({
           className="cq-resend"
           onClick={onResend}
           // Resend re-arms the QSO sequencer's step (`qso_resend`); the contest's has none.
-          disabled={!qso?.txNow || !canAction('transmit')}
+          disabled={!qso?.txNow}
           title={t('operate.strip.resend.title')}
         >
           ↻
@@ -570,7 +567,7 @@ export function OperateQsoStrip({
           className="cq-log"
           onClick={onLog}
           // Log QSO logs the QSO sequencer's contact; the contest logs its own as it closes.
-          disabled={(!qso?.dxcall && waiting === 0) || !canAction('log')}
+          disabled={!qso?.dxcall && waiting === 0}
           title={
             waiting > 0
               ? t('operate.strip.log.titleWaiting', { count: waiting })
@@ -627,7 +624,6 @@ export function OperateQsoStrip({
         <button
           type="button"
           className={`cq-period${radio.txCycleAuto ? ' is-auto' : ''}`}
-          disabled={!canAction('transmit')}
           onClick={() => {
             // Cycle: Auto → lock 1st → lock 2nd → Auto.
             if (radio.txCycleAuto) onSetTxEven(true)
@@ -651,7 +647,6 @@ export function OperateQsoStrip({
           className={`cq-skiptx1${skipTx1 ? ' on' : ''}`}
           aria-pressed={skipTx1 ?? false}
           onClick={() => onSkipTx1(!skipTx1)}
-          disabled={!can('setSkipTx1')}
           title={t('operate.strip.skipTx1.title')}
         >
           {t('operate.strip.skipTx1.label')}

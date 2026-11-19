@@ -29,10 +29,8 @@ jobs:
         with:
           toolchain: '1.93.1'
       - run: node --test scripts/xnexus/fork-policy.test.mjs
-      - run: cargo test --locked --manifest-path integrations/xlog/Cargo.toml
       - run: npm --prefix ui ci
       - run: npm --prefix ui run build
-      - run: npm --prefix ui test -- src/xlog
   desktop:
     if: github.repository == 'oliverbross/OM0RX-xNexus'
     strategy:

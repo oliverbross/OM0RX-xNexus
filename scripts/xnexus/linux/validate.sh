@@ -47,21 +47,18 @@ cd /work/source
 cp /opt/packages.tsv /evidence/packages.tsv
 { uname -a; rustc -Vv; cargo -V; node -v; npm -v; gfortran --version; cmake --version; } > /evidence/toolchain.txt
 if [[ $phase == fetch ]]; then
-  cargo fetch --locked --manifest-path integrations/xlog/Cargo.toml --target x86_64-unknown-linux-gnu
   cargo fetch --locked --manifest-path src-tauri/Cargo.toml --target x86_64-unknown-linux-gnu
   npm --prefix ui ci --ignore-scripts --no-audit --no-fund
 elif [[ $phase == contract ]]; then
   # Full upstream gate inventory is recorded, not falsely claimed as executed.
   node scripts/gates --list > /evidence/upstream-gates.txt
   node --test scripts/xnexus/fork-policy.test.mjs
-  cargo test --locked --offline --manifest-path integrations/xlog/Cargo.toml
   # A seeded volume deliberately has no old source/node_modules/dist/tsbuildinfo.
   if [[ -f /work/seed.json && ! -d ui/node_modules ]]; then
     npm --prefix ui ci --offline --ignore-scripts --no-audit --no-fund
   fi
   npm --prefix ui rebuild --offline
   npm --prefix ui run build
-  npm --prefix ui test -- src/xlog --maxWorkers=$jobs
 else
   if [[ -f /work/seed.json ]]; then
     cargo check --locked --offline --manifest-path src-tauri/Cargo.toml --features radio --all-targets --message-format=json-render-diagnostics | tee /evidence/desktop-cargo.jsonl

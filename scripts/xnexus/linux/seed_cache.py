@@ -12,8 +12,8 @@ import tarfile
 
 from verify_source import verify
 
-LOCKS = ("Cargo.lock", "src-tauri/Cargo.lock", "integrations/xlog/Cargo.lock", "ui/package-lock.json")
-MANIFESTS = ("Cargo.toml", "src-tauri/Cargo.toml", "integrations/xlog/Cargo.toml", "ui/package.json")
+LOCKS = ("Cargo.lock", "src-tauri/Cargo.lock", "ui/package-lock.json")
+MANIFESTS = ("Cargo.toml", "src-tauri/Cargo.toml", "ui/package.json")
 CACHES = ("cargo/registry", "cargo/git", "target", "home/.npm/_cacache")
 
 

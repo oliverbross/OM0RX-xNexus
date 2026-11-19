@@ -19085,8 +19085,8 @@ button.recall-avatar:focus-visible .recall-avatar-qrz {
    still live: OperateCockpit renders .decode-row, OperateDecodes .decode-msg.) */
 .decode-row {
   display: grid;
-  /* tier · UTC · dB · DT · Freq · message · work */
-  grid-template-columns: auto 52px 34px 38px 42px minmax(0, 1fr) auto;
+  /* tier · UTC · dB · DT · Freq · CS · DS · message · work (CS and DS: OM0RX-xNexus, below) */
+  grid-template-columns: auto 52px 34px 38px 42px 4.5ch 7.5ch minmax(0, 1fr) auto;
   align-items: center;
   gap: 6px;
   /* WSJT-X row density: the line is only as tall as its content (tier/need chips ~16px) plus
@@ -19227,18 +19227,6 @@ button.recall-avatar:focus-visible .recall-avatar-qrz {
   border-left: 3px solid var(--need-pota);
   background: color-mix(in srgb, var(--need-pota) 22%, transparent);
 }
-/* XLOG'S CLASSIFICATION ON A COMPANION ROW. With xLog as the logbook, a row xLog calls needed (ATNO, a
-   C/ or W/ "New …" entity, or a "New …" call) takes the colour xLog's band map gives it
-   (`--xlog-need-color`, set on the row from ui/src/xlog/xlogStatus.ts), so the stations worth working
-   stand out as they do in xLog's cluster. Its CS/DS chips are outlines on that row (the row carries the
-   tint), as a need's lead chip is on its own row below. */
-.decode-row.xlog-need {
-  border-left: 3px solid var(--xlog-need-color);
-  background: color-mix(in srgb, var(--xlog-need-color) 18%, transparent);
-}
-.decode-row.xlog-need .need-chip.xlog-status {
-  background: transparent;
-}
 /* THE LEAD CHIP ON ITS OWN ROW (operator, 2026-09-30: "Chip drops its tint there"). A row tinted in a need's colour
    leads with that need's chip. With the word in the ink, the chip's own tint stacked on the row's, and in the night
    modes, whose ink is dimmer than the bright need colours, WATCH on a watched station's row read 3.12:1 in Chrome. So
@@ -19304,15 +19292,12 @@ button.recall-avatar:focus-visible .recall-avatar-qrz {
   color: var(--text-faint);
   text-align: right;
 }
-/* XLOG'S CS AND DS COLUMNS (operator, 2026-11-17: "2 extra columns for cs and ds like in xlog"). On the
-   companion feed every row carries xLog's Call status and DXCC status after the frequency, as xLog's
-   cluster lists them: the short code in xLog's status colour (ui/src/xlog/xlogStatus.ts). The widths
-   fit the longest codes (NB+M; NB+NM/C) at the row's mono size, so the message column never moves. */
-.decode-row.xlog-cols {
-  /* tier · UTC · dB · DT · Freq · CS · DS · message · work */
-  grid-template-columns: auto 52px 34px 38px 42px 4.5ch 7.5ch minmax(0, 1fr) auto;
-}
-.decode-xlog {
+/* OM0RX-XNEXUS CS AND DS COLUMNS. Every decode row carries the call status and DXCC status in the
+   operator's own log after the frequency, as xLog's cluster lists them: the short code in xLog's
+   status colour (components/LogStatusCell.tsx). Their two tracks are in .decode-row's own grid;
+   the widths fit the longest codes (NB+M; NB+NM/C) at the row's mono size, so the message column
+   never moves. */
+.log-status {
   font-family: var(--font-mono);
   font-size: calc(11px * var(--text-scale));
   font-weight: 700;
@@ -36369,21 +36354,4 @@ td.aw-cc {
   font-family: var(--font-sans);
   font-weight: 400;
   color: var(--text-dim);
-}
-
-/* Original manual Logbook form, in a portaled owner dialog. One scroll owner is
-   Dialog; its actions wrap and remain reachable at the supported zoom floor. */
-.ui-dialog.owner-manual-create-dialog {
-  width: min(920px, calc(100vw - 2 * var(--space-4)));
-}
-.owner-manual-create-dialog .logbook-form-grid {
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 190px), 1fr));
-}
-.owner-manual-create-dialog .logbook-when { min-width: 0; }
-.owner-manual-create-dialog .logbook-form-actions {
-  flex-wrap: wrap;
-  position: sticky;
-  bottom: 0;
-  background: var(--bg-elev);
-  padding: var(--space-3) 0;
 }
