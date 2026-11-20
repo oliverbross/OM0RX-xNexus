@@ -49,6 +49,9 @@ import {
   atuTune as apiAtuTune,
   haltTx as apiHaltTx,
   setTxEven as apiSetTxEven,
+  setAutopilot as apiSetAutopilot,
+  autopilotConfirmPresence as apiAutopilotConfirmPresence,
+  autopilotFeed as apiAutopilotFeed,
   setTxCycleAuto as apiSetTxCycleAuto,
   setBeacon as apiSetBeacon,
   setRxOffset as apiSetRxOffset,
@@ -111,6 +114,8 @@ import { usePaneWidths, LEFT_MIN, RIGHT_MIN } from './usePaneWidths'
 import { PaneSeam } from './components/PaneSeam'
 import { WATERFALL_SPLIT_MAX, WATERFALL_SPLIT_MIN } from './features/paneSeam'
 import { TopBar } from './components/TopBar'
+import { AutopilotControl } from './components/AutopilotControl'
+import { autopilotFeedFromNeeds } from './features/autopilotFeed'
 import { StationList, type StationFilter } from './components/StationList'
 import { Conversation } from './components/Conversation'
 import { TempoHeader } from './components/TempoHeader'
@@ -1409,6 +1414,13 @@ function App() {
     const id = setInterval(refreshNeeds, 30_000)
     return () => clearInterval(id)
   }, [refreshNeeds])
+  // OM0RX-xNexus: while the autopilot runs, hand the engine the need feed it ranks spots and
+  // DXpeditions from (autopilotFeedFromNeeds). Data only; the engine decides what to work.
+  const autopilotOn = snap?.automation?.autopilotOn === true
+  useEffect(() => {
+    if (!autopilotOn) return
+    void apiAutopilotFeed(autopilotFeedFromNeeds(needAlerts)).catch(() => {})
+  }, [autopilotOn, needAlerts])
   // Raw spot firehose for the Spots panel (ungated, all modes). Polled faster than needs
   // since it's a live "what's on the air" view; the backend command just reads the buffer.
   const [allSpots, setAllSpots] = useState<SpotRow[]>([])
@@ -2265,6 +2277,18 @@ function App() {
       () => apiOverrideNextTx(call, grid, text),
       t('shell.overrideTx.failed', { call }),
     ).then((s) => {
+      if (s) setSnap(s)
+    })
+  }, [])
+
+  // OM0RX-xNexus: the supervised autopilot's two operator acts (AutopilotControl).
+  const handleSetAutopilot = useCallback((on: boolean) => {
+    void withErrorToast(() => apiSetAutopilot(on), t('autopilot.failed')).then((s) => {
+      if (s) setSnap(s)
+    })
+  }, [])
+  const handleConfirmPresence = useCallback(() => {
+    void withErrorToast(() => apiAutopilotConfirmPresence(), t('autopilot.failed')).then((s) => {
       if (s) setSnap(s)
     })
   }, [])
@@ -4391,6 +4415,13 @@ function App() {
           before. Its Stop TX goes with it — the stop line's one ruled exception, which the sweeps
           name: transmit on Connect is stopped by Esc (the listener above) or by leaving the screen. */}
       {effectiveView !== 'connect' && <TopBar
+        autopilotSlot={
+          <AutopilotControl
+            automation={snap.automation}
+            onSetAutopilot={handleSetAutopilot}
+            onConfirmPresence={handleConfirmPresence}
+          />
+        }
         mycall={snap.mycall}
         mygrid={snap.mygrid}
         radio={snap.radio}

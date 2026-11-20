@@ -5577,6 +5577,10 @@ pub struct AppSnapshot {
     /// is switched off, which is the default.
     #[serde(default)]
     pub parsec_presence: Option<ParsecPresenceDto>,
+    /// OM0RX-xNexus: Answer callers and the supervised autopilot, for the Operate panel and the
+    /// presence check (`engine/autopilot.rs`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub automation: Option<crate::automation::AutomationDto>,
     /// The transmitter alarms the operator has not dismissed, oldest first (`engine/tx_alarms.rs`).
     /// Empty while there are none, and then not sent at all, so every other snapshot is the one it
     /// always was.

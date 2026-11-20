@@ -242,6 +242,8 @@ pub(crate) fn keep_the_shacks_transmit_settings(
     save.tune_timeout_secs = shack.tune_timeout_secs;
     save.parsec_presence_stop = shack.parsec_presence_stop;
     save.disable_tx_after_73 = shack.disable_tx_after_73;
+    // OM0RX-xNexus: Answer callers and the autopilot start contacts by themselves.
+    save.automation = shack.automation.clone();
     save.cq_max_calls = shack.cq_max_calls;
     save.directed_max_calls = shack.directed_max_calls;
     save.chat_max_cycles = shack.chat_max_cycles;

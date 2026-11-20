@@ -3236,6 +3236,22 @@ export async function setSkipTx1(enabled: boolean): Promise<AppSnapshot> {
   return invoke<AppSnapshot>('set_skip_tx1', { enabled })
 }
 
+/** OM0RX-xNexus: turn the supervised autopilot on or off. On is refused (with the reason) unless
+ *  Settings ▸ Automation allows it and transmit is already on. */
+export async function setAutopilot(on: boolean): Promise<AppSnapshot> {
+  return invoke<AppSnapshot>('set_autopilot', { on })
+}
+
+/** OM0RX-xNexus: the operator confirms they are at the station. */
+export async function autopilotConfirmPresence(): Promise<AppSnapshot> {
+  return invoke<AppSnapshot>('autopilot_confirm_presence')
+}
+
+/** OM0RX-xNexus: hand the autopilot the need feed (data only; the engine decides). */
+export async function autopilotFeed(entries: import('./types').AutopilotFeedEntry[]): Promise<void> {
+  await invoke<void>('autopilot_feed', { entries })
+}
+
 /** Write text to the operator's Downloads folder; returns the full saved path. Reliable in a
  *  WebView2 window where a browser `<a download>` blob may silently fail. */
 export async function saveTextToDownloads(filename: string, text: string): Promise<string> {

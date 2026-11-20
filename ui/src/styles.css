@@ -36373,3 +36373,104 @@ td.aw-cc {
   font-weight: 400;
   color: var(--text-dim);
 }
+
+/* OM0RX-xNexus: the supervised autopilot in the top bar (AutopilotControl) and its presence prompt,
+   and Settings ▸ Automation's band schedule. */
+.topbar-group.autopilot {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex-wrap: wrap;
+}
+.autopilot-toggle.active {
+  background: var(--state-good);
+  border-color: var(--state-good);
+  color: var(--bg);
+}
+.autopilot-status,
+.autopilot-callers {
+  font-size: var(--fs-label);
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+.autopilot-callers {
+  color: var(--accent);
+}
+.autopilot-presence.due {
+  background: var(--alert-warning);
+  border-color: var(--alert-warning);
+  color: var(--bg);
+  font-weight: 700;
+}
+.autopilot-log {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  z-index: 60;
+  min-width: 22em;
+  max-width: 34em;
+  max-height: 24em;
+  overflow-y: auto;
+  margin-top: var(--space-1);
+  padding: var(--space-2);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  color: var(--text);
+}
+.autopilot-log-next,
+.autopilot-log-empty {
+  color: var(--text-faint);
+  margin-bottom: var(--space-1);
+}
+.autopilot-prompt {
+  position: fixed;
+  top: 4em;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3, 1rem) var(--space-4, 1.5rem);
+  background: var(--panel);
+  border: 2px solid var(--alert-warning);
+  border-radius: var(--radius);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
+  color: var(--text);
+}
+.autopilot-prompt-title {
+  font-size: var(--fs-title);
+  font-weight: 700;
+}
+.autopilot-prompt-btn {
+  font-size: var(--fs-title);
+  padding: var(--space-2) var(--space-4, 1.5rem);
+  background: var(--state-good);
+  color: var(--bg);
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+.automation-schedule {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.automation-window {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-2);
+}
+.automation-window label {
+  display: flex;
+  flex-direction: column;
+}
+.automation-window-bands {
+  flex: 1 1 14em;
+}

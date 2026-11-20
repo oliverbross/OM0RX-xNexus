@@ -33533,6 +33533,35 @@ fn set_skip_tx1(state: State<'_, SharedEngine>, enabled: bool) -> Result<AppSnap
     Ok(eng.snapshot())
 }
 
+/// OM0RX-xNexus: turn the supervised autopilot on or off (`engine/autopilot.rs`). On needs
+/// Settings ▸ Automation to allow it and transmit already on; it never arms transmit itself.
+#[tauri::command(async)]
+fn set_autopilot(state: State<'_, SharedEngine>, on: bool) -> Result<AppSnapshot, String> {
+    let mut eng = engine_lock_result(&state).map_err(|e| e.to_string())?;
+    eng.set_autopilot(on)?;
+    Ok(eng.snapshot())
+}
+
+/// OM0RX-xNexus: the operator confirms presence for the autopilot.
+#[tauri::command(async)]
+fn autopilot_confirm_presence(state: State<'_, SharedEngine>) -> Result<AppSnapshot, String> {
+    let mut eng = engine_lock_result(&state).map_err(|e| e.to_string())?;
+    eng.autopilot_confirm_presence();
+    Ok(eng.snapshot())
+}
+
+/// OM0RX-xNexus: the need feed (cluster, RBN, OTA, DXpeditions) the autopilot ranks spots from.
+/// Data only; the engine decides.
+#[tauri::command(async)]
+fn autopilot_feed(
+    state: State<'_, SharedEngine>,
+    entries: Vec<tempo_app::automation::FeedEntry>,
+) -> Result<(), String> {
+    let mut eng = engine_lock_result(&state).map_err(|e| e.to_string())?;
+    eng.autopilot_feed(entries);
+    Ok(())
+}
+
 /// Switch the top-level operating area: "dx" (FT8/FT4 structured) or "msg"
 /// (FT1/DX1 free-text chat). Atomically sets the area-appropriate tier + mode.
 #[tauri::command(async)]
@@ -54973,6 +55002,9 @@ pub(crate) fn app_commands() -> Box<dyn Fn(tauri::ipc::Invoke) -> bool + Send + 
         import_pota_log,
         import_lotw_unmatched,
         set_skip_tx1,
+        set_autopilot,
+        autopilot_confirm_presence,
+        autopilot_feed,
         civ_diagnostic_status,
         broadcast,
         get_serial_ports,

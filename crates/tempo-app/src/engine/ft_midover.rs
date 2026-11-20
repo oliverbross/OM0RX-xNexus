@@ -359,7 +359,12 @@ impl Engine {
                         && !self.cq_running
                         && self.settings.disable_tx_after_73
                     {
-                        self.pending_tx_disable = true;
+                        // OM0RX-xNexus: as `plan_tx` — automation holds TX for the next contact.
+                        if self.automation.keeps_tx_after_73 {
+                            self.automation.held_disable = true;
+                        } else {
+                            self.pending_tx_disable = true;
+                        }
                     }
                 }
             }

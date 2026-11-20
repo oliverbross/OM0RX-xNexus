@@ -44,6 +44,7 @@ export const SETTINGS_KEYS = [
   'js8TxDelayMs',
   'js8ResetActivity',
   'js8PaneStyle',
+  'automation',
   'rptrOffsetOverrideHz',
   'fdActive',
   'fdClass',
@@ -396,6 +397,8 @@ export const NEWER_SETTINGS = {
   js8ResetActivity: false,
   // …and one that predates JS8Call's colours and fonts draws every JS8 pane in the theme's.
   js8PaneStyle: { light: {}, dark: {}, fonts: {} },
+  // OM0RX-xNexus: a station without Answer callers and the autopilot has neither: both off.
+  automation: { answerCallers: false, autopilotEnabled: false },
 } as const
 /** The per-radio withheld list, mirroring Rust RADIO_WITHHELD_KEYS. Empty today by design: it
  *  exists so the first per-radio credential has somewhere to go that is not the wire, and so the
@@ -482,6 +485,7 @@ export const SETTINGS_SHAPES = {
   "js8TxDelayMs": "number",
   "js8ResetActivity": "boolean",
   "js8PaneStyle": "object",
+  "automation": "object",
   "rptrOffsetOverrideHz": "number",
   "fdActive": "boolean",
   "fdClass": "string",

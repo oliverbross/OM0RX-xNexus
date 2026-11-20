@@ -13,6 +13,7 @@
 //! tests over synthetic decodes.
 
 pub mod alltxt;
+pub mod automation;
 pub mod bandplan;
 pub mod call_history;
 pub mod callbook_update;
@@ -1098,6 +1099,7 @@ impl AppState {
             kept_files: Vec::new(),
             // Filled by the engine while Parsec presence mode is on; None here.
             parsec_presence: None,
+            automation: None,
             // Filled by the engine while a transmitter alarm waits for the operator; none here.
             tx_alarms: Vec::new(),
             // Filled by the engine while the contest logger window is open; none here.

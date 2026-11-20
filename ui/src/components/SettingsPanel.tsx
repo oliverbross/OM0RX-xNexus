@@ -308,6 +308,7 @@ import { blockerText, startBlocker } from '../features/contestStart'
 import { Js8HeartbeatSettings } from './Js8HeartbeatSettings'
 import { Js8ListsSettings } from './Js8ListsSettings'
 import { Js8PaneStyleSettings } from './Js8PaneStyleSettings'
+import { SettingsAutomation } from './SettingsAutomation'
 import { pickJs8SoundFile } from '../api'
 import { resolveTarget, sectionsForTab, type SettingsTabId } from '../settings/registry'
 import { EXPERIENCE_LEVELS, featurePreset, foldsSettings, screensTurnedOff, startsFolded, targetOpens } from '../settings/experience'
@@ -9447,6 +9448,15 @@ export function SettingsPanel({
                     "double-click on call sets Tx enable"). Off = you arm TX yourself each time.
                   </span>
                 </div>
+
+                {/* OM0RX-xNexus: Answer callers and the supervised autopilot. */}
+                <SettingsAutomation
+                  form={form}
+                  onChange={(automation) => {
+                    markDirty()
+                    setForm((prev) => (prev ? { ...prev, automation } : prev))
+                  }}
+                />
 
                 {/* TUNE POWER (#, the MFJ-loop report). The one control in these two sub-groups
                     whose strings come from the CATALOG, and deliberately: the English-only rule

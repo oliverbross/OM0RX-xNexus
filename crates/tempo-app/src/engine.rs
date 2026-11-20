@@ -20,6 +20,9 @@
 mod all_txt_order_tests;
 /// Doppler correction on the APRS cockpit's ISS channel: receive between overs, transmit for each.
 pub mod aprs_iss;
+pub mod autopilot;
+#[cfg(test)]
+mod autopilot_tests;
 #[cfg(test)]
 mod broker_key_slot_tests;
 /// SPEC-2's C16: changes to one contact by its id.
@@ -5886,6 +5889,8 @@ pub struct Engine {
     /// Parsec presence mode — the state machine the watcher's verdicts drive, and the last
     /// stop it made. See `engine/parsec_presence.rs`.
     parsec: parsec_presence::ParsecPresence,
+    /// OM0RX-xNexus: Answer callers' queue and the supervised autopilot. See `engine/autopilot.rs`.
+    automation: autopilot::Automation,
 }
 
 /// Samples of recent audio kept for the live waterfall spectrum (~0.34 s at
@@ -8276,6 +8281,7 @@ impl Engine {
             sstv_tx_progress: None,
             sstv_tx_notice: None,
             parsec: parsec_presence::ParsecPresence::default(),
+            automation: autopilot::Automation::default(),
         }
     }
 
@@ -20956,6 +20962,22 @@ Pick the one you operate from on the Contesting tab in Settings.",
         reply_snr: Option<i32>,
         dx_freq: Option<f32>,
     ) -> Result<(), String> {
+        self.call_station_ctx_arming(dxcall, dxgrid, reply_msg, reply_snr, dx_freq, true)
+    }
+
+    /// [`Self::call_station_ctx`], with the arm made optional. `arm = false` is OM0RX-xNexus
+    /// automation (Answer callers, the autopilot): it works the station exactly as a double-click
+    /// would, but never turns transmit ON — it is only ever asked while transmit is already armed
+    /// by the operator, and a station it starts with TX off stays silent (`engine/autopilot.rs`).
+    pub(crate) fn call_station_ctx_arming(
+        &mut self,
+        dxcall: &str,
+        dxgrid: Option<&str>,
+        reply_msg: Option<&str>,
+        reply_snr: Option<i32>,
+        dx_freq: Option<f32>,
+        arm: bool,
+    ) -> Result<(), String> {
         let mycall = self.settings.mycall.clone();
         let mygrid = self.settings.mygrid.clone();
 
@@ -21186,7 +21208,8 @@ Pick the one you operate from on the Contesting tab in Settings.",
         // Tx enable", default on): enable TX (also clears a tripped watchdog +
         // resets the continuous-TX count) so the auto-sequencer actually keys
         // even if TX was toggled off. Option off = the operator arms manually.
-        if self.settings.double_click_sets_tx {
+        // OM0RX-xNexus automation passes `arm = false`: it never arms.
+        if arm && self.settings.double_click_sets_tx {
             self.set_tx_enabled(true);
         }
         // Any working click cancels a deferred after-73 disable from the
@@ -23149,6 +23172,9 @@ Pick the one you operate from on the Contesting tab in Settings.",
     /// clear the TX indicator. Wired to the WSJT-X UDP "HaltTx" control so a
     /// logger / JTAlert can stop Tempo keying.
     pub fn halt_tx(&mut self) {
+        // OM0RX-xNexus: every stop switches the autopilot off and drops Answer callers' queue —
+        // except the autopilot's own band change, whose context halt is not a stop.
+        self.automation.on_halt();
         self.remote_transmit = None;
         // Kill any over planned before this instant — even one whose gate values
         // all match again by commit time (commit_tx checks the generation).
@@ -33509,6 +33535,7 @@ contact yourself."
             .map(Into::into)
             .collect();
         s.parsec_presence = self.parsec_presence_dto();
+        s.automation = Some(self.automation_dto());
         s.tx_alarms = self.tx_alarms.clone();
         s.contest_entry = self.contest_entry_dto();
         s.contest_cq = self.contest_running_cq();
@@ -34066,7 +34093,13 @@ contact yourself."
                             && !self.cq_running
                             && self.settings.disable_tx_after_73
                         {
-                            self.pending_tx_disable = true;
+                            // OM0RX-xNexus: Answer callers or the autopilot hold TX for the next
+                            // contact; they turn it off themselves when none follows.
+                            if self.automation.keeps_tx_after_73 {
+                                self.automation.held_disable = true;
+                            } else {
+                                self.pending_tx_disable = true;
+                            }
                         }
                         if station.state == QsoState::Done && !self.cq_running {
                             // WSJT-X "CW ID after 73": queue the ID for AFTER
@@ -35746,6 +35779,10 @@ contact yourself."
         while self.decode_history.len() > DECODE_HISTORY_DEPTH {
             self.decode_history.pop_front();
         }
+        // OM0RX-xNexus: Answer callers and the autopilot act on the same checked decodes, after
+        // the sequencer has seen them and the history holds them — a contact they start is placed
+        // from that history exactly as a click on the row would be ([`Self::automation_after_decodes`]).
+        self.automation_after_decodes(&checked, slot);
         // JS8: parse the typed words behind these rows into the message layer (activity
         // rows, heard table, inbox). Text consumers above already had their turn.
         if self.app.tier() == Tier::Js8 {
@@ -37032,6 +37069,8 @@ contact yourself."
         while self.decode_history.len() > DECODE_HISTORY_DEPTH {
             self.decode_history.pop_front();
         }
+        // As the live `ingest`: automation after the history holds this slot.
+        self.automation_after_decodes(decodes, slot);
         self.last_decodes = decodes.to_vec();
     }
 

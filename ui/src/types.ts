@@ -5957,6 +5957,8 @@ export interface Settings {
    *  through their own stop paths. Stop-only; FT auto-sequencing is not covered. The watcher
    *  runs on a Windows station only (the Parsec host). */
   parsecPresenceStop?: boolean
+  /** OM0RX-xNexus: Answer callers and the supervised autopilot (Settings ▸ Automation). */
+  automation?: AutomationSettings
   /** Remote as a stream. Default OFF. A browser holding station control may be shown this
    *  station's own Nexus window and drive it; while one is attached, every transmission stops
    *  within five seconds of the stream going away or its picture going stale. Windows only. */
@@ -6918,6 +6920,8 @@ export interface AppSnapshot {
   /** Parsec presence mode (Settings ▸ Radio ▸ Transmit limits & sharing). Null while it is
    *  switched off, which is the default; absent from a station older than the mode. */
   parsecPresence?: ParsecPresence | null
+  /** OM0RX-xNexus: Answer callers and the supervised autopilot. Absent from a station without them. */
+  automation?: AutomationState | null
   /** The transmitter alarms the operator has not dismissed, oldest first (dismiss_tx_alarm).
    *  Absent while there are none, and from a station older than the alarm. */
   txAlarms?: TxAlarm[]
@@ -7455,4 +7459,95 @@ export interface PcMicEnded {
   /** When, in Unix seconds. */
   at: number
   cause: PcMicCause
+}
+
+// ---------------------------------------------------------------------------------------------
+// OM0RX-xNexus automation: Answer callers and the supervised autopilot (crates/tempo-app
+// automation.rs and engine/autopilot.rs). Settings ▸ Automation edits AutomationSettings; the
+// snapshot's `automation` is AutomationState.
+
+/** One window of the autopilot's band schedule: from `start` (UTC HH:MM) until the next window. */
+export interface AutopilotWindow {
+  start: string
+  bands: string[]
+  /** 'FT8' | 'FT4' | 'FT2' */
+  mode: string
+}
+
+export interface AutopilotTiers {
+  atno: boolean
+  dxpedition: boolean
+  dxccUnconfirmed: boolean
+  dxccNewSlot: boolean
+  reference: boolean
+  newCall: boolean
+}
+
+export interface AutomationSettings {
+  answerCallers: boolean
+  answerTakeoverSlots: number
+  answerChainLimit: number
+  autopilotEnabled: boolean
+  /** Minutes between presence checks, 2–999 (default 10). */
+  presenceCheckMin: number
+  schedule: AutopilotWindow[]
+  listenSlots: number
+  minDwellSecs: number
+  quietSecs: number
+  targetBudgetSecs: number
+  rareBudgetSecs: number
+  maxQsoPerHour: number
+  tiers: AutopilotTiers
+  chaseSpots: boolean
+}
+
+export type AutopilotTier =
+  | 'callingMe'
+  | 'atno'
+  | 'dxpedition'
+  | 'dxccUnconfirmed'
+  | 'dxccNewSlot'
+  | 'reference'
+  | 'newCall'
+
+export type AutopilotStatus =
+  | 'off'
+  | 'listening'
+  | 'calling'
+  | 'inQso'
+  | 'moving'
+  | 'paused'
+  | 'noSchedule'
+  | 'wrongMode'
+  | 'presenceDue'
+
+export interface AutomationState {
+  answerCallers: boolean
+  callers: string[]
+  chain: number
+  autopilotEnabled: boolean
+  autopilotOn: boolean
+  status: AutopilotStatus | string
+  reason: string
+  band?: string | null
+  mode?: string | null
+  target?: string | null
+  targetTier?: AutopilotTier | null
+  presenceRemainingSecs: number
+  presenceMinutes: number
+  nextWindow?: string | null
+  qsosLastHour: number
+  log: string[]
+}
+
+/** One station the need feed knows about, sent to the engine while the autopilot runs. */
+export interface AutopilotFeedEntry {
+  call: string
+  band: string
+  mode?: string | null
+  freqMhz?: number | null
+  dxpedition: boolean
+  newReference: boolean
+  newEntity: boolean
+  newSlot: boolean
 }

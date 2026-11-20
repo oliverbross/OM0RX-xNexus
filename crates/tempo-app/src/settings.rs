@@ -3889,6 +3889,11 @@ pub struct Settings {
     #[serde(default)]
     pub blocked_calls: Vec<String>,
 
+    /// OM0RX-xNexus: Answer callers and the supervised autopilot (Settings ▸ Automation). Off by
+    /// default; see `crate::automation` for the sign-off and its scope.
+    #[serde(default)]
+    pub automation: crate::automation::AutomationSettings,
+
     /// RETIRED (operator 2026-09-24, "One list"): the old "Wanted watch list" (W1.5) — exact
     /// calls or trailing-`*` prefixes (`"VP8*"`, `"3Y0J"`) that put a heard station at the top of
     /// the Needed board. It has had no editor since 2026-07-10, when the watch list
@@ -7458,6 +7463,7 @@ impl Default for Settings {
             best_caller: default_best_caller(),
             best_caller_min_snr: None,
             blocked_calls: Vec::new(),
+            automation: crate::automation::AutomationSettings::default(),
             wanted_calls: Vec::new(),
             pounce_threshold: PounceThreshold::default(),
             alert_cq: false,

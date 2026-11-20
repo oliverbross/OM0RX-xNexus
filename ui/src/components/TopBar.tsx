@@ -102,6 +102,8 @@ interface Props {
    *  Stop TX, so the lane here may be cut on a full line (cockpit-panes.css `.status-lane`). Without one, the lane
    *  keeps a critical item's flag and announces it as an alert. */
   alarmCell?: boolean
+  /** OM0RX-xNexus: the autopilot control, drawn beside the Tx cycle on the FT screens. */
+  autopilotSlot?: ReactNode
   mycall: string
   mygrid: string
   radio: RadioStatus
@@ -387,6 +389,7 @@ function ClockRepair({ radio, keyed }: { radio: RadioStatus; keyed: boolean }) {
 }
 
 export function TopBar({
+  autopilotSlot,
   mycall,
   mygrid,
   radio,
@@ -872,6 +875,8 @@ export function TopBar({
           <T k="topbar.txCycle.second.label" tags={{ s: cycleCaption }} />
         </button>
       </div>
+      {/* OM0RX-xNexus: the supervised autopilot, beside the Tx cycle (AutopilotControl). */}
+      {autopilotSlot}
       </>
       )}
 
