@@ -72,4 +72,40 @@ accepted the proposal, including the fork-only divergence from WSJT-X, on 2026-1
 
 ## Verification
 
-To be filled in as the gates, package, install and live checks run.
+| Gate | Result |
+|---|---|
+| `tsc -b` | pass |
+| fmt (workspace and src-tauri) | pass; the sweep touched only this change's files |
+| fork-policy | 6/6 |
+| New tests | `automation` 15/15, `engine::autopilot_tests` 13/13, `AutopilotControl.test.tsx` 9/9, `logStatusFilter.test.ts` 8/8 |
+| UI suites touched | 51 Band Activity, Call Roster and stop-line files: 417 pass, 1 skipped; 16 top bar and settings files: 130 pass; remote-web: pass |
+| tempo-app (whole crate) | 4016 pass, 8 fail (xlog.17: 3986 pass, 10 fail). The 8 are Windows-path and timing tests (`logstore`, `upload_start`, `fd_scoreboard`, a sweep timing, a remote-logging journal); none in the sequencer or automation. |
+| src-tauri lib (manifested harness) | 1951 pass, 20 fail (xlog.17: 1934 pass, 37 fail), all in the families that failed there (remote LAN stop-road, rotctld, keychain, DXKeeper uploads). Command classes, dispatch and settings: 146/146. |
+| Full vitest run | not re-run end to end: stopped to free memory for the guarded build. |
+
+## Package and installation (2026-11-20/21)
+
+- **Source:** `a3d8c23c9`; canonical `main` fast-forwarded locally (not pushed).
+- **Guard:** profile `optimized-no-lto-cgu16-7GiB-physical14-commit12p5-reserve6`; admitted on the third
+  attempt, after Docker Desktop was stopped and WSL shut down (a separate virtual machine
+  stayed running). Compile 53 min, peak 5.43 GiB.
+- **Evidence:** `.build/xnexus-xlog18-package-7g/evidence/20261120T2206473860734Z-d32db23101484cd9bc1a2297839b069c`.
+- **Receipt:** `target/xnexus-provenance/1.25.0-xlog.18.json`.
+- **Installer:** `OM0RX-xNexus_1.25.0-xlog.18_x64-setup.exe`, 356,471,460 bytes, SHA-256
+  `1D60F2EFB861C9BEAAF6453D649AECF6428B29EAE66038E8B5E2FE9BB776ACA4`.
+- **Built exe:** `85EF6FFE…0C06`. **Installed exe:** `2009FA06…B28F`, version 1.25.0-xlog.18
+  (bundler-stamped, as before).
+- **Install:** Nexus closed normally first (fresh launch, TX off); silent `/S` install, exit 0.
+
+## Live check (receive only)
+
+- Nexus `v1.25.0-xlog.18` opened on 20 m FT8, TX Off, CAT ✓, decoding live.
+- The Status chip is in Band Activity and the Call Roster; its menu shows the quick choices and
+  both boxes with xLog's codes and colours.
+- Settings ▸ Digital shows the Automation section with the defaults: Answer callers off,
+  autopilot off, presence check every 10 minutes. With the autopilot off, no Autopilot button is
+  shown, as designed.
+- Not checked: Answer callers and the autopilot on the air. Both need transmit, so they are for
+  the operator to try at the station.
+- Layout note: the Automation section renders in one narrow column of the Digital grid; usable,
+  to be widened in the next candidate.
