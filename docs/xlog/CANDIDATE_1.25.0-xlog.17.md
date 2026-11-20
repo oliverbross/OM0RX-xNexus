@@ -104,7 +104,25 @@ No failure is caused by this change.
 - Kept across the upgrade: the logbook (69,984 ADIF records), WSJT-X UDP
   `127.0.0.1:2237` on, PTT by CAT, the CAT broker, and the SmartSDR CAT address
   (`rigctld -m 23005 -r 192.168.0.199:5002` started by itself).
-- Not yet checked: decoding, CS/DS on live rows and a logged contact reaching
-  xLog. SmartSDR, DAX and SmartSDR CAT were not running at install time (the
-  radio answered on the network; xLog also showed the radio offline), so Nexus
-  reported no sound card and no CAT. To be checked with the station up.
+- At install time SmartSDR, DAX and SmartSDR CAT were not running, so Nexus
+  reported no sound card and no CAT.
+
+### Station up (2026-11-20, 12:57–12:59 UTC)
+
+With SmartSDR, DAX and SmartSDR CAT 4.3.19 running, Nexus was relaunched
+normally (no arguments):
+
+- DAX audio reached the waterfall at once. CAT came up (`CAT ✓`) and the radio
+  went to 20 m FT8 at 14.0740 MHz, from the 14.0120 MHz the radio was on.
+- FT8 decoding: 37 stations in the Call Roster and Band Activity in the first
+  full slot, with plausible SNR/DT values and 2 decodes on the RX frequency. TX Off
+  and `Listening` the whole time; nothing was transmitted.
+- CS and DS on live rows, in both the Call Roster and Band Activity, with xLog's
+  codes and colours (NC, W, C, NB, NM; DS C). Spot-checked against `log.adi`
+  on 20 m digital:
+  - OZ9WRH W: 20 m FT8, not confirmed.
+  - EA2EED C: 20 m FT8, confirmed.
+  - R5AJ NM: 20 m CW only.
+  - R7KEO NB: no 20 m contact.
+- Still unchecked: a logged contact reaching xLog over UDP 2237. That needs a
+  real QSO, and xLog was not running.
