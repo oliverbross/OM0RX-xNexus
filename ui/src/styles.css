@@ -24602,6 +24602,24 @@ button.cq-skiptx1.on {
 .country-item[data-state='checked']::before {
   content: '✓';
 }
+/* OM0RX-xNexus: the CS / DS status filter (LogStatusFilterPicker) — xLog's two boxes side by
+   side, each status led by its short code in xLog's colour. */
+.log-status-boxes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.log-status-box {
+  flex: 1 1 12em;
+  min-width: 0;
+}
+.log-status-item .log-status-code {
+  display: inline-block;
+  min-width: 5.5ch;
+  margin-right: var(--space-1);
+  font-family: var(--font-mono);
+  font-weight: 700;
+}
 /* #346 — the calls a row's menu hid on one band or for a while, each with a ✕ that shows it again. */
 .hide-scoped-list {
   list-style: none;

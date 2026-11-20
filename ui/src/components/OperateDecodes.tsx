@@ -4,6 +4,8 @@
 // So do the TOKENS the pane is built out of — gathered in DECODE_TOKENS below so a translator
 // can see the whole set at once. What moved is the prose around them.
 import { StatusCell } from './LogStatusCell'
+import { LogStatusFilterPicker } from './LogStatusFilterPicker'
+import { DECODE_LOG_STATUS_KEY, isFiltering, passesLogStatus, useLogStatusFilter } from '../logStatusFilter'
 import { Fragment, memo, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { getLocale, t } from '../i18n'
 import { PaneCloseButton } from './panes/PaneCloseButton'
@@ -435,6 +437,13 @@ export function OperateDecodes({
     setHideConfirmed(on)
   }
 
+  // OM0RX-xNexus: the CS / DS status filter (logStatusFilter.ts). Like the chips, it applies only
+  // on the pane that draws its control: compact and locked panes (the Tempo rail, Rx Frequency)
+  // show every status, so a filter is never active with nothing on screen to say so.
+  const [logStatusStored, setLogStatus] = useLogStatusFilter(DECODE_LOG_STATUS_KEY)
+  const logStatusApplies = !compact && lockedFilter == null
+  const logStatus = logStatusApplies ? logStatusStored : null
+
   // The operator's country exclusion — app-global (every window agrees) and RX-display
   // only. See features/countryExclude.ts for why it is not a Rust setting.
   const countries = useCountryExclude()
@@ -518,6 +527,17 @@ export function OperateDecodes({
                 (partnerCall == null || d.from !== partnerCall)
               ),
           )
+          // OM0RX-xNexus: the CS / DS status filter. Own rows, anything addressed to me and the
+          // working partner always stay — the same exemptions as −B4 and Hide confirmed, for the
+          // same reason (#268): traffic for me is never decluttered away.
+          .filter(
+            (d) =>
+              logStatus == null ||
+              d.mine ||
+              d.directedToMe ||
+              (partnerCall != null && d.from === partnerCall) ||
+              passesLogStatus(logStatus, d.callStatus, d.dxccStatus),
+          )
           // Wildcard call-hide (VP8* etc.) and the row menu's narrower hides (#346: on the band the
           // row was heard on, for a while) — display-only; own rows and the QSO partner stay.
           .filter(
@@ -554,6 +574,7 @@ export function OperateDecodes({
     [
       hist, histVersion, filter, rxOffsetHz, hideB4, hideB4Scope, hideBlocked, ignores,
       partnerCall, hideConfirmed, hideCalls.entries, hideCalls.scoped, band, hiddenEntities, selectedCall, sort,
+      logStatus,
     ],
   )
   // The search ANDs with all of the above and is applied last, so `kept` is exactly what the box
@@ -692,7 +713,8 @@ export function OperateDecodes({
     (hideBlocked ? 1 : 0) +
     (hideConfirmed ? 1 : 0) +
     (hideB4 && filter !== 'b4' ? 1 : 0) +
-    (hideCalls.entries.length > 0 || hideCalls.scoped.length > 0 ? 1 : 0)
+    (hideCalls.entries.length > 0 || hideCalls.scoped.length > 0 ? 1 : 0) +
+    (logStatus && isFiltering(logStatus) ? 1 : 0)
   const showChips = !chipsFolded || chipsOpen
 
   // Wipe this pane (WSJT-X "Erase") and re-pin to the bottom.
@@ -906,6 +928,7 @@ export function OperateDecodes({
             </button>
             <CountryExcludePicker keys={countries.keys} onToggle={countries.toggle} paused={countries.paused} onPauseChange={countries.setPaused} entities={countries.entities} onToggleEntity={countries.toggleEntity} continents={countries.continents} onToggleContinent={countries.toggleContinent} />
             <HideCallsPicker />
+            <LogStatusFilterPicker filter={logStatusStored} onChange={setLogStatus} />
             <label className="od-sort">
               <span className="od-sort-label">{t('operate.decodes.sort.label')}</span>
               {/* The <option> VALUES are stored tokens; only the labels are words, and two

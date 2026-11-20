@@ -12822,6 +12822,18 @@ export const EN = {
   'operate.roster.col.cs.title': 'Sort by call status in your log (New Call first)',
   'operate.roster.col.ds': 'DS',
   'operate.roster.col.ds.title': 'Sort by DXCC status in your log (ATNO first)',
+  // OM0RX-xNexus: the CS / DS status filter (Band Activity and Call Roster).
+  'logStatusFilter.chip.label': 'Status',
+  'logStatusFilter.chip.title':
+    'Show only the call and DXCC statuses you tick (CS and DS in your log). Your own lines, stations calling you and your QSO partner always show.',
+  'logStatusFilter.presets': 'Quick choice',
+  'logStatusFilter.preset.all': 'Show everything',
+  'logStatusFilter.preset.newCalls': 'Only new calls (hide Worked and Confirmed)',
+  'logStatusFilter.preset.newDxcc': 'New DXCC slots (ATNO, new band or mode)',
+  'logStatusFilter.preset.unconfirmed': 'Not yet confirmed',
+  'logStatusFilter.cs': 'Call status',
+  'logStatusFilter.ds': 'DXCC status',
+  'logStatusFilter.note': 'Ticked statuses show. Unknown: Nexus has no status (off the bands, or no DXCC entity).',
   'operate.roster.col.park': 'Park',
   'operate.roster.col.park.title': 'Sort by the park or summit each station is activating (from a POTA or SOTA spot, or its CQ POTA). The parks stay on top either way.',
   'operate.roster.park.title.spot': 'Activating {{park}} (from a spot)',

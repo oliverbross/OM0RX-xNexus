@@ -10,6 +10,8 @@
 // the tokens the roster is built out of (ROSTER_TOKENS below). What moved is the prose around
 // them — the column headings, the filters, and everything a row says out loud.
 import { StatusCell } from './LogStatusCell'
+import { LogStatusFilterPicker } from './LogStatusFilterPicker'
+import { ROSTER_LOG_STATUS_KEY, isFiltering, passesLogStatus, useLogStatusFilter } from '../logStatusFilter'
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react'
 import { t } from '../i18n'
 import { callCardTrigger, qrzPageOf } from './CallCard'
@@ -256,6 +258,8 @@ export function OperateRoster({
   // so the two panes can never show different bands.
   const countries = useCountryExclude()
   const hideCalls = useHideCalls()
+  // OM0RX-xNexus: the roster's own CS / DS status filter (logStatusFilter.ts).
+  const [logStatus, setLogStatus] = useLogStatusFilter(ROSTER_LOG_STATUS_KEY)
   // The operator's watch list (Settings ▸ Spots & Alerts), live: a row it names wears the WATCH
   // tile and counts as a need under the filters below.
   const watchOf = useWatchMatch()
@@ -350,6 +354,14 @@ export function OperateRoster({
         (x) =>
           x.distKm <= maxKm ||
           !Number.isFinite(x.distKm) ||
+          x.s.call === selectedCall ||
+          x.s.call === workingCall,
+      )
+    // OM0RX-xNexus: the CS / DS status filter; the worked or selected station always stays.
+    if (isFiltering(logStatus))
+      f = f.filter(
+        (x) =>
+          passesLogStatus(logStatus, x.s.callStatus, x.s.dxccStatus) ||
           x.s.call === selectedCall ||
           x.s.call === workingCall,
       )
@@ -450,6 +462,7 @@ export function OperateRoster({
     })
     return f
   }, [
+    logStatus,
     stations,
     needByCall,
     needAlertsByCall,
@@ -612,6 +625,7 @@ export function OperateRoster({
               onChange={(e) => setFilter({ hideBlocked: e.target.checked })}
             /> {t('operate.roster.filter.hideBlocked')}
           </label>
+        <LogStatusFilterPicker filter={logStatus} onChange={setLogStatus} className="or-filter od-chip" />
         {/* #386 — the distance cap. It shows its own value, so a roster it has thinned says why,
             and its tooltip says what it never hides. The <option> VALUES are numbers in the
             operator's unit; the labels carry that unit. */}
