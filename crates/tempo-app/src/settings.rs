@@ -2784,6 +2784,13 @@ pub struct Settings {
     /// points at the *PC's* CAT port, not the radio). Empty = no native Flex scope.
     #[serde(default)]
     pub flex_radio_ip: String,
+    /// The one-time move off Hamlib's native SmartSDR backend (23005) onto SmartSDR CAT (2036 at
+    /// `127.0.0.1:5002`) has been made for this file ([`Self::move_flex_to_smartsdr_cat`]). From
+    /// then on a 23005 radio is the operator's deliberate choice and is never moved again. True
+    /// for a new install, which has nothing to move; absent, so false, in a file from before the
+    /// move. No form clears it (`Engine::apply_settings_inner`).
+    #[serde(default)]
+    pub flex_smartsdr_cat_moved: bool,
     /// Opt-in to the FlexRadio native SmartSDR panadapter (VITA-49 FFT). OFF by default: the
     /// worker + command syntax are UNVERIFIED on a real Flex, so a tester enables it here, and
     /// it becomes the default only once proven. Mirrors the Icom `icom_native_cat` opt-in.
@@ -7293,6 +7300,7 @@ impl Default for Settings {
             freedv_heard: false,
             freedv_heard_port: crate::freedv::DEFAULT_HEARD_PORT,
             flex_radio_ip: String::new(),
+            flex_smartsdr_cat_moved: true,
             flex_native_pan: false,
             flex_native_audio: false,
             flex_native_cat: false,
@@ -7614,6 +7622,59 @@ impl Settings {
             self.prop_engine_note_due = true;
         }
         true
+    }
+
+    /// The one-time move of every FlexRadio profile on Hamlib's native SmartSDR backend (23005)
+    /// onto SmartSDR CAT (2036 at `127.0.0.1:5002`), in memory. Returns one line per radio moved,
+    /// for the log; empty when nothing moved.
+    ///
+    /// ⭐ WHY (field report, 2026-11-21, FLEX-6400 on SmartSDR 4.3.19): Hamlib names its native
+    /// models "Slice A".."Slice H", but each drives a slice **index** (23005 → index 0), not the
+    /// slice LETTER SmartSDR shows. After a SmartSDR restart the operator's only slice was letter
+    /// A at index 1, so every band change Nexus made went to a slice that did not exist. rigctld
+    /// echoed the new frequency back, so Nexus thought it had worked; the radio stayed on 40 m.
+    /// SmartSDR CAT's port 5002 follows slice letter A whatever its index, which is why 2036 is
+    /// the default for a detected Flex (`applyDetectedFlex`) and 23005 is marked experimental.
+    ///
+    /// Only on Windows (`smartsdr_cat_here`): SmartSDR CAT is a Windows-only program, so elsewhere
+    /// the move would hand the operator an address nothing can answer. There the marker stays
+    /// unset and nothing changes. The radio's own address is kept as `flex_radio_ip` (native
+    /// panadapter / DAX) when that is still empty and the old CAT address named the radio.
+    /// On Windows the move is recorded as made whether or not a radio moved, so a 23005 chosen
+    /// later is never moved.
+    pub fn move_flex_to_smartsdr_cat(&mut self, smartsdr_cat_here: bool) -> Vec<String> {
+        if self.flex_smartsdr_cat_moved || !smartsdr_cat_here {
+            return Vec::new();
+        }
+        self.flex_smartsdr_cat_moved = true;
+        let mut said = Vec::new();
+        for p in self.radios.iter_mut().filter(|p| p.rig_model == 23005) {
+            let host = p
+                .rig_addr
+                .trim()
+                .rsplit_once(':')
+                .map_or(p.rig_addr.trim(), |(h, _)| h)
+                .trim()
+                .to_string();
+            let names_radio = !host.is_empty()
+                && !host.eq_ignore_ascii_case("localhost")
+                && !host.starts_with("127.")
+                && host.parse::<std::net::IpAddr>().is_ok();
+            if p.flex_radio_ip.trim().is_empty() && names_radio {
+                p.flex_radio_ip = host;
+            }
+            let was = p.rig_addr.clone();
+            p.rig_model = 2036;
+            p.rig_model_name = "FlexRadio FLEX-6xxx / 8xxx (SmartSDR CAT)".to_string();
+            p.rig_conn = "network".to_string();
+            p.rig_addr = "127.0.0.1:5002".to_string();
+            said.push(format!(
+                "{}: moved from Hamlib's native SmartSDR backend (23005, {was}) to SmartSDR CAT \
+                 (2036, 127.0.0.1:5002), which follows slice A",
+                p.name
+            ));
+        }
+        said
     }
 
     /// [`Self::move_prop_engine_in_memory`] at launch, kept only if `save` took it. The engine,
@@ -8955,6 +9016,13 @@ impl Settings {
             }
             p.flex_native_pan |= flat_pan;
             p.flex_native_audio |= flat_audio;
+        }
+        // Migration: Flex radios on Hamlib's native SmartSDR backend move to SmartSDR CAT, once
+        // (`move_flex_to_smartsdr_cat`). After the Flex-three copy above (the radio's IP has to be
+        // in the profile before the move reads it) and before `sync_flat_from_active`.
+        for line in s.move_flex_to_smartsdr_cat(cfg!(windows)) {
+            eprintln!("tempo: {line}");
+            tempo_core::applog::info("settings_flex_cat", &line);
         }
         // Migration: "Data modes use plain SSB" for a radio that has never had it saved. Before
         // `sync_flat_from_active`, which carries the active radio's answer into the flat mirror.
@@ -18587,6 +18655,130 @@ mod tests {
         form.prop_engine_note_due = true;
         e.apply_settings(form);
         assert!(!e.settings().prop_engine_note_due);
+    }
+
+    /// A station from before the Flex move: one radio on Hamlib's native SmartSDR backend
+    /// (23005) at `addr`, with `flex_ip` as its saved radio address, marker not set.
+    fn flex_native_station(addr: &str, flex_ip: &str) -> Settings {
+        let mut s = Settings::default();
+        s.rig_model = 23005;
+        s.rig_model_name = "FlexRadio SmartSDR native (experimental)".into();
+        s.rig_conn = "network".into();
+        s.rig_addr = addr.into();
+        s.flex_radio_ip = flex_ip.into();
+        s.ensure_radio_profiles();
+        s.sync_active_from_flat();
+        s.flex_smartsdr_cat_moved = false;
+        s
+    }
+
+    /// ⭐ THE FIELD REPORT (2026-11-21, FLEX-6400): 23005 drove slice index 0 while SmartSDR's
+    /// slice A sat at index 1, so band changes went nowhere. On Windows the radio moves to
+    /// SmartSDR CAT on 127.0.0.1:5002, keeps the radio's own IP for the native panadapter/DAX,
+    /// the marker is set, and the flat mirror follows. Exactly one line is logged.
+    #[test]
+    fn a_flex_on_the_native_backend_moves_to_smartsdr_cat_on_windows() {
+        let mut s = flex_native_station("192.168.0.199:5002", "");
+        let said = s.move_flex_to_smartsdr_cat(true);
+        assert_eq!(said.len(), 1, "{said:?}");
+        assert!(said[0].contains("23005") && said[0].contains("127.0.0.1:5002"));
+        let p = s.active_profile().unwrap();
+        assert_eq!(p.rig_model, 2036);
+        assert_eq!(
+            p.rig_model_name,
+            "FlexRadio FLEX-6xxx / 8xxx (SmartSDR CAT)"
+        );
+        assert_eq!(p.rig_conn, "network");
+        assert_eq!(p.rig_addr, "127.0.0.1:5002");
+        assert_eq!(
+            p.flex_radio_ip, "192.168.0.199",
+            "the radio's address is kept"
+        );
+        assert!(s.flex_smartsdr_cat_moved);
+        s.sync_flat_from_active();
+        assert_eq!((s.rig_model, s.rig_addr.as_str()), (2036, "127.0.0.1:5002"));
+    }
+
+    /// A radio IP the operator already saved is never replaced, and a localhost CAT address is
+    /// not taken for the radio's.
+    #[test]
+    fn the_flex_move_keeps_a_saved_radio_ip_and_ignores_a_localhost_address() {
+        let mut s = flex_native_station("192.168.0.50:4992", "10.0.0.7");
+        s.move_flex_to_smartsdr_cat(true);
+        assert_eq!(s.active_profile().unwrap().flex_radio_ip, "10.0.0.7");
+        let mut s = flex_native_station("127.0.0.1:5002", "");
+        s.move_flex_to_smartsdr_cat(true);
+        let p = s.active_profile().unwrap();
+        assert_eq!((p.rig_model, p.flex_radio_ip.as_str()), (2036, ""));
+    }
+
+    /// Off Windows there is no SmartSDR CAT to move to: nothing changes, and the marker stays
+    /// unset so the radio is not marked as a deliberate 23005 choice.
+    #[test]
+    fn the_flex_move_does_nothing_where_smartsdr_cat_cannot_run() {
+        let mut s = flex_native_station("192.168.0.199:5002", "");
+        assert!(s.move_flex_to_smartsdr_cat(false).is_empty());
+        assert_eq!(s.active_profile().unwrap().rig_model, 23005);
+        assert!(!s.flex_smartsdr_cat_moved);
+    }
+
+    /// CONTROL: once made, a 23005 is the operator's choice and is never moved; a non-Flex radio
+    /// is never touched; a new install is already marked.
+    #[test]
+    fn the_flex_move_runs_once_and_touches_only_23005() {
+        let mut s = flex_native_station("192.168.0.199:5002", "");
+        s.flex_smartsdr_cat_moved = true;
+        assert!(s.move_flex_to_smartsdr_cat(true).is_empty());
+        assert_eq!(s.active_profile().unwrap().rig_model, 23005);
+
+        let mut ic = Settings::default();
+        ic.rig_model = 3073;
+        ic.rig_addr = "COM3".into();
+        ic.ensure_radio_profiles();
+        ic.sync_active_from_flat();
+        ic.flex_smartsdr_cat_moved = false;
+        assert!(ic.move_flex_to_smartsdr_cat(true).is_empty());
+        assert_eq!(ic.active_profile().unwrap().rig_model, 3073);
+        assert!(
+            ic.flex_smartsdr_cat_moved,
+            "recorded even when nothing moved"
+        );
+
+        assert!(Settings::default().flex_smartsdr_cat_moved);
+    }
+
+    /// Through `load`: a file from before the move (no marker key) on a 23005 radio comes up on
+    /// SmartSDR CAT on Windows and unchanged elsewhere; the move survives a save and reload.
+    #[test]
+    fn an_older_file_on_23005_loads_onto_smartsdr_cat_on_windows_only() {
+        let dir = scratch_dir("flex_cat_move");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("settings.json");
+        let s = flex_native_station("192.168.0.199:5002", "");
+        let mut doc = serde_json::to_value(&s).unwrap();
+        doc.as_object_mut().unwrap().remove("flexSmartsdrCatMoved");
+        std::fs::write(&path, doc.to_string()).unwrap();
+
+        let loaded = Settings::load_at(&path, KEPT_AT);
+        let want = if cfg!(windows) { 2036 } else { 23005 };
+        assert_eq!(loaded.rig_model, want);
+        assert_eq!(loaded.active_profile().unwrap().rig_model, want);
+        assert_eq!(loaded.flex_smartsdr_cat_moved, cfg!(windows));
+        loaded.save(&path).unwrap();
+        let again = Settings::load_at(&path, KEPT_AT);
+        assert_eq!(again.rig_model, want);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// No form can reset the marker, so a 23005 picked after the move is not moved back.
+    #[test]
+    fn a_stale_form_cannot_reset_the_flex_move_marker() {
+        let mut e = crate::engine::Engine::with_settings(Settings::default());
+        let mut older = e.settings().clone();
+        older.flex_smartsdr_cat_moved = false;
+        e.apply_settings(older);
+        assert!(e.settings().flex_smartsdr_cat_moved, "made stays made");
     }
 
     /// An engine picked from a form during a run whose launch save was refused is a choice too.

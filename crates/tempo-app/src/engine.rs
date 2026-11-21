@@ -8619,6 +8619,9 @@ impl Engine {
         // The setup wizard's "seen" record (`mark_setup_wizard_seen`) only ever goes from not seen
         // to seen: no form, restore or reset brings the first-run wizard back to a station.
         let live_setup_wizard_seen = self.settings.setup_wizard_seen;
+        // The one-time Flex move to SmartSDR CAT (`Settings::move_flex_to_smartsdr_cat`): no form
+        // resets its marker, so a 23005 the operator picks afterwards is never moved again.
+        let live_flex_smartsdr_cat_moved = self.settings.flex_smartsdr_cat_moved;
         // The one-time engine move (`Settings::move_prop_engine_once`): no form resets its marker
         // or brings back its note.
         let live_prop_engine = self.settings.prop_engine.clone();
@@ -8789,6 +8792,7 @@ impl Engine {
         self.settings.operating_mode = live_op_mode;
         self.settings.keyboard_modem = live_keyboard_modem;
         self.settings.setup_wizard_seen |= live_setup_wizard_seen;
+        self.settings.flex_smartsdr_cat_moved |= live_flex_smartsdr_cat_moved;
         // An engine changed here is a choice, even if the launch's save of the move was refused.
         self.settings.prop_engine_moved |=
             live_prop_engine_moved || self.settings.prop_engine != live_prop_engine;
