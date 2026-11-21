@@ -18,12 +18,18 @@ export function autopilotFeedFromNeeds(alerts: readonly NeedAlert[]): AutopilotF
       newReference: tags.has('NewPark') || tags.has('NewIota'),
       newEntity: tags.has('NewEntity'),
       newSlot: tags.has('NewBand') || tags.has('NewMode'),
+      newState: tags.has('NewState'),
+      state: a.state ?? null,
     }
     // One row per call: keep the one that says the most (a needed entity over a plain spot).
     const key = `${entry.call}|${entry.band}`
     const have = out.get(key)
     const weight = (e: AutopilotFeedEntry) =>
-      (e.newEntity ? 8 : 0) + (e.dxpedition ? 4 : 0) + (e.newSlot ? 2 : 0) + (e.newReference ? 1 : 0)
+      (e.newEntity ? 16 : 0) +
+      (e.dxpedition ? 8 : 0) +
+      (e.newSlot ? 4 : 0) +
+      (e.newState ? 2 : 0) +
+      (e.newReference ? 1 : 0)
     if (!have || weight(entry) > weight(have)) out.set(key, entry)
   }
   return [...out.values()]

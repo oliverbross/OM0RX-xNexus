@@ -7479,6 +7479,8 @@ export interface AutopilotTiers {
   dxpedition: boolean
   dxccUnconfirmed: boolean
   dxccNewSlot: boolean
+  /** A US state not yet worked on the band (WAS). Off by default. */
+  usState: boolean
   reference: boolean
   newCall: boolean
 }
@@ -7499,6 +7501,12 @@ export interface AutomationSettings {
   maxQsoPerHour: number
   tiers: AutopilotTiers
   chaseSpots: boolean
+  /** US states to chase (ADIF STATE codes); empty = every state still needed on the band. */
+  wantedStates: string[]
+  /** Hunt a needed DXpedition spotted on any allowed band, on its own frequency, then return. */
+  huntDxpeditions: boolean
+  /** While hunting, switch to Hound when the DXpedition runs Fox/Hound, and back afterwards. */
+  huntHound: boolean
 }
 
 export type AutopilotTier =
@@ -7507,6 +7515,7 @@ export type AutopilotTier =
   | 'dxpedition'
   | 'dxccUnconfirmed'
   | 'dxccNewSlot'
+  | 'usState'
   | 'reference'
   | 'newCall'
 
@@ -7520,6 +7529,9 @@ export type AutopilotStatus =
   | 'noSchedule'
   | 'wrongMode'
   | 'presenceDue'
+  | 'holding'
+  | 'finishing'
+  | 'hunting'
 
 export interface AutomationState {
   answerCallers: boolean
@@ -7550,4 +7562,8 @@ export interface AutopilotFeedEntry {
   newReference: boolean
   newEntity: boolean
   newSlot: boolean
+  /** A US state not yet worked on that band (NewState). */
+  newState: boolean
+  /** The US state the board placed the station in. */
+  state?: string | null
 }

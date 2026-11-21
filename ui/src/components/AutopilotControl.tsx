@@ -12,31 +12,35 @@ import { t } from '../i18n'
 import type { AutomationState } from '../types'
 
 const STATUS_KEYS = {
-  off: 'autopilot.status.off',
-  listening: 'autopilot.status.listening',
-  calling: 'autopilot.status.calling',
-  inQso: 'autopilot.status.inQso',
-  moving: 'autopilot.status.moving',
-  paused: 'autopilot.status.paused',
-  noSchedule: 'autopilot.status.noSchedule',
-  wrongMode: 'autopilot.status.wrongMode',
-  presenceDue: 'autopilot.status.presenceDue',
+  off: { textKey: 'autopilot.status.off' },
+  listening: { textKey: 'autopilot.status.listening' },
+  calling: { textKey: 'autopilot.status.calling' },
+  inQso: { textKey: 'autopilot.status.inQso' },
+  moving: { textKey: 'autopilot.status.moving' },
+  paused: { textKey: 'autopilot.status.paused' },
+  noSchedule: { textKey: 'autopilot.status.noSchedule' },
+  wrongMode: { textKey: 'autopilot.status.wrongMode' },
+  presenceDue: { textKey: 'autopilot.status.presenceDue' },
+  holding: { textKey: 'autopilot.status.holding' },
+  finishing: { textKey: 'autopilot.status.finishing' },
+  hunting: { textKey: 'autopilot.status.hunting' },
 } as const
 
 const TIER_KEYS = {
-  callingMe: 'autopilot.tier.callingMe',
-  atno: 'autopilot.tier.atno',
-  dxpedition: 'autopilot.tier.dxpedition',
-  dxccUnconfirmed: 'autopilot.tier.dxccUnconfirmed',
-  dxccNewSlot: 'autopilot.tier.dxccNewSlot',
-  reference: 'autopilot.tier.reference',
-  newCall: 'autopilot.tier.newCall',
+  callingMe: { textKey: 'autopilot.tier.callingMe' },
+  atno: { textKey: 'autopilot.tier.atno' },
+  dxpedition: { textKey: 'autopilot.tier.dxpedition' },
+  dxccUnconfirmed: { textKey: 'autopilot.tier.dxccUnconfirmed' },
+  dxccNewSlot: { textKey: 'autopilot.tier.dxccNewSlot' },
+  usState: { textKey: 'autopilot.tier.usState' },
+  reference: { textKey: 'autopilot.tier.reference' },
+  newCall: { textKey: 'autopilot.tier.newCall' },
 } as const
 
 /** The status in words; an unknown token (a newer engine) reads as itself. */
 export function autopilotStatusText(status: string): string {
   const k = STATUS_KEYS[status as keyof typeof STATUS_KEYS]
-  return k ? t(k) : status
+  return k ? t(k.textKey) : status
 }
 
 function mmss(secs: number): string {
@@ -61,7 +65,7 @@ export function AutopilotControl({
   const callers = automation.answerCallers ? automation.callers : []
   if (!automation.autopilotEnabled && callers.length === 0) return null
   const on = automation.autopilotOn
-  const tierKey = automation.targetTier ? TIER_KEYS[automation.targetTier as keyof typeof TIER_KEYS] : undefined
+  const tierKey = automation.targetTier ? TIER_KEYS[automation.targetTier as keyof typeof TIER_KEYS]?.textKey : undefined
   const prompt =
     on && (automation.status === 'presenceDue' || automation.presenceRemainingSecs <= PRESENCE_PROMPT_SECS)
   return (

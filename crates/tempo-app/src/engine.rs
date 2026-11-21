@@ -23174,7 +23174,9 @@ Pick the one you operate from on the Contesting tab in Settings.",
     pub fn halt_tx(&mut self) {
         // OM0RX-xNexus: every stop switches the autopilot off and drops Answer callers' queue —
         // except the autopilot's own band change, whose context halt is not a stop.
-        self.automation.on_halt();
+        if let Some(prev) = self.automation.on_halt() {
+            self.settings.special_op = prev;
+        }
         self.remote_transmit = None;
         // Kill any over planned before this instant — even one whose gate values
         // all match again by commit time (commit_tx checks the generation).

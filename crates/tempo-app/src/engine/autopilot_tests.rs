@@ -302,3 +302,215 @@ fn the_autopilot_skips_a_directed_cq_for_someone_else() {
     e.ingest_decodes_for_test(&[dec_snr("CQ NA N0ABC EM48", -3)], 32);
     assert_eq!(e.automation_dx(), None);
 }
+
+/// 20 m and 17 m all day, listening one slot: the smallest schedule that can move.
+fn two_band_pilot() -> Engine {
+    let mut e = engine();
+    e.settings.automation.autopilot_enabled = true;
+    e.settings.automation.schedule = vec![crate::automation::AutopilotWindow {
+        start: "00:00".into(),
+        bands: vec!["20m".into(), "17m".into()],
+        mode: "FT8".into(),
+    }];
+    e.settings.automation.listen_slots = 1;
+    e.set_tx_enabled(true);
+    e.set_autopilot(true).unwrap();
+    e
+}
+
+#[test]
+fn a_quiet_band_is_left_once_everything_is_finished() {
+    let mut e = two_band_pilot();
+    e.automation_backdate_band(10_000);
+    e.ingest_decodes_for_test(&[], 30);
+    e.ingest_decodes_for_test(&[], 32);
+    assert_eq!(
+        e.settings.band, "17m",
+        "positive control: a quiet band is left"
+    );
+}
+
+#[test]
+fn the_band_never_changes_while_the_partner_is_still_sending() {
+    let mut e = two_band_pilot();
+    // One call per step, so the exchange stalls the moment the partner misses our report.
+    e.settings.directed_max_calls = Some(1);
+    e.ingest_decodes_for_test(&[dec_snr("CQ N0ABC EM48", -3)], 30);
+    e.ingest_decodes_for_test(&[dec_snr("CQ N0ABC EM48", -3)], 32);
+    assert_eq!(
+        e.automation_dx().as_deref(),
+        Some("N0ABC"),
+        "premise: calling"
+    );
+    key_once(&mut e, 33);
+    e.ingest_decodes_for_test(&[dec_snr("OM0RX N0ABC -10", -3)], 35);
+    key_once(&mut e, 36);
+    // The partner did not copy our R-report and repeats theirs; our step is spent (stalled).
+    for s in [38, 40] {
+        e.automation_backdate_band(10_000);
+        e.ingest_decodes_for_test(&[dec_snr("OM0RX N0ABC -10", -3)], s);
+        assert_eq!(e.settings.band, "20m", "slot {s}: mid-QSO, the band stays");
+    }
+    // Two of the partner's periods of silence: the contact is over, the band may change.
+    for s in [42, 44] {
+        e.automation_backdate_band(10_000);
+        e.ingest_decodes_for_test(&[], s);
+    }
+    assert_eq!(
+        e.settings.band, "17m",
+        "after the partner went quiet, the band moves"
+    );
+}
+
+#[test]
+fn a_station_calling_us_holds_the_band_even_with_answer_callers_off() {
+    let mut e = two_band_pilot();
+    for s in [30, 32, 34] {
+        e.automation_backdate_band(10_000);
+        e.ingest_decodes_for_test(&[dec_snr("OM0RX K1ABC FN42", -5)], s);
+        assert_eq!(e.settings.band, "20m", "slot {s}: somebody is calling us");
+    }
+}
+
+#[test]
+fn the_band_never_changes_during_a_cq_run() {
+    let mut e = two_band_pilot();
+    e.cq_running = true;
+    e.automation_backdate_band(10_000);
+    e.ingest_decodes_for_test(&[], 30);
+    e.ingest_decodes_for_test(&[], 32);
+    assert_eq!(e.settings.band, "20m");
+}
+
+fn dxped_spot(call: &str, band: &str, freq: f64) -> crate::automation::FeedEntry {
+    crate::automation::FeedEntry {
+        call: call.into(),
+        band: band.into(),
+        mode: Some("FT8".into()),
+        freq_mhz: Some(freq),
+        dxpedition: true,
+        new_slot: true,
+        ..Default::default()
+    }
+}
+
+fn dec_at(msg: &str, snr: i32, freq: f32) -> modes::Decode {
+    let mut d = dec_snr(msg, snr);
+    d.freq = freq;
+    d
+}
+
+#[test]
+fn a_dxpedition_on_an_unscheduled_band_is_hunted_on_its_own_frequency() {
+    let mut e = two_band_pilot();
+    e.autopilot_feed(vec![dxped_spot("3Y0K", "40m", 7.056)]);
+    e.ingest_decodes_for_test(&[], 30);
+    assert_eq!(
+        e.settings.band, "40m",
+        "40 m is in no window, but a DXpedition is"
+    );
+    assert!(
+        (e.settings.dial_mhz - 7.056).abs() < 1e-6,
+        "its own frequency, not the 7.074 channel: {}",
+        e.settings.dial_mhz
+    );
+    assert_eq!(e.automation_dto().status, "moving");
+    // Heard above 1000 Hz (no Fox/Hound): called like a double-click.
+    e.ingest_decodes_for_test(&[dec_snr("CQ 3Y0K JD15", -14)], 32);
+    assert_eq!(e.automation_dx().as_deref(), Some("3Y0K"));
+    assert_eq!(e.settings.special_op, crate::settings::SpecialOp::None);
+}
+
+#[test]
+fn a_dxpedition_hunt_waits_for_the_contact_in_progress() {
+    let mut e = two_band_pilot();
+    e.ingest_decodes_for_test(&[dec_snr("CQ N0ABC EM48", -3)], 30);
+    e.ingest_decodes_for_test(&[dec_snr("CQ N0ABC EM48", -3)], 32);
+    assert_eq!(
+        e.automation_dx().as_deref(),
+        Some("N0ABC"),
+        "premise: calling"
+    );
+    key_once(&mut e, 33);
+    e.ingest_decodes_for_test(&[dec_snr("OM0RX N0ABC -10", -3)], 35);
+    e.autopilot_feed(vec![dxped_spot("3Y0K", "40m", 7.056)]);
+    key_once(&mut e, 36);
+    e.ingest_decodes_for_test(&[dec_snr("OM0RX N0ABC -10", -3)], 38);
+    assert_eq!(e.settings.band, "20m", "mid-QSO: the DXpedition waits");
+}
+
+#[test]
+fn a_fox_switches_the_hunt_to_hound_and_stop_tx_puts_it_back() {
+    let mut e = two_band_pilot();
+    e.autopilot_feed(vec![dxped_spot("3Y0K", "40m", 7.056)]);
+    e.ingest_decodes_for_test(&[], 30);
+    e.ingest_decodes_for_test(&[dec_at("CQ 3Y0K JD15", -14, 600.0)], 32);
+    assert_eq!(e.settings.special_op, crate::settings::SpecialOp::Hound);
+    e.halt_tx();
+    assert_eq!(
+        e.settings.special_op,
+        crate::settings::SpecialOp::None,
+        "the operator's own setting is back"
+    );
+    assert!(!e.automation_dto().autopilot_on);
+}
+
+#[test]
+fn a_hunt_returns_where_it_came_from_when_the_spot_goes() {
+    let mut e = two_band_pilot();
+    e.autopilot_feed(vec![dxped_spot("3Y0K", "40m", 7.056)]);
+    e.ingest_decodes_for_test(&[], 30);
+    assert_eq!(e.settings.band, "40m", "premise: hunting");
+    e.autopilot_feed(vec![]);
+    e.ingest_decodes_for_test(&[], 32);
+    assert_eq!(e.settings.band, "20m", "back to the band it left");
+    assert!((e.settings.dial_mhz - 14.074).abs() < 1e-6);
+}
+
+#[test]
+fn a_needed_state_is_called_only_when_switched_on_and_wanted() {
+    let mut e = engine();
+    e.settings.automation.autopilot_enabled = true;
+    e.settings.automation.schedule = vec![crate::automation::AutopilotWindow {
+        start: "00:00".into(),
+        bands: vec!["20m".into()],
+        mode: "FT8".into(),
+    }];
+    e.settings.automation.listen_slots = 1;
+    // Nothing else would call it: every other tier off.
+    e.settings.automation.tiers = crate::automation::AutopilotTiers {
+        atno: false,
+        dxpedition: false,
+        dxcc_unconfirmed: false,
+        dxcc_new_slot: false,
+        us_state: false,
+        reference: false,
+        new_call: false,
+    };
+    e.set_tx_enabled(true);
+    e.set_autopilot(true).unwrap();
+    let vt = crate::automation::FeedEntry {
+        call: "W1VT".into(),
+        band: "20m".into(),
+        mode: Some("FT8".into()),
+        new_state: true,
+        state: Some("VT".into()),
+        ..Default::default()
+    };
+    e.autopilot_feed(vec![vt]);
+    for s in [30, 32] {
+        e.ingest_decodes_for_test(&[dec_snr("CQ W1VT FN33", -8)], s);
+    }
+    assert_eq!(e.automation_dx(), None, "the state tier is off");
+    e.settings.automation.tiers.us_state = true;
+    e.settings.automation.wanted_states = vec!["ND".into()];
+    e.ingest_decodes_for_test(&[dec_snr("CQ W1VT FN33", -8)], 34);
+    assert_eq!(e.automation_dx(), None, "VT is not on the wanted list");
+    e.settings.automation.wanted_states = vec!["VT".into()];
+    e.ingest_decodes_for_test(&[dec_snr("CQ W1VT FN33", -8)], 36);
+    assert_eq!(
+        e.automation_dx().as_deref(),
+        Some("W1VT"),
+        "wanted and needed"
+    );
+}

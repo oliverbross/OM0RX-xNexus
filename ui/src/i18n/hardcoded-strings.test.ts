@@ -1049,6 +1049,11 @@ const PARTIAL = [
   // click on a call shown as <...> in the operator's language (`shell.work.unresolved*`), which
   // the orphan check can only see if it reads this file. Its other errors are still code.
   'api.ts',
+  // OM0RX-xNexus automation (2026-11-20): the Autopilot control and Settings ▸ Automation, born
+  // catalogued — without them here every `autopilot.*` and `settings.automation.*` entry reads
+  // as an orphan, because the scanner only looks where it is told.
+  'components/AutopilotControl.tsx',
+  'components/SettingsAutomation.tsx',
 ]
 
 /** Attributes whose value a human reads — on hover, or through a screen reader. */

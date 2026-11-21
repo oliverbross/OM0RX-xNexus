@@ -3,6 +3,7 @@
 // (`settings.automation`) edited whole, as Js8PaneStyleSettings edits its own. The engine clamps
 // every number again on use (automation.rs `sanitized`), so a stray value can never wedge it; this
 // form clamps too, so what it shows is what will run.
+import { useState } from 'react'
 import { t } from '../i18n'
 import type { AutomationSettings, AutopilotTiers, AutopilotWindow, Settings } from '../types'
 
@@ -28,10 +29,14 @@ export const DEFAULT_AUTOMATION: AutomationSettings = {
     dxpedition: true,
     dxccUnconfirmed: true,
     dxccNewSlot: true,
+    usState: false,
     reference: true,
     newCall: true,
   },
   chaseSpots: true,
+  wantedStates: [],
+  huntDxpeditions: true,
+  huntHound: true,
 }
 
 /** The stored value with every missing field filled from the defaults. */
@@ -42,6 +47,7 @@ export function automationOf(s: Pick<Settings, 'automation'> | null | undefined)
     ...(a ?? {}),
     tiers: { ...DEFAULT_AUTOMATION.tiers, ...(a?.tiers ?? {}) },
     schedule: Array.isArray(a?.schedule) ? a!.schedule : DEFAULT_AUTOMATION.schedule,
+    wantedStates: Array.isArray(a?.wantedStates) ? a!.wantedStates : [],
   }
 }
 
@@ -52,13 +58,14 @@ export function clampInt(raw: string, lo: number, hi: number, old: number): numb
   return Math.min(hi, Math.max(lo, n))
 }
 
-const TIER_ROWS: { key: keyof AutopilotTiers; label: Parameters<typeof t>[0] }[] = [
-  { key: 'atno', label: 'settings.automation.tiers.atno' },
-  { key: 'dxpedition', label: 'settings.automation.tiers.dxpedition' },
-  { key: 'dxccUnconfirmed', label: 'settings.automation.tiers.dxccUnconfirmed' },
-  { key: 'dxccNewSlot', label: 'settings.automation.tiers.dxccNewSlot' },
-  { key: 'reference', label: 'settings.automation.tiers.reference' },
-  { key: 'newCall', label: 'settings.automation.tiers.newCall' },
+const TIER_ROWS: { key: keyof AutopilotTiers; labelKey: Parameters<typeof t>[0] }[] = [
+  { key: 'atno', labelKey: 'settings.automation.tiers.atno' },
+  { key: 'dxpedition', labelKey: 'settings.automation.tiers.dxpedition' },
+  { key: 'dxccUnconfirmed', labelKey: 'settings.automation.tiers.dxccUnconfirmed' },
+  { key: 'dxccNewSlot', labelKey: 'settings.automation.tiers.dxccNewSlot' },
+  { key: 'usState', labelKey: 'settings.automation.tiers.usState' },
+  { key: 'reference', labelKey: 'settings.automation.tiers.reference' },
+  { key: 'newCall', labelKey: 'settings.automation.tiers.newCall' },
 ]
 
 function Switch({
@@ -126,6 +133,50 @@ function NumberField({
         data-testid={testId}
       />
       {hint && <span className="settings-hint">{hint}</span>}
+    </label>
+  )
+}
+
+/** Split a typed list of state codes ("vt, ND  me") into clean upper-case codes. */
+export function parseStates(raw: string): string[] {
+  const out: string[] = []
+  for (const part of raw.split(/[\s,;]+/)) {
+    const code = part.trim().toUpperCase()
+    if (code && !out.includes(code)) out.push(code)
+  }
+  return out
+}
+
+function WantedStates({
+  value,
+  disabled,
+  onChange,
+}: {
+  value: string[]
+  disabled: boolean
+  onChange: (states: string[]) => void
+}) {
+  // Typed freely and parsed on blur, so a half-typed code is not thrown away mid-word.
+  const [draft, setDraft] = useState<string | null>(null)
+  return (
+    <label className="settings-field">
+      <span className="settings-label">{t('settings.automation.tiers.states')}</span>
+      <input
+        className="settings-input"
+        type="text"
+        value={draft ?? value.join(', ')}
+        placeholder={t('settings.automation.tiers.states.placeholder')}
+        disabled={disabled}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={() => {
+          if (draft !== null) onChange(parseStates(draft))
+          setDraft(null)
+        }}
+        autoComplete="off"
+        spellCheck={false}
+        data-testid="automation-wanted-states"
+      />
+      <span className="settings-hint">{t('settings.automation.tiers.states.hint')}</span>
     </label>
   )
 }
@@ -232,16 +283,34 @@ export function SettingsAutomation({
         on={a.chaseSpots}
         onChange={(chaseSpots) => set({ chaseSpots })}
       />
+      <Switch
+        label={t('settings.automation.pilot.hunt')}
+        hint={t('settings.automation.pilot.hunt.hint')}
+        on={a.huntDxpeditions}
+        onChange={(huntDxpeditions) => set({ huntDxpeditions })}
+        testId="automation-hunt"
+      />
+      <Switch
+        label={t('settings.automation.pilot.huntHound')}
+        on={a.huntHound}
+        onChange={(huntHound) => set({ huntHound })}
+        testId="automation-hunt-hound"
+      />
 
       <h4 className="settings-subhead">{t('settings.automation.tiers.head')}</h4>
       {TIER_ROWS.map((row) => (
         <Switch
           key={row.key}
-          label={t(row.label)}
+          label={t(row.labelKey)}
           on={a.tiers[row.key]}
           onChange={(on) => set({ tiers: { ...a.tiers, [row.key]: on } })}
         />
       ))}
+      <WantedStates
+        value={a.wantedStates}
+        disabled={!a.tiers.usState}
+        onChange={(wantedStates) => set({ wantedStates })}
+      />
 
       <h4 className="settings-subhead">{t('settings.automation.schedule.head')}</h4>
       <p className="settings-hint">{t('settings.automation.schedule.hint')}</p>

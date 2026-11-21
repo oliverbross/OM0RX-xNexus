@@ -61,6 +61,10 @@ pub struct AutopilotTiers {
     pub dxcc_unconfirmed: bool,
     /// DXCC confirmed elsewhere, new on this band or mode (C/New …).
     pub dxcc_new_slot: bool,
+    /// A US state not yet worked on this band (WAS), the need board's NewState. Off by default:
+    /// from Europe it would otherwise call every US station on a band. Narrow it further with
+    /// [`AutomationSettings::wanted_states`].
+    pub us_state: bool,
     /// A new POTA park, IOTA, SOTA or WWFF reference.
     pub reference: bool,
     /// A call new on this band and mode (CS New Call, New Band, New Mode, New Band+Mode).
@@ -74,6 +78,7 @@ impl Default for AutopilotTiers {
             dxpedition: true,
             dxcc_unconfirmed: true,
             dxcc_new_slot: true,
+            us_state: false,
             reference: true,
             new_call: true,
         }
@@ -112,6 +117,17 @@ pub struct AutomationSettings {
     pub tiers: AutopilotTiers,
     /// Move to another scheduled band for a needed spot (receive first, call only once decoded).
     pub chase_spots: bool,
+    /// The US states to chase (ADIF `STATE` codes, `"VT"`), when only some are wanted. Empty =
+    /// every state still needed on the band. A listed state is still called only while it is
+    /// needed there.
+    pub wanted_states: Vec<String>,
+    /// Hunt a needed DXpedition spotted on ANY band the licence allows — not only the scheduled
+    /// ones — on the frequency the spot names, then return to where the autopilot was. Waits, like
+    /// every band change, until every contact is finished and nobody is calling.
+    pub hunt_dxpeditions: bool,
+    /// While hunting, switch to Hound when the DXpedition is heard running Fox/Hound (transmitting
+    /// below 1000 Hz), and back when the hunt ends.
+    pub hunt_hound: bool,
 }
 
 impl Default for AutomationSettings {
@@ -147,6 +163,9 @@ impl Default for AutomationSettings {
             max_qso_per_hour: 60,
             tiers: AutopilotTiers::default(),
             chase_spots: true,
+            wanted_states: Vec::new(),
+            hunt_dxpeditions: true,
+            hunt_hound: true,
         }
     }
 }
@@ -177,7 +196,25 @@ impl AutomationSettings {
             w.mode = w.mode.trim().to_uppercase();
         }
         self.schedule.retain(|w| !w.bands.is_empty());
+        self.wanted_states = self
+            .wanted_states
+            .iter()
+            .map(|s| s.trim().to_uppercase())
+            .filter(|s| !s.is_empty())
+            .collect();
+        self.wanted_states.sort();
+        self.wanted_states.dedup();
         self
+    }
+
+    /// Is `state` one the operator chases (every state when the list is empty)?
+    pub fn wants_state(&self, state: Option<&str>) -> bool {
+        self.wanted_states.is_empty()
+            || state.is_some_and(|s| {
+                self.wanted_states
+                    .iter()
+                    .any(|w| w.trim().eq_ignore_ascii_case(s.trim()))
+            })
     }
 }
 
@@ -254,10 +291,12 @@ pub enum Tier {
     DxccUnconfirmed = 4,
     /// DXCC confirmed elsewhere, new on this band or mode.
     DxccNewSlot = 5,
+    /// A US state needed on this band (WAS), and wanted.
+    UsState = 6,
     /// A new park, island, summit or WWFF reference.
-    Reference = 6,
+    Reference = 7,
     /// A call new on this band and mode.
-    NewCall = 7,
+    NewCall = 8,
 }
 
 /// One heard station the autopilot could call: what a decode row says about it.
@@ -282,37 +321,55 @@ pub struct Candidate {
     pub dxpedition: bool,
     /// Activating a reference (park, island, summit) not yet worked.
     pub new_reference: bool,
+    /// In a US state needed on this band that the operator wants
+    /// ([`AutomationSettings::wants_state`] already applied).
+    pub new_state: bool,
     pub lotw: bool,
 }
 
-/// The tier a candidate falls in, or `None` when it is not worth calling (Worked, Confirmed, or
-/// nothing known about it).
-pub fn tier_of(c: &Candidate) -> Option<Tier> {
+/// Every tier a candidate falls in, strongest first (empty when it is not worth calling: Worked,
+/// Confirmed, or nothing known about it). A station can be in several — an ATNO in a needed
+/// state — so a switched-off tier never hides one that is switched on ([`best_allowed_tier`]).
+pub fn tiers_of(c: &Candidate) -> Vec<Tier> {
+    let mut out = Vec::new();
     if c.to_me {
-        return Some(Tier::CallingMe);
+        out.push(Tier::CallingMe);
     }
     let ds = c.dxcc_status.as_deref().unwrap_or("");
     let cs = c.call_status.as_deref().unwrap_or("");
     let call_new = matches!(cs, "New Call" | "New Band" | "New Mode" | "New Band+Mode");
     if ds == "ATNO" {
-        return Some(Tier::Atno);
+        out.push(Tier::Atno);
     }
     if c.dxpedition && call_new {
-        return Some(Tier::Dxpedition);
+        out.push(Tier::Dxpedition);
     }
     if ds.starts_with("W/") {
-        return Some(Tier::DxccUnconfirmed);
+        out.push(Tier::DxccUnconfirmed);
     }
     if ds.starts_with("C/") {
-        return Some(Tier::DxccNewSlot);
+        out.push(Tier::DxccNewSlot);
+    }
+    if c.new_state {
+        out.push(Tier::UsState);
     }
     if c.new_reference && call_new {
-        return Some(Tier::Reference);
+        out.push(Tier::Reference);
     }
     if call_new {
-        return Some(Tier::NewCall);
+        out.push(Tier::NewCall);
     }
-    None
+    out
+}
+
+/// The strongest tier a candidate falls in, or `None` when it is not worth calling.
+pub fn tier_of(c: &Candidate) -> Option<Tier> {
+    tiers_of(c).into_iter().next()
+}
+
+/// The strongest tier a candidate falls in that the operator switched on.
+pub fn best_allowed_tier(c: &Candidate, tiers: &AutopilotTiers) -> Option<Tier> {
+    tiers_of(c).into_iter().find(|t| tier_allowed(*t, tiers))
 }
 
 /// Is this tier switched on? Callers to the operator are governed by Answer callers instead.
@@ -323,6 +380,7 @@ pub fn tier_allowed(t: Tier, tiers: &AutopilotTiers) -> bool {
         Tier::Dxpedition => tiers.dxpedition,
         Tier::DxccUnconfirmed => tiers.dxcc_unconfirmed,
         Tier::DxccNewSlot => tiers.dxcc_new_slot,
+        Tier::UsState => tiers.us_state,
         Tier::Reference => tiers.reference,
         Tier::NewCall => tiers.new_call,
     }
@@ -386,8 +444,7 @@ pub fn pick<'a>(
         .iter()
         .filter(|c| c.to_me || c.is_cq)
         .filter(|c| !skip(c))
-        .filter_map(|c| tier_of(c).map(|t| (c, t)))
-        .filter(|(_, t)| tier_allowed(*t, tiers))
+        .filter_map(|c| best_allowed_tier(c, tiers).map(|t| (c, t)))
         .filter(|(c, _)| may_retry(attempts.get(&c.call.to_uppercase()), now_unix))
         .min_by(|(a, ta), (b, tb)| {
             ta.cmp(tb)
@@ -467,6 +524,10 @@ pub struct FeedEntry {
     pub new_entity: bool,
     /// The entity is new on that band or in that mode (NewBand / NewMode).
     pub new_slot: bool,
+    /// A US state not yet worked on that band (NewState).
+    pub new_state: bool,
+    /// The US state (ADIF `STATE`) the board placed the station in, when it placed it.
+    pub state: Option<String>,
 }
 
 /// The tier a spot would put its station in, for chasing it to another band; `None` = not worth
@@ -478,9 +539,37 @@ pub fn spot_tier(f: &FeedEntry) -> Option<Tier> {
         Some(Tier::Dxpedition)
     } else if f.new_slot {
         Some(Tier::DxccNewSlot)
+    } else if f.new_state {
+        Some(Tier::UsState)
     } else {
         None
     }
+}
+
+/// Is this spot a DXpedition worth leaving the band for: a listed DXpedition, needed (a new
+/// entity, or new on that band or mode)?
+pub fn is_hunt_spot(f: &FeedEntry) -> bool {
+    f.dxpedition && (f.new_entity || f.new_slot)
+}
+
+/// The dial to hunt a spot from. A spot inside the standard channel's passband (the channel dial
+/// up to 3 kHz above it) keeps the standard dial; any other — a DXpedition on its own frequency —
+/// gets the spot rounded down to the kHz, which puts its signal low in the passband whether the
+/// spotter gave the dial (Fox/Hound announcements) or the signal itself.
+pub fn hunt_dial(spot_mhz: f64, channel_dial_mhz: Option<f64>) -> f64 {
+    if let Some(ch) = channel_dial_mhz {
+        let up = spot_mhz - ch;
+        if (0.0..0.003).contains(&up) {
+            return ch;
+        }
+    }
+    (spot_mhz * 1000.0 + 1e-6).floor() / 1000.0
+}
+
+/// Is a spot audible from `dial_mhz` (inside the 200–2900 Hz passband)?
+pub fn in_passband(spot_mhz: f64, dial_mhz: f64) -> bool {
+    let up = spot_mhz - dial_mhz;
+    (0.0002..=0.0029).contains(&up) || (spot_mhz - dial_mhz).abs() < 1e-6
 }
 
 /// What the UI shows about Answer callers and the autopilot. Tokens only: the UI owns every word.
@@ -534,6 +623,7 @@ mod tests {
             to_me: false,
             dxpedition: false,
             new_reference: false,
+            new_state: false,
             lotw: false,
         }
     }
@@ -694,8 +784,10 @@ mod tests {
 
     #[test]
     fn a_switched_off_tier_and_a_non_cq_are_not_called() {
-        let mut tiers = AutopilotTiers::default();
-        tiers.new_call = false;
+        let tiers = AutopilotTiers {
+            new_call: false,
+            ..AutopilotTiers::default()
+        };
         let mut not_cq = cand("TALK", Some("New Call"), Some("ATNO"), 0);
         not_cq.is_cq = false;
         let list = vec![cand("NEW1", Some("New Call"), Some("Confirmed"), 0), not_cq];
@@ -736,6 +828,87 @@ mod tests {
         })
         .unwrap();
         assert_eq!(c.call, "NEXT");
+    }
+
+    #[test]
+    fn a_needed_state_ranks_below_dxcc_and_is_off_by_default() {
+        let mut ny = cand("W2ABC", Some("Worked"), Some("Confirmed"), 0);
+        ny.new_state = true;
+        assert_eq!(tier_of(&ny), Some(Tier::UsState));
+        let list = vec![ny.clone()];
+        assert!(
+            pick(
+                &list,
+                &AutopilotTiers::default(),
+                &HashMap::new(),
+                0,
+                |_| false
+            )
+            .is_none(),
+            "off until the operator switches it on"
+        );
+        let tiers = AutopilotTiers {
+            us_state: true,
+            ..AutopilotTiers::default()
+        };
+        assert!(pick(&list, &tiers, &HashMap::new(), 0, |_| false).is_some());
+        let slot = cand("ZZ1", Some("New Call"), Some("C/New Band"), -20);
+        let list = vec![ny, slot];
+        let (c, _) = pick(&list, &tiers, &HashMap::new(), 0, |_| false).unwrap();
+        assert_eq!(c.call, "ZZ1", "a DXCC slot outranks a state");
+    }
+
+    #[test]
+    fn the_wanted_states_list_narrows_the_chase() {
+        let mut s = AutomationSettings::default();
+        assert!(s.wants_state(Some("VT")), "empty list: every state");
+        assert!(s.wants_state(None));
+        s.wanted_states = vec![" vt ".into(), "ND".into(), "".into()];
+        let s = s.sanitized();
+        assert_eq!(s.wanted_states, vec!["ND".to_string(), "VT".to_string()]);
+        assert!(s.wants_state(Some("vt")));
+        assert!(!s.wants_state(Some("CA")));
+        assert!(
+            !s.wants_state(None),
+            "an unplaced station is not a wanted state"
+        );
+        let f = FeedEntry {
+            new_state: true,
+            ..FeedEntry::default()
+        };
+        assert_eq!(spot_tier(&f), Some(Tier::UsState));
+    }
+
+    #[test]
+    fn a_switched_off_tier_does_not_hide_a_switched_on_one() {
+        let mut both = cand("KH8Z", Some("New Call"), Some("ATNO"), 0);
+        both.new_state = true;
+        let tiers = AutopilotTiers {
+            atno: false,
+            us_state: true,
+            ..AutopilotTiers::default()
+        };
+        assert_eq!(best_allowed_tier(&both, &tiers), Some(Tier::UsState));
+        assert_eq!(tier_of(&both), Some(Tier::Atno));
+    }
+
+    #[test]
+    fn a_dxpedition_keeps_its_own_frequency() {
+        // Inside the FT8 channel's passband: the standard dial.
+        assert_eq!(hunt_dial(14.0755, Some(14.074)), 14.074);
+        // Its own frequency (14.090 Fox/Hound): that kHz.
+        assert!((hunt_dial(14.090, Some(14.074)) - 14.090).abs() < 1e-9);
+        assert!((hunt_dial(14.0905, Some(14.074)) - 14.090).abs() < 1e-9);
+        assert!((hunt_dial(7.056, None) - 7.056).abs() < 1e-9);
+        assert!(in_passband(14.0755, 14.074));
+        assert!(!in_passband(14.090, 14.074));
+        let mut f = FeedEntry {
+            dxpedition: true,
+            ..FeedEntry::default()
+        };
+        assert!(!is_hunt_spot(&f), "worked everywhere: not hunted");
+        f.new_slot = true;
+        assert!(is_hunt_spot(&f));
     }
 
     #[test]
