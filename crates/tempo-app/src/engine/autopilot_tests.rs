@@ -535,3 +535,23 @@ fn a_lapsed_presence_stops_answer_callers_too() {
     );
     assert!(!e.tx_enabled, "TX goes off");
 }
+
+#[test]
+fn a_dxpedition_spot_off_its_band_or_at_the_edge_is_not_hunted() {
+    // REVIEW N-02: a mistyped spot (20 m, 14.349 MHz) put our signal above the 20 m edge,
+    // and a spot whose frequency is on another band than its label tuned there anyway.
+    for spot in [
+        dxped_spot("3Y0K", "20m", 14.349),
+        dxped_spot("3Y0K", "40m", 14.090),
+    ] {
+        let mut e = two_band_pilot();
+        e.autopilot_feed(vec![spot]);
+        e.ingest_decodes_for_test(&[], 30);
+        assert_eq!(e.settings.band, "20m", "the station stays where it was");
+        assert!(
+            (e.settings.dial_mhz - 14.074).abs() < 1e-6,
+            "no retune: {}",
+            e.settings.dial_mhz
+        );
+    }
+}

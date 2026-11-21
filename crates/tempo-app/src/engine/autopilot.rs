@@ -1291,6 +1291,24 @@ impl Engine {
                 heard: false,
             };
             let call = e.call.to_uppercase();
+            // Never hunt on a spot whose frequency is off the band its label names, or whose
+            // TX passband (dial + 3 kHz) would cross that band's edge: under the Open licence
+            // class the keying gate accepts any frequency, so this is the only check. A spot
+            // with no frequency uses the band's standard channel and needs none.
+            if let (Some(spot_mhz), Some(d)) = (e.freq_mhz, dial) {
+                let band = crate::bandplan::band_for_dial(spot_mhz);
+                let fits = band.is_some_and(|b| b.eq_ignore_ascii_case(&e.band))
+                    && crate::bandplan::band_for_dial(d) == band
+                    && crate::bandplan::band_for_dial(d + 0.003) == band;
+                if !fits {
+                    self.note_failed(&call);
+                    self.automation_note(&format!(
+                        "DXpedition {call} spotted at {spot_mhz:.3} MHz as {}: not inside that band                          with room for our signal, not hunted",
+                        e.band
+                    ));
+                    return false;
+                }
+            }
             let mode_switch = (tier != self.app.tier()).then_some(tier);
             if !self.automation_switch(mode_switch, &e.band, dial) {
                 return false;
