@@ -35,3 +35,20 @@ literal keys, so the i18n checks read every one. What the operator sees in Engli
 | Band Activity, Call Roster and Status filter suites | 245/245 |
 | `scripts/browser-probe` | not completed: the hosted UI bundle built, then the worker bundle stopped (`wrangler` is not installed in this worktree's `remote/`) |
 | Rust | unchanged since xlog.19 (116/116 automation tests there) |
+
+## Package and installation (2026-11-21)
+
+- **Source:** `66bbf796d`; canonical `main` fast-forwarded locally from `2405e59d4`.
+- **Guard:** profile `optimized-no-lto-cgu16-7GiB-physical14-commit12p5-reserve6`, the xlog.19 wrapper with only
+  the expected version changed. Attempt 1 was interrupted at the final `src-tauri` compile
+  (`host-commit-below-6GiB`, 05:52 UTC) with the operator's Home Assistant VM running and no other build.
+  Attempt 2 passed after the VM was saved (the operator's approval): `tempo-app` came from cache, compile
+  and bundle 06:17–06:50 UTC, peak 5.44 GiB. The VM was running again afterwards.
+- **Evidence:** `.build/xnexus-xlog20-package-7g/evidence/20261121T0616521743449Z-bc1101e77db64624a2e49aa516a92718`.
+- **Receipt:** `target/xnexus-provenance/1.25.0-xlog.20.json` (source `66bbf796d`, version 1.25.0-xlog.20).
+- **Installer:** `OM0RX-xNexus_1.25.0-xlog.20_x64-setup.exe`, 356,511,490 bytes, SHA-256
+  `89F64F1518AB1E00091D64A82BBE9F349ED0DA562E477FBBB5B5B01C182CB586`.
+- **Built exe:** `4BED4E14…38A8`. **Installed exe:** `F81EBA77…29BB`, version 1.25.0-xlog.20
+  (bundler-stamped, as before).
+- **Install:** Nexus was not running; silent `/S` install, exit 0; the uninstall entry reads 1.25.0-xlog.20.
+- **Not checked:** the app was not launched, so the translated screens have not been seen in a real window.
