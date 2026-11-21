@@ -1,4 +1,16 @@
-<!-- 2026-11 review. Status: findings recorded; fixes not yet applied in this pass. -->
+<!-- 2026-11 review -->
+## Status (2026-11 pass)
+
+| ID | Status | Commit |
+|---|---|---|
+| N-01 | fixed, test; signed off by the owner | ec7832ff0 |
+| N-02 | fixed (band and edge check; a digital-segment window is still open), test; signed off | 50fd60096 |
+| N-03 | fixed, test; signed off | 70b16f4c1 |
+| keychain test (`LOTW_KEYCHAIN_SERVICE`) | fixed (cherry-picked from an abandoned branch; src-tauri tests not run here) | 62807a1b2 |
+| N-04 to N-24 | open | |
+
+Baseline after the fixes (Windows, 1.93.1-gnu): tempo-app lib 4050 passed, 7 failed (all 7 also fail before the fork changes and before the upstream merge: remote_logging, fd_scoreboard, logstore, 4 x upload_start with OS error 267); tempo-core 2272 passed, 5 failed (Linux-path tests). Not run here: src-tauri `--features radio`, tempo-audio full, clippy, UI vitest to completion, CI (GitHub Actions billing is blocked on the account).
+
 # OM0RX-xNexus — Phase 2 review of fork-owned code
 
 Scope: `git diff 39b0e946f 8e886e30d^1` (fork delta before the v1.25.0-beta.2 merge). Read at main `8e886e30d`; the fork files under review are unchanged by the merge. Upstream code was read only to see how fork code calls into it. Nothing was built, run or changed.
