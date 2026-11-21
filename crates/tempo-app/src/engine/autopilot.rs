@@ -1163,6 +1163,9 @@ impl Engine {
         self.automation.last_hold = None;
         let was_tx = self.tx_enabled;
         let watchdog = self.tx_watchdog_start;
+        let radio_before = self.settings.active_radio;
+        let cleared_dx = self.cleared_dx_calls.clone();
+        let remote_tx = self.remote_transmit.clone();
         self.automation.self_tuning = true;
         if let Some(t) = tier {
             self.set_tier(t);
@@ -1183,8 +1186,22 @@ impl Engine {
             self.automation_note(&format!("no {band} channel for this mode"));
         }
         if was_tx && !self.tx_enabled {
-            self.set_tx_enabled(true);
-            self.tx_watchdog_start = watchdog;
+            if self.settings.active_radio != radio_before {
+                // Band routing moved us to another radio: upstream deliberately leaves TX off
+                // after a radio handoff, and an unattended re-arm would key a different rig,
+                // antenna or amplifier. TX stays off, which ends the autopilot on the next pass.
+                self.automation_note("the band change moved to another radio: transmit left off");
+            } else {
+                self.set_tx_enabled(true);
+                self.tx_watchdog_start = watchdog;
+                // The arm above clears these; this restore is the autopilot's, not an operator's
+                // fresh consent, so put back what the context halt kept (as upstream's manual
+                // restore does): a CAT-broker client may not key until the operator arms, Clear
+                // DX's dropped callers stay dropped, and a Remote device keeps ownership.
+                self.broker_context_hold = true;
+                self.cleared_dx_calls = cleared_dx;
+                self.remote_transmit = remote_tx;
+            }
         }
         self.automation.self_tuning = false;
         let now = now_unix_secs();

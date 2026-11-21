@@ -555,3 +555,19 @@ fn a_dxpedition_spot_off_its_band_or_at_the_edge_is_not_hunted() {
         );
     }
 }
+
+#[test]
+fn an_autopilot_band_change_re_arms_without_releasing_the_broker_hold() {
+    // REVIEW N-01: the re-arm after the autopilot's own retune cleared the CAT-broker hold,
+    // so a logger or JTAlert on the broker could key after an unattended band change.
+    let mut e = two_band_pilot();
+    e.automation_backdate_band(10_000);
+    e.ingest_decodes_for_test(&[], 30);
+    e.ingest_decodes_for_test(&[], 32);
+    assert_eq!(e.settings.band, "17m", "positive control: the band changed");
+    assert!(e.tx_enabled, "the autopilot keeps its own arm");
+    assert!(
+        e.broker_context_hold,
+        "a foreign broker key still waits for the operator after the move"
+    );
+}
