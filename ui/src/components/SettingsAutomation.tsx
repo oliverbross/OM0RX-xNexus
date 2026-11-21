@@ -58,14 +58,16 @@ export function clampInt(raw: string, lo: number, hi: number, old: number): numb
   return Math.min(hi, Math.max(lo, n))
 }
 
-const TIER_ROWS: { key: keyof AutopilotTiers; labelKey: Parameters<typeof t>[0] }[] = [
-  { key: 'atno', labelKey: 'settings.automation.tiers.atno' },
-  { key: 'dxpedition', labelKey: 'settings.automation.tiers.dxpedition' },
-  { key: 'dxccUnconfirmed', labelKey: 'settings.automation.tiers.dxccUnconfirmed' },
-  { key: 'dxccNewSlot', labelKey: 'settings.automation.tiers.dxccNewSlot' },
-  { key: 'usState', labelKey: 'settings.automation.tiers.usState' },
-  { key: 'reference', labelKey: 'settings.automation.tiers.reference' },
-  { key: 'newCall', labelKey: 'settings.automation.tiers.newCall' },
+// The tier switches, in the engine's order. Each label is a literal `t('…')` so the i18n guards
+// read it (a key table resolved at runtime would be unchecked).
+const TIER_ROWS: { key: keyof AutopilotTiers; label: () => string }[] = [
+  { key: 'atno', label: () => t('settings.automation.tiers.atno') },
+  { key: 'dxpedition', label: () => t('settings.automation.tiers.dxpedition') },
+  { key: 'dxccUnconfirmed', label: () => t('settings.automation.tiers.dxccUnconfirmed') },
+  { key: 'dxccNewSlot', label: () => t('settings.automation.tiers.dxccNewSlot') },
+  { key: 'usState', label: () => t('settings.automation.tiers.usState') },
+  { key: 'reference', label: () => t('settings.automation.tiers.reference') },
+  { key: 'newCall', label: () => t('settings.automation.tiers.newCall') },
 ]
 
 function Switch({
@@ -301,7 +303,7 @@ export function SettingsAutomation({
       {TIER_ROWS.map((row) => (
         <Switch
           key={row.key}
-          label={t(row.labelKey)}
+          label={row.label()}
           on={a.tiers[row.key]}
           onChange={(on) => set({ tiers: { ...a.tiers, [row.key]: on } })}
         />

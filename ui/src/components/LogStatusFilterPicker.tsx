@@ -20,6 +20,16 @@ import {
 
 const PRESET_ORDER: LogStatusPreset[] = ['all', 'newCalls', 'newDxcc', 'unconfirmed']
 
+/** A preset's name. Each key is a literal `t('…')` so the i18n guards can read it. */
+function presetLabel(p: LogStatusPreset): string {
+  switch (p) {
+    case 'all': return t('logStatusFilter.preset.all')
+    case 'newCalls': return t('logStatusFilter.preset.newCalls')
+    case 'newDxcc': return t('logStatusFilter.preset.newDxcc')
+    case 'unconfirmed': return t('logStatusFilter.preset.unconfirmed')
+  }
+}
+
 export function LogStatusFilterPicker({
   filter,
   onChange,
@@ -75,7 +85,7 @@ export function LogStatusFilterPicker({
                 onSelect={(e) => e.preventDefault()}
                 onCheckedChange={() => onChange({ ...LOG_STATUS_PRESETS[p] })}
               >
-                {t(`logStatusFilter.preset.${p}`)}
+                {presetLabel(p)}
               </RM.CheckboxItem>
             ))}
             <div className="log-status-boxes">

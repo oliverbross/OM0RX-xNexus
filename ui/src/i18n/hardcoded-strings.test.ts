@@ -1054,6 +1054,9 @@ const PARTIAL = [
   // as an orphan, because the scanner only looks where it is told.
   'components/AutopilotControl.tsx',
   'components/SettingsAutomation.tsx',
+  // LogStatusFilterPicker.tsx (2026-11-20) — the Band Activity and Call Roster Status (CS/DS)
+  // filter, born catalogued; without it every `logStatusFilter.*` entry reads as an orphan.
+  'components/LogStatusFilterPicker.tsx',
 ]
 
 /** Attributes whose value a human reads — on hover, or through a screen reader. */

@@ -11,36 +11,41 @@ import { useState } from 'react'
 import { t } from '../i18n'
 import type { AutomationState } from '../types'
 
-const STATUS_KEYS = {
-  off: { textKey: 'autopilot.status.off' },
-  listening: { textKey: 'autopilot.status.listening' },
-  calling: { textKey: 'autopilot.status.calling' },
-  inQso: { textKey: 'autopilot.status.inQso' },
-  moving: { textKey: 'autopilot.status.moving' },
-  paused: { textKey: 'autopilot.status.paused' },
-  noSchedule: { textKey: 'autopilot.status.noSchedule' },
-  wrongMode: { textKey: 'autopilot.status.wrongMode' },
-  presenceDue: { textKey: 'autopilot.status.presenceDue' },
-  holding: { textKey: 'autopilot.status.holding' },
-  finishing: { textKey: 'autopilot.status.finishing' },
-  hunting: { textKey: 'autopilot.status.hunting' },
-} as const
-
-const TIER_KEYS = {
-  callingMe: { textKey: 'autopilot.tier.callingMe' },
-  atno: { textKey: 'autopilot.tier.atno' },
-  dxpedition: { textKey: 'autopilot.tier.dxpedition' },
-  dxccUnconfirmed: { textKey: 'autopilot.tier.dxccUnconfirmed' },
-  dxccNewSlot: { textKey: 'autopilot.tier.dxccNewSlot' },
-  usState: { textKey: 'autopilot.tier.usState' },
-  reference: { textKey: 'autopilot.tier.reference' },
-  newCall: { textKey: 'autopilot.tier.newCall' },
-} as const
+// Every key written out as a literal `t('…')`, so both i18n guards (the orphan scanner and the
+// placeholder checker) can read each one; a key table resolved at runtime would be unchecked.
 
 /** The status in words; an unknown token (a newer engine) reads as itself. */
 export function autopilotStatusText(status: string): string {
-  const k = STATUS_KEYS[status as keyof typeof STATUS_KEYS]
-  return k ? t(k.textKey) : status
+  switch (status) {
+    case 'off': return t('autopilot.status.off')
+    case 'listening': return t('autopilot.status.listening')
+    case 'calling': return t('autopilot.status.calling')
+    case 'inQso': return t('autopilot.status.inQso')
+    case 'moving': return t('autopilot.status.moving')
+    case 'paused': return t('autopilot.status.paused')
+    case 'noSchedule': return t('autopilot.status.noSchedule')
+    case 'wrongMode': return t('autopilot.status.wrongMode')
+    case 'presenceDue': return t('autopilot.status.presenceDue')
+    case 'holding': return t('autopilot.status.holding')
+    case 'finishing': return t('autopilot.status.finishing')
+    case 'hunting': return t('autopilot.status.hunting')
+    default: return status
+  }
+}
+
+/** The target's tier in words, or `undefined` for none or an unknown token. */
+export function autopilotTierText(tier: string | null | undefined): string | undefined {
+  switch (tier) {
+    case 'callingMe': return t('autopilot.tier.callingMe')
+    case 'atno': return t('autopilot.tier.atno')
+    case 'dxpedition': return t('autopilot.tier.dxpedition')
+    case 'dxccUnconfirmed': return t('autopilot.tier.dxccUnconfirmed')
+    case 'dxccNewSlot': return t('autopilot.tier.dxccNewSlot')
+    case 'usState': return t('autopilot.tier.usState')
+    case 'reference': return t('autopilot.tier.reference')
+    case 'newCall': return t('autopilot.tier.newCall')
+    default: return undefined
+  }
 }
 
 function mmss(secs: number): string {
@@ -65,7 +70,7 @@ export function AutopilotControl({
   const callers = automation.answerCallers ? automation.callers : []
   if (!automation.autopilotEnabled && callers.length === 0) return null
   const on = automation.autopilotOn
-  const tierKey = automation.targetTier ? TIER_KEYS[automation.targetTier as keyof typeof TIER_KEYS]?.textKey : undefined
+  const tierText = autopilotTierText(automation.targetTier)
   const prompt =
     on && (automation.status === 'presenceDue' || automation.presenceRemainingSecs <= PRESENCE_PROMPT_SECS)
   return (
@@ -89,7 +94,7 @@ export function AutopilotControl({
             {automation.band ? ` · ${automation.band}` : ''}
             {automation.mode ? ` ${automation.mode}` : ''}
             {automation.target ? ` · ${automation.target}` : ''}
-            {tierKey ? ` (${t(tierKey)})` : ''}
+            {tierText ? ` (${tierText})` : ''}
           </span>
           <button
             type="button"
