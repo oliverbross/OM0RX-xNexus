@@ -596,10 +596,30 @@ impl Engine {
             return;
         }
         let s = self.settings.automation.clone().sanitized();
+        // With the autopilot on, its presence check and hourly cap bound these contacts too:
+        // unanswered, it starts no new contact (module docs), and the cap is a cap.
+        if self.automation.pilot.on {
+            let now = now_unix_secs();
+            if self
+                .automation
+                .pilot
+                .presence
+                .expired(now, s.presence_minutes())
+                || self.automation.pilot.hourly.count(now) >= s.max_qso_per_hour as usize
+            {
+                return;
+            }
+        }
         // Take-over: our first call has gone unanswered for N slots and somebody is calling us.
+        // It counts toward the chain limit like any other answered caller.
         let unanswered = matches!(state, QsoState::AwaitReport | QsoState::AwaitRoger) && !advanced;
-        if s.answer_takeover_slots > 0 && unanswered && tx_count >= s.answer_takeover_slots {
+        if s.answer_takeover_slots > 0
+            && unanswered
+            && tx_count >= s.answer_takeover_slots
+            && self.automation.chain < s.answer_chain_limit.max(1)
+        {
             if let Some(c) = self.best_caller() {
+                self.automation.chain += 1;
                 self.note_failed(&dx);
                 self.automation_note(&format!(
                     "{dx} did not answer: answering {} instead",

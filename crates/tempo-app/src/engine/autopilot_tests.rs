@@ -514,3 +514,24 @@ fn a_needed_state_is_called_only_when_switched_on_and_wanted() {
         "wanted and needed"
     );
 }
+
+#[test]
+fn a_lapsed_presence_stops_answer_callers_too() {
+    // REVIEW N-03: Answer callers ran before the autopilot and read neither presence nor
+    // the hourly cap, so contacts kept starting after the presence check lapsed.
+    let mut e = engine();
+    e.settings.automation.answer_callers = true;
+    e.settings.automation.autopilot_enabled = true;
+    e.settings.automation.presence_check_min = 2;
+    let s = contact_with_a_caller(&mut e);
+    e.set_autopilot(true).unwrap();
+    e.automation_backdate_presence(121);
+    key_once(&mut e, s);
+    e.ingest_decodes_for_test(&[dec_snr("OM0RX K1ABC FN42", -5)], s + 2);
+    assert_ne!(
+        e.automation_dx().as_deref(),
+        Some(CALLER),
+        "no caller is answered once presence lapsed"
+    );
+    assert!(!e.tx_enabled, "TX goes off");
+}
