@@ -140,8 +140,11 @@ pub fn rig_models() -> Vec<(u32, &'static str)> {
         // the PC. SmartSDR CAT's DEFAULT TCP port 5002 is directed at slice A;
         // its per-slice extras are B=60001, C=60002, D=60003 (60000 base).
         // 23005 talks the radio's native API directly and is alpha-grade in
-        // Hamlib (failed on a real 6400M with WSAEADDRNOTAVAIL) — keep it
-        // selectable, but nothing auto-picks it anymore.
+        // Hamlib (failed on a real 6400M with WSAEADDRNOTAVAIL, and it drives a
+        // slice INDEX, not the letter SmartSDR shows — 2026-11-21 field report,
+        // `Settings::move_flex_to_smartsdr_cat`). It lives in the extended tier
+        // (behind "Show all models") so a Flex owner picking from the short list
+        // lands on SmartSDR CAT; nothing auto-picks it.
         // ⚠️ THE NAME CARRIES BOTH SERIES ON PURPOSE (2026-08-17 Flex audit, completeness-critic
         // gap #9 — "the FLEX-8000 series does not exist in this product"). The 8000s are
         // FlexRadio's current flagship line, and the whole app said "6xxx" — so an 8400/8600
@@ -156,7 +159,6 @@ pub fn rig_models() -> Vec<(u32, &'static str)> {
         // LABEL, not a new model number, and adding a second entry would have been a lie about
         // there being a second code path.
         (2036, "FlexRadio FLEX-6xxx / 8xxx (SmartSDR CAT)"),
-        (23005, "FlexRadio SmartSDR native (experimental)"),
         // SDR console SOFTWARE — here the PROGRAM is the rig. A Hermes Lite 2, an ANAN, a
         // legacy Flex has no CAT port of its own: CAT is served by the program running on
         // the PC, over TCP or a virtual COM pair. So these are named for what the operator
@@ -272,6 +274,9 @@ fn extended_rig_models() -> Vec<(u32, &'static str)> {
         (2049, "Malachite DSP SDR"),
         (2050, "Lab599 Discovery TX-500"),
         (2051, "SDRuno (SDRplay)"),
+        // FlexRadio: Hamlib's native SmartSDR backend, moved down from the verified tier on
+        // 2026-11-21 (see the 2036 entry there). Still selectable here or by number.
+        (23005, "FlexRadio SmartSDR native (experimental)"),
         // Ten-Tec (backend 16)
         (16001, "Ten-Tec TT-550 Pegasus"),
         (16002, "Ten-Tec TT-538 Jupiter"),
@@ -1977,6 +1982,19 @@ mod tests {
             rig_model_name(23005).unwrap_or("").contains("experimental"),
             "the native model must keep its warning"
         );
+    }
+
+    /// A Flex owner picking from the short list lands on SmartSDR CAT: 2036 is in the verified
+    /// tier and 23005 is not (2026-11-21 field report: 23005 drives a slice index, not the slice
+    /// letter, so band changes went to a slice that did not exist). CONTROL: 23005 is still in
+    /// the full catalog, so "Show all models" and its name lookup still find it.
+    #[test]
+    fn the_short_list_offers_smartsdr_cat_and_not_the_native_flex_backend() {
+        let verified: Vec<u32> = rig_models().iter().map(|(m, _)| *m).collect();
+        assert!(verified.contains(&2036));
+        assert!(!verified.contains(&23005));
+        assert!(all_rig_models().iter().any(|(m, _)| *m == 23005));
+        assert!(rig_model_name(23005).is_some());
     }
 
     /// THE QA PASS (2026-08) ranked "I can't find my radio in the list" the #1 problem in the
