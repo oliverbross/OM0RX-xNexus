@@ -3,5 +3,5 @@
   "commit": "39b0e946f234ee866eccd858e57436d191339d1a",
   "upstream_version": "1.25.0",
   "fork_repository": "https://github.com/oliverbross/OM0RX-xNexus",
-  "status": "merged; fork carries identity, CS/DS columns and filter, Answer callers, the supervised autopilot and Windows build tooling (companion removed in 1.25.0-xlog.17; automation added in 1.25.0-xlog.18; band hold, US states and DXpedition hunt in 1.25.0-xlog.19; automation translations in 1.25.0-xlog.20)"
+  "status": "merged; fork carries identity, CS/DS columns and filter, Answer callers, the supervised autopilot and Windows build tooling (companion removed in 1.25.0-xlog.17; automation added in 1.25.0-xlog.18; band hold, US states and DXpedition hunt in 1.25.0-xlog.19; automation translations in 1.25.0-xlog.20; Flex moved to SmartSDR CAT in 1.25.0-xlog.21)"
 }
