@@ -37,3 +37,24 @@ profile still shows its name.
 | tempo-app `settings` module (branch) | 329/329 |
 | tempo-audio lib (branch) | 1003 passed, 4 failed; the same 4 fail on untouched `e37218c6d` (pstrotator, port_prober, two rigctld_proc tests), so the cause is this machine |
 | Live | the operator's installed Nexus on 2036 at `127.0.0.1:5002` connected and followed SmartSDR (7.158 MHz); this was set by hand before the build |
+
+## Package and installation (2026-11-21)
+
+- **Source:** `a67e638c0` (this reservation), canonical `main`, clean, equal to `origin/main`.
+- **Guard:** profile `optimized-no-lto-cgu16-7GiB-physical14-commit12p5-reserve6`, the xlog.20 wrapper
+  with only the expected version changed. One attempt, passed with the operator's Home Assistant VM
+  running: admission 17.5 GiB physical / 15.2 GiB commit; compile and bundle 07:01–07:55 UTC
+  (`tempo-app`, `tempo-audio` and `src-tauri` rebuilt, 46 min 32 s); peak 5.44 GiB; lowest commit 8.35 GiB.
+- **Evidence:** `.build/xnexus-xlog21-package-7g/evidence/20261121T0701524210461Z-4051a74292fc486ca26327a00d756d0e`.
+- **Receipt:** `target/xnexus-provenance/1.25.0-xlog.21.json` (source `a67e638c0`, version 1.25.0-xlog.21).
+- **Installer:** `OM0RX-xNexus_1.25.0-xlog.21_x64-setup.exe`, 356,527,373 bytes, SHA-256
+  `279F636189FF3ADD0DD55755025F20829F123D950C2EC32A70E51C4E18A80E80`.
+- **Built exe:** `490B8CB0…CC6D`. **Installed exe:** `427DF6EA…51E2`, version 1.25.0-xlog.21
+  (bundler-stamped, as before).
+- **Install:** Nexus was not running; silent `/S` install, exit 0; the uninstall entry reads 1.25.0-xlog.21.
+- **Launch:** one instance started; the log reads `Nexus 1.25.0-xlog.21`; the settings file now carries
+  `flexSmartsdrCatMoved: true` with Radio 1 on 2036 at `127.0.0.1:5002` (the profile was already on 2036,
+  so the move had nothing to change); rigctld ran `-m 2036 -r 127.0.0.1:5002`. Closed normally afterwards.
+- **Not checked:** SmartSDR, its CAT service and DAX were not running at the time, so the CAT connection
+  was refused (10061) and DAX audio was absent. Band following on this build has not been seen live;
+  the same 2036 configuration followed SmartSDR on the previously installed build earlier the same day.
