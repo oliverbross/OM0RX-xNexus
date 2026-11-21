@@ -78,3 +78,28 @@ on 2026-11-20.
 
 Local toolchain note: before these gates ran, 36 MSYS2 MinGW packages under `C:\msys64\ucrt64` had
 lost files outside pacman; they were reinstalled at the same versions with the operator's approval.
+
+## Package and installation (2026-11-21)
+
+- **Source:** `d9f6909cd`; canonical `main` fast-forwarded locally from `5569546a8` (not pushed).
+- **Before the build:** the same overnight deletion (00:56) that emptied `C:\msys64\ucrt64\lib` had also
+  removed 11 tracked `.wav` test fixtures from both checkouts, `target\xnexus-vpx-1.17.0\lib\libvpx.a` and
+  three cached static libraries (`libopus.a`, two `tract-linalg` kernels). With the operator's approval
+  the fixtures were restored from git; libvpx 1.17.0 was rebuilt by `scripts/xnexus/prepare-windows-deps.sh`
+  (pinned tarball, SHA-256 checked; new archive `0647B456…BA28`); the two stale build-script caches were
+  cleared so cargo re-ran them. A scan of every build-script output found 12 static libraries present and
+  only those 3 missing.
+- **Guard:** profile `optimized-no-lto-cgu16-7GiB-physical14-commit12p5-reserve6`, the xlog.18 wrapper with
+  only the expected version changed. Attempt 1 stopped before compiling (libvpx missing). Attempt 2 was
+  interrupted at the final `src-tauri` compile (`host-commit-below-6GiB`) when an xLog `cargo test` started
+  beside it. Attempt 3 passed after the operator's Home Assistant VM was saved: compile 32 min 40 s,
+  03:17–03:57 UTC, peak 5.44 GiB.
+- **Evidence:** `.build/xnexus-xlog19-package-7g/evidence/20261121T0317078490619Z-41aec97421cb424688ed5b62e722bd35`.
+- **Receipt:** `target/xnexus-provenance/1.25.0-xlog.19.json`.
+- **Installer:** `OM0RX-xNexus_1.25.0-xlog.19_x64-setup.exe`, 356,515,494 bytes, SHA-256
+  `9C2B9A5144DBE15F9836780DA354FF46591DF03D7F166B0E88795F9CA0AC801A`.
+- **Built exe:** `178C81FD…3DD2`. **Installed exe:** `0C2CB489…6F1`, version 1.25.0-xlog.19
+  (bundler-stamped, as before).
+- **Install:** Nexus was not running; silent `/S` install, exit 0; the uninstall entry reads 1.25.0-xlog.19.
+- **Not checked:** the app was not launched (it connects to the radio over CAT); the autopilot changes need
+  transmit and are for the operator to try at the station.
