@@ -452,9 +452,11 @@ describe('the Settings regroup — every section keeps its id and lands on one t
       expect(tabOf(id), id).toBe('digital')
       expect(sectionById(id)?.parent, id).toBe('weak-signal')
     }
+    // OM0RX-xNexus: the autopilot moved off Digital to its own tab (operator, 2026-11-22).
+    expect(tabOf('autopilot')).toBe('autopilot')
     expect(SETTINGS_TABS.map((t) => t.id)).toEqual([
-      'station', 'remote', 'radio', 'satellites', 'phone', 'cw', 'digital', 'spots', 'logbook',
-      'services', 'contesting', 'appearance', 'app',
+      'station', 'remote', 'radio', 'satellites', 'phone', 'cw', 'digital', 'autopilot', 'spots',
+      'logbook', 'services', 'contesting', 'appearance', 'app',
     ])
   })
 

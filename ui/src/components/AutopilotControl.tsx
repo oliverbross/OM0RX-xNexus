@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // OM0RX-xNexus: the supervised autopilot's control in the top bar, beside the Tx cycle — the
 // on/off switch, what it is doing, the presence countdown with its "I'm here" button, and the
-// recent decisions. Shown only when Settings ▸ Automation allows the autopilot (or Answer callers
+// recent decisions. Shown only when Settings ▸ Autopilot allows the autopilot (or Answer callers
 // has callers waiting). Every decision is the engine's (engine/autopilot.rs); this only shows it
 // and passes the operator's two acts: on/off and the presence confirmation.
 //
@@ -44,6 +44,8 @@ export function autopilotTierText(tier: string | null | undefined): string | und
     case 'usState': return t('autopilot.tier.usState')
     case 'reference': return t('autopilot.tier.reference')
     case 'newCall': return t('autopilot.tier.newCall')
+    case 'mostWanted': return t('autopilot.tier.mostWanted')
+    case 'grid': return t('autopilot.tier.grid')
     default: return undefined
   }
 }

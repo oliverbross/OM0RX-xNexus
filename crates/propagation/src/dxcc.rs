@@ -875,6 +875,18 @@ pub fn entity_continents() -> Vec<(&'static str, &'static str)> {
     out
 }
 
+/// The continent code (`"EU"`, `"NA"`, …) of the entity cty.dat calls `name` — the `country` a
+/// decode row carries — or `None` for a name it does not hold or a row with no continent. The
+/// OM0RX-xNexus autopilot calls stations outside Europe first with it.
+pub fn entity_continent(name: &str) -> Option<&'static str> {
+    resolver()
+        .entities
+        .iter()
+        .find(|e| e.name == name)
+        .map(|e| e.cont.as_str())
+        .filter(|c| !c.is_empty())
+}
+
 pub fn dxcc_entity_names() -> Vec<&'static str> {
     let mut names: Vec<&'static str> = resolver()
         .entities

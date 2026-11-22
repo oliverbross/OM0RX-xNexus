@@ -5957,7 +5957,7 @@ export interface Settings {
    *  through their own stop paths. Stop-only; FT auto-sequencing is not covered. The watcher
    *  runs on a Windows station only (the Parsec host). */
   parsecPresenceStop?: boolean
-  /** OM0RX-xNexus: Answer callers and the supervised autopilot (Settings ▸ Automation). */
+  /** OM0RX-xNexus: Answer callers and the supervised autopilot (Settings ▸ Autopilot). */
   automation?: AutomationSettings
   /** Remote as a stream. Default OFF. A browser holding station control may be shown this
    *  station's own Nexus window and drive it; while one is attached, every transmission stops
@@ -7463,7 +7463,7 @@ export interface PcMicEnded {
 
 // ---------------------------------------------------------------------------------------------
 // OM0RX-xNexus automation: Answer callers and the supervised autopilot (crates/tempo-app
-// automation.rs and engine/autopilot.rs). Settings ▸ Automation edits AutomationSettings; the
+// automation.rs and engine/autopilot.rs). Settings ▸ Autopilot edits AutomationSettings; the
 // snapshot's `automation` is AutomationState.
 
 /** One window of the autopilot's band schedule: from `start` (UTC HH:MM) until the next window. */
@@ -7483,7 +7483,14 @@ export interface AutopilotTiers {
   usState: boolean
   reference: boolean
   newCall: boolean
+  /** An entity on Club Log's Most Wanted top 50, not confirmed on the band. */
+  mostWanted: boolean
+  /** A Maidenhead grid never worked. */
+  grid: boolean
 }
+
+/** A rule the operator can order (every tier but a station calling them, which is always first). */
+export type AutopilotRule = Exclude<AutopilotTier, 'callingMe'>
 
 export interface AutomationSettings {
   answerCallers: boolean
@@ -7507,16 +7514,24 @@ export interface AutomationSettings {
   huntDxpeditions: boolean
   /** While hunting, switch to Hound when the DXpedition runs Fox/Hound, and back afterwards. */
   huntHound: boolean
+  /** Time on a band offering only ordinary new calls before moving on, seconds (120–7200). */
+  ordinaryDwellSecs: number
+  /** The rules, strongest first: the operator's own order. */
+  priority: AutopilotRule[]
+  /** Within a rule, call a station outside Europe before a European one. */
+  preferOutsideEu: boolean
 }
 
 export type AutopilotTier =
   | 'callingMe'
   | 'atno'
+  | 'mostWanted'
   | 'dxpedition'
   | 'dxccUnconfirmed'
   | 'dxccNewSlot'
   | 'usState'
   | 'reference'
+  | 'grid'
   | 'newCall'
 
 export type AutopilotStatus =

@@ -167,6 +167,33 @@ pub struct Automation {
     /// not answered again (field report 2026-11-22: SP4NKJ called while we finished EW4M, we then
     /// worked SP4NKJ, and the stale queue entry answered it with a fresh report after its 73).
     done: HashMap<String, u64>,
+    /// What the autopilot knows about a DXCC entity by its cty.dat name (continent, number), wired
+    /// by the launch ([`Engine::set_automation_entity_resolver`]); absent in headless tests.
+    entity_info: EntityInfoResolver,
+}
+
+/// A DXCC entity's continent code and ARRL number, as the autopilot ranks stations by them.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct EntityInfo {
+    pub continent: Option<String>,
+    pub dxcc: Option<u32>,
+}
+
+/// An entity name to its [`EntityInfo`].
+type EntityInfoFn = dyn Fn(&str) -> EntityInfo + Send + Sync;
+
+/// The resolver behind [`Automation::entity_info`].
+#[derive(Default, Clone)]
+struct EntityInfoResolver(Option<std::sync::Arc<EntityInfoFn>>);
+
+impl std::fmt::Debug for EntityInfoResolver {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(if self.0.is_some() {
+            "EntityInfoResolver(set)"
+        } else {
+            "EntityInfoResolver(none)"
+        })
+    }
 }
 
 impl Automation {
@@ -318,6 +345,16 @@ impl Engine {
         self.automation_refresh_keep();
     }
 
+    /// Wire what the autopilot reads about a DXCC entity by its name: the continent (stations
+    /// outside Europe first) and the ARRL number (the Club Log Most Wanted list). The launch hands
+    /// it cty.dat's own; nothing else needs it.
+    pub fn set_automation_entity_resolver(
+        &mut self,
+        resolve: impl Fn(&str) -> EntityInfo + Send + Sync + 'static,
+    ) {
+        self.automation.entity_info = EntityInfoResolver(Some(std::sync::Arc::new(resolve)));
+    }
+
     /// The UI's need feed (cluster, RBN, OTA, DXpeditions), replacing the last one.
     pub fn autopilot_feed(&mut self, entries: Vec<FeedEntry>) {
         let now = now_unix_secs();
@@ -341,6 +378,7 @@ impl Engine {
         let p = &mut self.automation.pilot;
         p.band_since_unix = p.band_since_unix.saturating_sub(secs);
         p.last_worthwhile_unix = p.last_worthwhile_unix.saturating_sub(secs);
+        p.last_needed_unix = p.last_needed_unix.saturating_sub(secs);
     }
 
     /// Test hook: the station the sequencer is working.
@@ -714,6 +752,26 @@ impl Engine {
             return;
         }
         let call = c.call.clone();
+        let rare = matches!(tier, Tier::Dxpedition | Tier::Atno) && c.freq_hz > 0.0;
+        let mut c = c.clone();
+        // A DXpedition sits low, under 500 Hz, and is called from above it (operator,
+        // 2026-11-22). One heard higher is brought there first: the dial moves up so its signal
+        // lands at DXPED_PLACE_HZ, through the autopilot's own switch, so it happens only between
+        // contacts and transmit is put back as it was. Held, the call goes ahead from where it is.
+        if rare && c.freq_hz > automation::DXPED_LOW_HZ {
+            let shift_hz = ((c.freq_hz - automation::DXPED_PLACE_HZ) / 10.0).round() * 10.0;
+            let dial = self.settings.dial_mhz + f64::from(shift_hz) / 1e6;
+            let band = self.settings.band.clone();
+            if self.automation_switch(None, &band, Some(dial)) {
+                self.automation_note(&format!(
+                    "{call} heard at {:.0} Hz: dial up {shift_hz:.0} Hz to {dial:.6} MHz, \
+                     so it sits at {:.0} Hz",
+                    c.freq_hz,
+                    c.freq_hz - shift_hz
+                ));
+                c.freq_hz -= shift_hz;
+            }
+        }
         let res = self.call_station_ctx_arming(
             &call,
             None,
@@ -724,6 +782,16 @@ impl Engine {
         );
         match res {
             Ok(()) => {
+                // A DXpedition (or an ATNO, as rare and as crowded) is never called on its own
+                // frequency: at least 1200 Hz above it (operator, 2026-11-22).
+                if rare {
+                    let tx = automation::dxped_split_hz(c.freq_hz, self.tx_offset_hz);
+                    self.set_tx_offset(tx);
+                    self.automation_note(&format!(
+                        "{call} heard at {:.0} Hz: calling at {:.0} Hz",
+                        c.freq_hz, self.tx_offset_hz
+                    ));
+                }
                 self.automation.held_disable = false;
                 self.automation
                     .callers
@@ -970,23 +1038,36 @@ impl Engine {
         let worked = self.automation.pilot.worked.clone();
         let done = self.automation.done.clone();
         let hound = self.settings.special_op != SpecialOp::None;
-        let picked = automation::pick(
-            &candidates,
-            &s.tiers,
-            &self.automation.pilot.attempts,
-            now,
-            |c| {
-                same_call(&c.call, &mycall)
-                    || blocked.iter().any(|b| same_call(b, &c.call))
-                    || worked.contains(&format!("{}|{}|{}", c.call.to_uppercase(), cur_band, cur_mode))
-                    // A contact just made: its repeats and 73s are not a new call.
-                    || done.contains_key(&c.call.to_uppercase())
-                    // A DXpedition running Fox/Hound calls below 1000 Hz: Hound is the operator's
-                    // per-DXpedition choice, so the autopilot leaves a Fox alone.
-                    || (c.dxpedition && c.freq_hz < 1000.0 && !hound)
-            },
-        )
-        .map(|(c, t)| (c.clone(), t));
+        let skip = |c: &Candidate| {
+            same_call(&c.call, &mycall)
+                || blocked.iter().any(|b| same_call(b, &c.call))
+                || worked.contains(&format!("{}|{}|{}", c.call.to_uppercase(), cur_band, cur_mode))
+                // A contact just made: its repeats and 73s are not a new call.
+                || done.contains_key(&c.call.to_uppercase())
+                // A DXpedition running Fox/Hound calls below 1000 Hz: Hound is the operator's
+                // per-DXpedition choice, so the autopilot leaves a Fox alone.
+                || (c.dxpedition && c.freq_hz < 1000.0 && !hound)
+        };
+        let attempts = &self.automation.pilot.attempts;
+        let picked = automation::pick(&candidates, &s, attempts, now, |c| skip(c))
+            .map(|(c, t)| (c.clone(), t));
+        let chase_call = chasing
+            .as_ref()
+            .filter(|ch| ch.hunt.is_none())
+            .map(|ch| ch.call.clone());
+        // A chase moved here for one needed station: an ordinary new call started now could still
+        // be running (two minutes) when that station shows up, so the chase calls its station the
+        // moment it is heard, anything better than ordinary, and nothing ordinary (field report
+        // 2026-11-22: chasing 5U4JSF on 20 m, the autopilot called SA7SVR). The chase gives up
+        // after CHASE_UNHEARD_SECS.
+        let picked = match (chase_call, picked) {
+            (Some(_), Some((c, t))) if t != Tier::NewCall => Some((c, t)),
+            (Some(want), _) => automation::pick(&candidates, &s, attempts, now, |c| {
+                skip(c) || !same_call(&c.call, &want)
+            })
+            .map(|(c, t)| (c.clone(), t)),
+            (None, p) => p,
+        };
 
         // A better spot on another scheduled band beats what is heard here.
         let spot = if s.chase_spots {
@@ -995,7 +1076,9 @@ impl Engine {
             None
         };
         if let Some((spot_call, spot_band, spot_t)) = spot.clone() {
-            let beats = picked.as_ref().is_none_or(|(_, t)| spot_t < *t);
+            let beats = picked
+                .as_ref()
+                .is_none_or(|(_, t)| s.rank(spot_t) < s.rank(*t));
             if beats && chasing.is_none() && self.automation_band_hold().is_none() {
                 self.automation.pilot.chased.insert(spot_call.clone(), now);
                 self.automation.pilot.chase = Some(Chase {
@@ -1024,13 +1107,19 @@ impl Engine {
             && ordinary_for >= u64::from(s.ordinary_dwell_secs)
         {
             if let Some(next) = next_band(&window, Some(&cur_band)).map(String::from) {
-                if !next.eq_ignore_ascii_case(&cur_band)
-                    && self.automation_switch(None, &next, None)
-                {
-                    self.automation_note(&format!(
-                        "only ordinary calls on {cur_band} for {} min: moving to {next}",
-                        ordinary_for / 60
-                    ));
+                if !next.eq_ignore_ascii_case(&cur_band) {
+                    if self.automation_switch(None, &next, None) {
+                        self.automation_note(&format!(
+                            "only ordinary calls on {cur_band} for {} min: moving to {next}",
+                            ordinary_for / 60
+                        ));
+                        return;
+                    }
+                    // The move is due but held (the last partner still finishing, somebody
+                    // calling): starting another ordinary call here would hold the band again,
+                    // and the move would never come. Wait instead; every hold reason lapses
+                    // within a few slots (field report 2026-11-22: BA3KY finished, RU4LM called).
+                    self.automation.pilot.status = "holding";
                     return;
                 }
             }
@@ -1038,7 +1127,7 @@ impl Engine {
 
         if let Some((c, t)) = picked {
             self.automation.pilot.last_worthwhile_unix = now;
-            if t < Tier::NewCall {
+            if t != Tier::NewCall {
                 self.automation.pilot.last_needed_unix = now;
             }
             self.automation_note(&format!(
@@ -1061,6 +1150,12 @@ impl Engine {
             if now.saturating_sub(ch.since_unix) >= CHASE_UNHEARD_SECS {
                 let call = ch.call.clone();
                 self.automation.pilot.chase = None;
+                // Never heard: not chased again for half an hour, not the plain cooldown (live run
+                // 2026-11-22: W5BUY on 12 m, chased at 13:05 and again at 13:22, heard neither time).
+                self.automation
+                    .pilot
+                    .chased
+                    .insert(call.to_uppercase(), now + CHASE_COOLDOWN_SECS);
                 self.automation_note(&format!(
                     "{call} not heard on {}: back to the schedule",
                     ch.band
@@ -1180,6 +1275,10 @@ impl Engine {
                             .automation
                             .wants_state(e.state.as_deref().or(resolved.as_deref()))
                 });
+                let info = match (&self.automation.entity_info.0, row.country.as_deref()) {
+                    (Some(r), Some(name)) => r(name),
+                    _ => EntityInfo::default(),
+                };
                 Some(Candidate {
                     call,
                     message: d.message.clone(),
@@ -1204,6 +1303,15 @@ impl Engine {
                         .as_deref()
                         .filter(|g| !g.eq_ignore_ascii_case("RR73"))
                         .and_then(|g| automation::grid_km(&self.settings.mygrid, g)),
+                    continent: info.continent,
+                    most_wanted: info.dxcc.is_some_and(automation::is_most_wanted),
+                    new_grid: row.new_grid,
+                    // The entity is worked on this band (not new here, not ATNO) and its slot here
+                    // is not confirmed.
+                    slot_unconfirmed: row.country.is_some()
+                        && !row.new_dxcc
+                        && !row.new_band
+                        && !row.confirmed_band,
                 })
             })
             .collect()
@@ -1241,13 +1349,34 @@ impl Engine {
                 !p.worked
                     .contains(&format!("{}|{}|{}", e.call.to_uppercase(), e.band, mode))
             })
-            .filter_map(|e| spot_tier(e).map(|t| (e, t)))
+            .filter_map(|e| spot_tier(e).map(|t| (e, self.automation_spot_most_wanted(e, t))))
             .filter(|(_, t)| automation::tier_allowed(*t, &self.settings.automation.tiers))
             .filter(|(e, t)| {
                 *t != Tier::UsState || self.settings.automation.wants_state(e.state.as_deref())
             })
-            .min_by(|(a, ta), (b, tb)| ta.cmp(tb).then(a.call.cmp(&b.call)))
+            .min_by(|(a, ta), (b, tb)| {
+                let s = &self.settings.automation;
+                s.rank(*ta).cmp(&s.rank(*tb)).then(a.call.cmp(&b.call))
+            })
             .map(|(e, t)| (e.call.to_uppercase(), e.band.clone(), t))
+    }
+
+    /// A needed band slot of a Club Log top-50 entity is a Most Wanted spot: the operator's rule
+    /// for those, not the plain new-slot one.
+    fn automation_spot_most_wanted(&self, e: &FeedEntry, t: Tier) -> Tier {
+        if t != Tier::DxccNewSlot {
+            return t;
+        }
+        let entity = self.station.dxcc_resolve.as_ref().and_then(|r| r(&e.call));
+        let dxcc = match (&self.automation.entity_info.0, entity.as_deref()) {
+            (Some(info), Some(name)) => info(name).dxcc,
+            _ => None,
+        };
+        if dxcc.is_some_and(automation::is_most_wanted) {
+            Tier::MostWanted
+        } else {
+            t
+        }
     }
 
     /// Change mode (when `tier` is given) and band through the app's own retune paths, then put the
@@ -1369,7 +1498,12 @@ impl Engine {
             })
             .filter_map(|e| spot_tier(e).map(|t| (e, t)))
             .filter(|(_, t)| automation::tier_allowed(*t, &self.settings.automation.tiers))
-            .min_by(|(a, ta), (b, tb)| ta.cmp(tb).then(a.call.cmp(&b.call)))
+            .min_by(|(a, ta), (b, tb)| {
+                let pr = &self.settings.automation.priority;
+                automation::rank_in(pr, *ta)
+                    .cmp(&automation::rank_in(pr, *tb))
+                    .then(a.call.cmp(&b.call))
+            })
             .map(|(e, t)| (e.clone(), t))
     }
 

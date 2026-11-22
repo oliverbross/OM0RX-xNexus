@@ -12471,6 +12471,12 @@ fn wire_country_resolvers(eng: &mut Engine) {
     eng.set_dxcc_resolver_shared(country_resolver());
     eng.set_dxcc_country_resolver(log_queries::dxcc_country);
     eng.set_country_dxcc_resolver(propagation::dxcc::dxcc_by_name);
+    // OM0RX-xNexus autopilot: continent (outside Europe first) and DXCC number (Club Log Most
+    // Wanted) of the entity a decode row names.
+    eng.set_automation_entity_resolver(|name| tempo_app::engine::autopilot::EntityInfo {
+        continent: propagation::dxcc::entity_continent(name).map(str::to_string),
+        dxcc: propagation::dxcc::dxcc_by_name(name),
+    });
 }
 
 /// The fill rule's own version in [`log_fill_version`]. Bump it whenever the rule changes, so a

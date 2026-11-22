@@ -35,6 +35,7 @@ export type SettingsTabId =
   | 'phone'
   | 'cw'
   | 'digital'
+  | 'autopilot'
   | 'spots'
   | 'logbook'
   | 'services'
@@ -68,6 +69,9 @@ export const SETTINGS_TABS: SettingsTabDef[] = [
   { id: 'phone', label: 'Phone' },
   { id: 'cw', label: 'CW' },
   { id: 'digital', label: 'Digital' },
+  // OM0RX-xNexus: the autopilot and Answer callers, with their own rules and priorities
+  // (operator, 2026-11-22), moved off Digital.
+  { id: 'autopilot', label: 'Autopilot' },
   { id: 'spots', label: 'Spots & Alerts' },
   // The logbook's own settings — its display, how long it keeps a deleted contact, the callbook
   // lookups and the reference data a contact is checked against — on one tab (operator,
@@ -483,6 +487,16 @@ export const SETTINGS_SECTIONS: SettingsSectionDef[] = [
     tab: 'digital',
     keywords: ['frequency', 'dial', 'band plan', 'override', 'calling frequency', 'mhz',
       'ft8 frequency', 'ft4 frequency'],
+  },
+
+  // ---- Autopilot (OM0RX-xNexus) -----------------------------------------------
+  {
+    id: 'autopilot',
+    label: 'Autopilot and Answer callers',
+    tab: 'autopilot',
+    keywords: ['automation', 'auto pilot', 'answer callers', 'hunt', 'dxpedition hunt', 'priority',
+      'priorities', 'rules', 'most wanted', 'club log', 'band schedule', 'band hopper', 'presence',
+      'atno', 'grid', 'outside europe'],
   },
 
   // ---- Spots & Alerts ----------------------------------------------------------

@@ -1,6 +1,6 @@
 # Settings reference
 
-Settings is organized into thirteen tabs. Only the active tab renders, so typing in
+Settings is organized into fourteen tabs. Only the active tab renders, so typing in
 one field doesn't lag the whole panel. **Save** at the bottom applies your
 changes; most take effect live (a few say "takes effect on restart", and a few
 apply the instant you touch them — those say so too).
@@ -13,7 +13,8 @@ The tabs, in the order they appear:
 
 [Station](#station) · [Remote](#remote) · [Radio](#radio) ·
 [Satellites](#satellites) · [Phone](#phone) · [CW](#cw) ·
-[Digital](#digital) · [Spots & Alerts](#spots--alerts) · [Logbook](#logbook) ·
+[Digital](#digital) · [Autopilot](#autopilot) ·
+[Spots & Alerts](#spots--alerts) · [Logbook](#logbook) ·
 [Services](#services) · [Contesting](#contesting) ·
 [Appearance](#appearance) · [App](#app)
 
@@ -1861,6 +1862,38 @@ everywhere. An override replaces the stock row for its band + mode."
   row, **Reset to standard** clears them all, **✕** removes one. "MHz is the dial
   (suppressed-carrier) frequency." A duplicate band+mode is flagged inline and
   the last row wins. Save to apply — band switches then use your value.
+
+---
+
+## Autopilot
+
+The supervised FT8/FT4 autopilot and Answer callers (OM0RX-xNexus), all in one place: what the
+autopilot calls and in what order, its band schedule, its timing, and how stations calling you are
+answered. Both are off until you switch them on, neither ever turns transmit on, and every stop
+switches them off.
+
+### Autopilot and Answer callers
+
+- **Autopilot.** *Allow the autopilot* adds the Autopilot button to the top bar. The presence check
+  asks you to confirm you are at the station every so many minutes (2–999); with no answer it
+  finishes the contact in progress, then turns transmit off. It can move to another scheduled band
+  for a needed cluster spot (listening there first), hunt a needed DXpedition spotted on any band on
+  the DXpedition's own frequency (switching to Hound when it runs Fox/Hound), and call stations
+  outside Europe first within each rule.
+- **Priorities.** The rules the autopilot calls by, strongest first: ATNO, Club Log Most Wanted top
+  50, DXpeditions, DXCC never confirmed, band slots not confirmed, US states, POTA/SOTA/IOTA/WWFF
+  references, new grids, and any new call. Switch a rule off to never call for it, and use the
+  arrows to change the order; *Default order* puts it back. A station calling you always comes
+  first. Rules marked ★ are rare: called for the long time budget (at least 10 minutes), and from at
+  least 1200 Hz above the station's frequency. One heard above 500 Hz is first brought under 500 Hz
+  by moving the dial.
+- **Band schedule (UTC).** Each window runs from its start time until the next, patrolling its bands
+  in order, in FT8, FT4 or FT2.
+- **Timing.** Slots to listen after a band change, the least time on a band, how long with nothing
+  to call (or only ordinary new calls) before moving on, the time budgets for an ordinary and a rare
+  station, and the most contacts started per hour.
+- **Answer callers.** Stations calling you while you work a station you called are answered once
+  your 73 or RR73 is sent, instead of transmit going off, up to the chain limit.
 
 ---
 
