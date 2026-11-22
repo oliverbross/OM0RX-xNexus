@@ -1,9 +1,17 @@
 // @vitest-environment jsdom
-// OM0RX-xNexus: the autopilot control, the Settings ▸ Automation section and the need feed.
+// OM0RX-xNexus: the autopilot control, the Settings ▸ Autopilot section and the need feed.
 import { describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen } from '@testing-library/react'
 import { AutopilotControl, PRESENCE_PROMPT_SECS } from './AutopilotControl'
-import { SettingsAutomation, automationOf, clampInt, DEFAULT_AUTOMATION } from './SettingsAutomation'
+import {
+  SettingsAutomation,
+  automationOf,
+  clampInt,
+  DEFAULT_AUTOMATION,
+  DEFAULT_PRIORITY,
+  moveRule,
+  ruleOrder,
+} from './SettingsAutomation'
 import { autopilotFeedFromNeeds } from '../features/autopilotFeed'
 import type { AutomationState, NeedAlert, Settings } from '../types'
 
@@ -94,6 +102,56 @@ describe('SettingsAutomation', () => {
     expect(clampInt('', 2, 999, 10)).toBe(10)
     expect(clampInt('abc', 2, 999, 10)).toBe(10)
     expect(clampInt('45', 2, 999, 10)).toBe(45)
+  })
+
+  it('makes a stored rule order whole, as the engine does', () => {
+    expect(ruleOrder(undefined)).toEqual(DEFAULT_PRIORITY)
+    // An older file without Most Wanted and Grid: both come in at their default places, and the
+    // operator's own order of the rest is kept.
+    expect(
+      ruleOrder(['dxpedition', 'atno', 'dxccUnconfirmed', 'dxccNewSlot', 'usState', 'reference', 'newCall']),
+    ).toEqual([
+      'dxpedition', 'atno', 'mostWanted', 'dxccUnconfirmed', 'dxccNewSlot', 'usState', 'reference', 'grid', 'newCall',
+    ])
+    // Unknown names and duplicates go; a station calling you is never in the list.
+    const order = ruleOrder(['grid', 'grid', 'callingMe', 'fromTheFuture', 'atno'])
+    expect(order.slice(0, 2)).toEqual(['grid', 'atno'])
+    expect(order).toHaveLength(DEFAULT_PRIORITY.length)
+    expect(order).not.toContain('callingMe')
+  })
+
+  it('moves a rule one place, and not past either end', () => {
+    const o = DEFAULT_PRIORITY
+    expect(moveRule(o, 1, -1).slice(0, 2)).toEqual(['mostWanted', 'atno'])
+    expect(moveRule(o, 0, -1)).toBe(o)
+    expect(moveRule(o, o.length - 1, 1)).toBe(o)
+  })
+
+  it('reorders and switches rules from the list', () => {
+    const change = vi.fn()
+    render(<SettingsAutomation form={{} as Settings} onChange={change} />)
+    const rows = () =>
+      [...screen.getByTestId('automation-rules').querySelectorAll('li')].map((li) =>
+        li.getAttribute('data-testid'),
+      )
+    expect(rows()[0]).toBe('automation-rule-atno')
+    expect((screen.getByTestId('automation-rule-atno-up') as HTMLButtonElement).disabled).toBe(true)
+    fireEvent.click(screen.getByTestId('automation-rule-grid-up'))
+    const moved = change.mock.lastCall![0].priority as string[]
+    expect(moved.indexOf('grid')).toBe(DEFAULT_PRIORITY.indexOf('grid') - 1)
+    fireEvent.click(screen.getByTestId('automation-rule-newCall-on'))
+    expect(change).toHaveBeenLastCalledWith(
+      expect.objectContaining({ tiers: expect.objectContaining({ newCall: false }) }),
+    )
+    fireEvent.click(screen.getByTestId('automation-outside-eu'))
+    expect(change).toHaveBeenLastCalledWith(expect.objectContaining({ preferOutsideEu: false }))
+  })
+
+  it('shows a saved order as saved', () => {
+    const priority = ['grid', ...DEFAULT_PRIORITY.filter((r) => r !== 'grid')]
+    render(<SettingsAutomation form={{ automation: { priority } } as unknown as Settings} onChange={vi.fn()} />)
+    const first = screen.getByTestId('automation-rules').querySelector('li')
+    expect(first?.getAttribute('data-testid')).toBe('automation-rule-grid')
   })
 
   it('edits the autopilot switch and the presence interval', () => {

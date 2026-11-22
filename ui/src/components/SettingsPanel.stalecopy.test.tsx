@@ -328,6 +328,16 @@ describe('an edit made in any section of Settings is saved', () => {
     { section: 'amplifier', ...field('ampModel', '', 'kpa', 'spe'), edit: setIn('amplifier', 'combobox', 'Amplifier', 'spe') },
     { section: 'transmit-limits', ...field('bandEdgeTones', true, true, false), edit: clickIn('transmit-limits', 'switch', /^Band-edge tones/) },
     { section: 'digital-ft8-ft4', ...field('txWatchdogMin', 5, 7, 9), edit: setIn('digital-ft8-ft4', 'spinbutton', /^Tx Watchdog \(min\)/, '9') },
+    // OM0RX-xNexus: the autopilot's own tab. The object is edited whole; the switch flipped here
+    // must reach the station whatever the station's copy says.
+    {
+      section: 'autopilot',
+      load: { automation: { preferOutsideEu: true } } as unknown as Partial<Settings>,
+      elsewhere: { automation: { preferOutsideEu: true, answerCallers: true } } as unknown as Partial<Settings>,
+      edit: clickIn('autopilot', 'switch', /^Within each rule, call stations outside Europe first/),
+      saved: (s) => (s.automation as { preferOutsideEu?: boolean } | undefined)?.preferOutsideEu,
+      expected: false,
+    },
     { section: 'jt65', ...field('jt65Submode', 0, 1, 2), edit: setIn('jt65', 'combobox', /^Submode \(tone spacing\)/, '2') },
     { section: 'msk144', ...field('msk144PeriodS', 15, 10, 30), edit: setIn('msk144', 'combobox', /^T\/R period/, '30') },
     { section: 'beacons-wspr-fst4w', ...field('beaconPowerDbm', 23, 27, 30), edit: setIn('beacons-wspr-fst4w', 'spinbutton', /^Transmit power \(dBm\)/, '30') },

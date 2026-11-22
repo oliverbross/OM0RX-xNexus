@@ -36474,3 +36474,75 @@ td.aw-cc {
 .automation-window-bands {
   flex: 1 1 14em;
 }
+/* OM0RX-xNexus Settings ▸ Autopilot: each group on its own card, the rules as an ordered list. */
+.settings-automation {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.automation-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.automation-card > .settings-subhead {
+  margin: 0;
+}
+.automation-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(16em, 100%), 1fr));
+  gap: var(--space-2) var(--space-3);
+}
+.automation-rules {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.automation-rule {
+  display: grid;
+  grid-template-columns: 2em auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+.automation-rule.off .automation-rule-label {
+  color: var(--text-dim);
+}
+.automation-rule-rank {
+  font-weight: 700;
+  text-align: right;
+  color: var(--text-dim);
+}
+.automation-rule-label {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.automation-rule-rare {
+  margin-left: 0.4em;
+  color: var(--accent);
+}
+.automation-rule-move {
+  display: inline-flex;
+  gap: var(--space-1);
+}
+.automation-rule-btn {
+  min-width: 2em;
+  cursor: pointer;
+}
+.automation-rule-btn:disabled {
+  cursor: default;
+  opacity: 0.35;
+}
+.automation-rules-actions {
+  display: flex;
+  justify-content: flex-end;
+}

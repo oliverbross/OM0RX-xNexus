@@ -12849,6 +12849,8 @@ export const EN = {
   'autopilot.tier.usState': 'needed US state',
   'autopilot.tier.reference': 'new reference',
   'autopilot.tier.newCall': 'new call',
+  'autopilot.tier.mostWanted': 'Club Log top 50',
+  'autopilot.tier.grid': 'new grid',
   'autopilot.presence.label': "I'm here · {{time}}",
   'autopilot.presence.title':
     'Confirm you are at the station. Every {{minutes}} min the autopilot asks; with no answer it finishes the contact in progress, then turns transmit off.',
@@ -12862,10 +12864,27 @@ export const EN = {
   'autopilot.prompt.text': 'Transmit turns off in {{time}} unless you confirm.',
   'autopilot.prompt.confirm': "I'm here",
   'autopilot.failed': 'Could not change the autopilot',
-  // OM0RX-xNexus: Settings ▸ Automation.
-  'settings.automation.title': 'Automation',
+  // OM0RX-xNexus: Settings ▸ Autopilot (its own tab since 2026-11-22).
+  'settings.tabs.autopilot': 'Autopilot',
+  'settings.autopilot.legend': 'Autopilot and Answer callers',
   'settings.automation.intro':
     'Answer callers and the supervised autopilot. Both are off until you switch them on. They never turn transmit on by themselves, and every stop switches them off.',
+  'settings.automation.pilot.outsideEu': 'Within each rule, call stations outside Europe first',
+  'settings.automation.pilot.outsideEu.hint':
+    'By the station’s DXCC continent. A European ATNO is still called first: it has its own, stronger rule.',
+  'settings.automation.timing.head': 'Timing',
+  'settings.automation.pilot.ordinaryDwell':
+    'Move on after this long with only ordinary new calls (seconds)',
+  'settings.automation.rules.head': 'Priorities',
+  'settings.automation.rules.hint':
+    'The autopilot calls the station that matches the highest rule in this list. Switch a rule off to never call for it; use the arrows to change the order. A station calling you always comes first.',
+  'settings.automation.rules.up': 'Move {{rule}} up',
+  'settings.automation.rules.down': 'Move {{rule}} down',
+  'settings.automation.rules.reset': 'Default order',
+  'settings.automation.rules.rare':
+    'Rare: called for the long time budget, from at least 1200 Hz above its frequency.',
+  'settings.automation.tiers.mostWanted': 'Club Log Most Wanted top 50, not confirmed on this band',
+  'settings.automation.tiers.grid': 'Maidenhead grids never worked',
   'settings.automation.answer.head': 'Answer callers',
   'settings.automation.answer.on': 'Answer stations that call you after you called someone',
   'settings.automation.answer.on.hint':
@@ -12888,11 +12907,10 @@ export const EN = {
   'settings.automation.pilot.hunt.hint':
     'Goes to the frequency the spot names — DXpeditions often use their own — calls only the DXpedition and stations calling you, then returns to where it was. Never leaves before every contact is finished.',
   'settings.automation.pilot.huntHound': 'Switch to Hound when the DXpedition runs Fox/Hound, and back afterwards',
-  'settings.automation.tiers.head': 'What the autopilot may call',
   'settings.automation.tiers.atno': 'ATNO (an entity never worked)',
   'settings.automation.tiers.dxpedition': 'DXpeditions on a needed band or mode',
-  'settings.automation.tiers.dxccUnconfirmed': 'DXCC worked but not confirmed on this band or mode',
-  'settings.automation.tiers.dxccNewSlot': 'DXCC confirmed elsewhere, new on this band or mode',
+  'settings.automation.tiers.dxccUnconfirmed': 'DXCC never confirmed (new here, or worked here and still unconfirmed)',
+  'settings.automation.tiers.dxccNewSlot': 'Band slots not confirmed (new on this band or mode, or worked here unconfirmed)',
   'settings.automation.tiers.usState': 'US states not yet worked on this band (WAS)',
   'settings.automation.tiers.states': 'Only these states',
   'settings.automation.tiers.states.placeholder': 'every needed state',

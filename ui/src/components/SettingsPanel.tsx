@@ -935,6 +935,7 @@ type SettingsTab =
   | 'phone'
   | 'cw'
   | 'digital'
+  | 'autopilot'
   | 'spots'
   | 'logbook'
   | 'services'
@@ -957,6 +958,7 @@ const SETTINGS_TABS: { id: SettingsTab; label: string; labelKey?: MessageKey }[]
   { id: 'phone', label: 'Phone' },
   { id: 'cw', label: 'CW' },
   { id: 'digital', label: 'Digital' },
+  { id: 'autopilot', label: 'Autopilot', labelKey: 'settings.tabs.autopilot' },
   { id: 'spots', label: 'Spots & Alerts', labelKey: 'settings.tabs.spots' },
   { id: 'logbook', label: 'Logbook', labelKey: 'settings.tabs.logbook' },
   { id: 'services', label: 'Services', labelKey: 'settings.tabs.services' },
@@ -8177,6 +8179,21 @@ export function SettingsPanel({
           )}
 
           {/* ---- Satellites (the 2026-10 regroup: its own tab) ---- */}
+          {/* OM0RX-xNexus: the supervised autopilot and Answer callers, on their own tab (operator,
+              2026-11-22: "all in one place"). Moved here from Digital ▸ Transmit & Sequencing. */}
+          {tab === 'autopilot' && form && (
+            <fieldset className="settings-section" id="settings-autopilot" {...fold('autopilot')}>
+              <legend>{t('settings.autopilot.legend')}</legend>
+              <SettingsAutomation
+                form={form}
+                onChange={(automation) => {
+                  markDirty()
+                  setForm((prev) => (prev ? { ...prev, automation } : prev))
+                }}
+              />
+            </fieldset>
+          )}
+
           {tab === 'satellites' && (
           <>
           {/* ---- Satellite Doppler + rotator manners (Phase 1 sat station) ---- */}
@@ -9448,15 +9465,6 @@ export function SettingsPanel({
                     "double-click on call sets Tx enable"). Off = you arm TX yourself each time.
                   </span>
                 </div>
-
-                {/* OM0RX-xNexus: Answer callers and the supervised autopilot. */}
-                <SettingsAutomation
-                  form={form}
-                  onChange={(automation) => {
-                    markDirty()
-                    setForm((prev) => (prev ? { ...prev, automation } : prev))
-                  }}
-                />
 
                 {/* TUNE POWER (#, the MFJ-loop report). The one control in these two sub-groups
                     whose strings come from the CATALOG, and deliberately: the English-only rule
