@@ -303,10 +303,12 @@ fn the_autopilot_skips_a_directed_cq_for_someone_else() {
     assert_eq!(e.automation_dx(), None);
 }
 
-/// 20 m and 17 m all day, listening one slot: the smallest schedule that can move.
+/// 20 m and 17 m all day, listening one slot: the smallest schedule that can move. The new-grid
+/// rule is off: in a test's empty log every grid is new, which would make every station needed.
 fn two_band_pilot() -> Engine {
     let mut e = engine();
     e.settings.automation.autopilot_enabled = true;
+    e.settings.automation.tiers.grid = false;
     e.settings.automation.schedule = vec![crate::automation::AutopilotWindow {
         start: "00:00".into(),
         bands: vec!["20m".into(), "17m".into()],
@@ -513,6 +515,71 @@ fn a_dxpedition_on_an_unscheduled_band_is_hunted_on_its_own_frequency() {
     assert_eq!(e.settings.special_op, crate::settings::SpecialOp::None);
 }
 
+/// Operator, 2026-11-22: "it should never call on the DXpedition frequency but a minimum 1200
+/// higher … usually a DXpedition should be within 500 Hz … if not, the software needs to retune to
+/// fit the DXpedition under 500". Heard low, it is called 1200 Hz above with the dial left alone;
+/// heard at 1500 Hz, the dial moves up 1100 Hz so it sits at 400, and it is called from 1600.
+#[test]
+fn a_dxpedition_is_called_1200_hz_above_its_own_frequency() {
+    let mut low = two_band_pilot();
+    low.autopilot_feed(vec![dxped_spot("3Y0K", "40m", 7.056)]);
+    low.ingest_decodes_for_test(&[], 30);
+    low.ingest_decodes_for_test(&[dec_at("CQ 3Y0K JD15", -14, 450.0)], 32);
+    assert_eq!(
+        low.automation_dx().as_deref(),
+        Some("3Y0K"),
+        "premise: called"
+    );
+    assert!(
+        (low.settings.dial_mhz - 7.056).abs() < 1e-9,
+        "under 500 Hz: no retune"
+    );
+    // At least 1200 Hz above it: the offset already in use stays when it is far enough up.
+    assert!(
+        (1650.0..=2900.0).contains(&low.tx_offset_hz),
+        "called at least 1200 Hz above it: {}",
+        low.tx_offset_hz
+    );
+
+    let mut e = two_band_pilot();
+    e.autopilot_feed(vec![dxped_spot("3Y0K", "40m", 7.056)]);
+    e.ingest_decodes_for_test(&[], 30);
+    e.ingest_decodes_for_test(&[dec_at("CQ 3Y0K JD15", -14, 1500.0)], 32);
+    assert_eq!(
+        e.automation_dx().as_deref(),
+        Some("3Y0K"),
+        "premise: called"
+    );
+    assert!(
+        (e.settings.dial_mhz - 7.0571).abs() < 1e-9,
+        "the dial moved up 1100 Hz: {}",
+        e.settings.dial_mhz
+    );
+    assert!(
+        (e.tx_offset_hz - 1600.0).abs() < 0.5,
+        "called 1200 Hz above where it now sits (400 Hz): {}",
+        e.tx_offset_hz
+    );
+    assert!(e.tx_enabled, "the retune put transmit back");
+    assert_eq!(e.settings.band, "40m");
+    // CONTROL: an ordinary station is still called as a double-click calls it, on its frequency.
+    let mut o = two_band_pilot();
+    o.settings.automation.schedule[0].bands = vec!["20m".into()];
+    for s in [30, 32] {
+        o.ingest_decodes_for_test(&[dec_at("CQ N0ABC EM48", -3, 1500.0)], s);
+    }
+    assert_eq!(
+        o.automation_dx().as_deref(),
+        Some("N0ABC"),
+        "premise: called"
+    );
+    assert!(
+        (o.tx_offset_hz - 1500.0).abs() < 0.5,
+        "an ordinary call is unchanged: {}",
+        o.tx_offset_hz
+    );
+}
+
 #[test]
 fn a_dxpedition_hunt_waits_for_the_contact_in_progress() {
     let mut e = two_band_pilot();
@@ -578,6 +645,8 @@ fn a_needed_state_is_called_only_when_switched_on_and_wanted() {
         us_state: false,
         reference: false,
         new_call: false,
+        most_wanted: false,
+        grid: false,
     };
     e.set_tx_enabled(true);
     e.set_autopilot(true).unwrap();

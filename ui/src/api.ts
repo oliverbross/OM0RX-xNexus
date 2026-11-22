@@ -3237,7 +3237,7 @@ export async function setSkipTx1(enabled: boolean): Promise<AppSnapshot> {
 }
 
 /** OM0RX-xNexus: turn the supervised autopilot on or off. On is refused (with the reason) unless
- *  Settings ▸ Automation allows it and transmit is already on. */
+ *  Settings ▸ Autopilot allows it and transmit is already on. */
 export async function setAutopilot(on: boolean): Promise<AppSnapshot> {
   return invoke<AppSnapshot>('set_autopilot', { on })
 }

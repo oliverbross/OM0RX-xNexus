@@ -69,6 +69,10 @@ pub struct AutopilotTiers {
     pub reference: bool,
     /// A call new on this band and mode (CS New Call, New Band, New Mode, New Band+Mode).
     pub new_call: bool,
+    /// An entity on Club Log's Most Wanted top 50, not yet confirmed on this band.
+    pub most_wanted: bool,
+    /// A Maidenhead grid never worked.
+    pub grid: bool,
 }
 
 impl Default for AutopilotTiers {
@@ -81,8 +85,86 @@ impl Default for AutopilotTiers {
             us_state: false,
             reference: true,
             new_call: true,
+            most_wanted: true,
+            grid: true,
         }
     }
+}
+
+/// The rules in the order the autopilot weighs them by default (operator, 2026-11-22: new DXCC,
+/// the Club Log top 50 "are a must", DXpeditions, unconfirmed DXCC, unconfirmed band slots, US
+/// states, POTA/SOTA/IOTA, grids, then any new call). A station calling the operator is always
+/// first and is not in the list.
+pub const DEFAULT_PRIORITY: [Tier; 9] = [
+    Tier::Atno,
+    Tier::MostWanted,
+    Tier::Dxpedition,
+    Tier::DxccUnconfirmed,
+    Tier::DxccNewSlot,
+    Tier::UsState,
+    Tier::Reference,
+    Tier::Grid,
+    Tier::NewCall,
+];
+
+/// Club Log's DXCC Most Wanted list, ranks 1–50, as ARRL DXCC entity numbers (fetched from
+/// `clublog.org/mostwanted.php?api=1` on 2026-11-22). The list moves slowly; refresh it with a
+/// release when it does.
+pub const CLUBLOG_TOP50: [u32; 50] = [
+    344, 123, 138, 217, 131, 199, 506, 17, 505, 174, 280, 253, 153, 384, 240, 16, 133, 276, 512,
+    204, 111, 235, 20, 171, 161, 182, 124, 10, 201, 177, 37, 273, 297, 180, 309, 270, 303, 195, 41,
+    247, 238, 99, 33, 43, 197, 24, 51, 118, 490, 507,
+];
+
+/// The priority list as read from settings: every name this build knows, in order; anything else
+/// (a newer build's rule, a typo, a non-string) is dropped, never an error.
+fn de_priority<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Vec<Tier>, D::Error> {
+    let raw = Vec::<serde_json::Value>::deserialize(d).unwrap_or_default();
+    Ok(raw
+        .into_iter()
+        .filter_map(|v| serde_json::from_value::<Tier>(v).ok())
+        .collect())
+}
+
+/// The operator's order made whole: a station calling the operator never in it (it is always
+/// first), each rule once, and any rule missing from it added where [`DEFAULT_PRIORITY`] has it
+/// relative to the rest — after the rules that precede it there.
+pub fn sanitized_priority(p: &[Tier]) -> Vec<Tier> {
+    let mut out: Vec<Tier> = Vec::new();
+    for t in p {
+        if *t != Tier::CallingMe && !out.contains(t) {
+            out.push(*t);
+        }
+    }
+    for (i, t) in DEFAULT_PRIORITY.iter().enumerate() {
+        if out.contains(t) {
+            continue;
+        }
+        // After the last rule that precedes it in the default order, or first.
+        let at = DEFAULT_PRIORITY[..i]
+            .iter()
+            .filter_map(|b| out.iter().position(|x| x == b))
+            .max()
+            .map_or(0, |p| p + 1);
+        out.insert(at, *t);
+    }
+    out
+}
+
+/// [`AutomationSettings::rank`] over a bare list.
+pub fn rank_in(priority: &[Tier], t: Tier) -> usize {
+    if t == Tier::CallingMe {
+        return 0;
+    }
+    priority
+        .iter()
+        .position(|x| *x == t)
+        .map_or(priority.len() + 1, |i| i + 1)
+}
+
+/// Is this DXCC number on the Club Log Most Wanted top 50?
+pub fn is_most_wanted(dxcc: u32) -> bool {
+    CLUBLOG_TOP50.contains(&dxcc)
 }
 
 /// Everything the operator configures for Answer callers and the autopilot (Settings ▸ Automation).
@@ -131,6 +213,15 @@ pub struct AutomationSettings {
     /// While hunting, switch to Hound when the DXpedition is heard running Fox/Hound (transmitting
     /// below 1000 Hz), and back when the hunt ends.
     pub hunt_hound: bool,
+    /// The rules, strongest first: the operator's own order ([`DEFAULT_PRIORITY`] until changed).
+    /// Each rule is switched on or off in [`Self::tiers`]. A name this build does not know (a
+    /// newer build's rule) is skipped rather than failing the whole settings file.
+    #[serde(deserialize_with = "de_priority")]
+    pub priority: Vec<Tier>,
+    /// Within a rule, call a station outside Europe before a European one (operator, 2026-11-22:
+    /// "always prioritising DX from outside of Europe unless the EU station is an all-time new
+    /// one" — an ATNO is its own, stronger rule).
+    pub prefer_outside_eu: bool,
 }
 
 impl Default for AutomationSettings {
@@ -170,6 +261,8 @@ impl Default for AutomationSettings {
             wanted_states: Vec::new(),
             hunt_dxpeditions: true,
             hunt_hound: true,
+            priority: DEFAULT_PRIORITY.to_vec(),
+            prefer_outside_eu: true,
         }
     }
 }
@@ -211,7 +304,14 @@ impl AutomationSettings {
             .collect();
         self.wanted_states.sort();
         self.wanted_states.dedup();
+        self.priority = sanitized_priority(&self.priority);
         self
+    }
+
+    /// Where `t` stands in the operator's order: 0 for a station calling the operator, then 1, 2…
+    /// down the list. Lower wins.
+    pub fn rank(&self, t: Tier) -> usize {
+        rank_in(&self.priority, t)
     }
 
     /// Is `state` one the operator chases (every state when the list is empty)?
@@ -284,26 +384,32 @@ pub fn next_band<'a>(w: &'a AutopilotWindow, current: Option<&str>) -> Option<&'
     .map(String::as_str)
 }
 
-/// The target tiers, strongest first. A lower number always wins.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+/// The target rules ("tiers"). Their strength is the operator's order
+/// ([`AutomationSettings::priority`], [`AutomationSettings::rank`]), never this declaration's: the
+/// derived `Ord` is only the default order and must not be used to rank a pick.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum Tier {
     /// A station calling the operator.
     CallingMe = 1,
     /// An entity never worked.
     Atno = 2,
+    /// An entity on Club Log's Most Wanted top 50, not confirmed on this band.
+    MostWanted = 3,
     /// A listed DXpedition, needed here.
-    Dxpedition = 3,
-    /// DXCC worked, not confirmed, on this band or mode.
-    DxccUnconfirmed = 4,
-    /// DXCC confirmed elsewhere, new on this band or mode.
-    DxccNewSlot = 5,
+    Dxpedition = 4,
+    /// DXCC never confirmed: new here, or worked here and still unconfirmed.
+    DxccUnconfirmed = 5,
+    /// DXCC confirmed elsewhere, new on this band or mode, or worked here and not confirmed here.
+    DxccNewSlot = 6,
     /// A US state needed on this band (WAS), and wanted.
-    UsState = 6,
+    UsState = 7,
     /// A new park, island, summit or WWFF reference.
-    Reference = 7,
-    /// A call new on this band and mode.
-    NewCall = 8,
+    Reference = 8,
+    /// A Maidenhead grid never worked.
+    Grid = 9,
+    /// A call new on this band and mode: the ordinary call.
+    NewCall = 10,
 }
 
 /// One heard station the autopilot could call: what a decode row says about it.
@@ -335,6 +441,15 @@ pub struct Candidate {
     /// Great-circle distance from the operator's grid to the grid the station sent, when both
     /// are known.
     pub distance_km: Option<f64>,
+    /// The continent code of the station's DXCC entity (`"EU"`, `"NA"`, …), when known.
+    pub continent: Option<String>,
+    /// The entity is on the Club Log Most Wanted top 50.
+    pub most_wanted: bool,
+    /// The grid it sent was never worked.
+    pub new_grid: bool,
+    /// The entity is worked on this band but the slot is not confirmed (it may be confirmed
+    /// elsewhere): another contact there can still confirm it.
+    pub slot_unconfirmed: bool,
 }
 
 /// From this far away a station counts as DX and is called before a nearer one of the same tier
@@ -345,6 +460,15 @@ pub const DX_KM: f64 = 3000.0;
 /// Is the candidate DX ([`DX_KM`] or more away)?
 pub fn is_dx(c: &Candidate) -> bool {
     c.distance_km.is_some_and(|d| d >= DX_KM)
+}
+
+/// Is the candidate "far" for ranking within a rule: outside Europe by its entity's continent when
+/// that is known and asked for, else [`is_dx`] by distance.
+pub fn is_far(c: &Candidate, prefer_outside_eu: bool) -> bool {
+    match (&c.continent, prefer_outside_eu) {
+        (Some(k), true) => !k.eq_ignore_ascii_case("EU"),
+        _ => is_dx(c),
+    }
 }
 
 /// The centre of a 4- or 6-character Maidenhead locator, `(lat, lon)` in degrees.
@@ -399,13 +523,20 @@ pub fn tiers_of(c: &Candidate) -> Vec<Tier> {
     if ds == "ATNO" {
         out.push(Tier::Atno);
     }
+    // A top-50 entity not confirmed on this band: a new contact can still confirm it.
+    if c.most_wanted && ds != "ATNO" && ds != "Confirmed" && call_new {
+        out.push(Tier::MostWanted);
+    }
     if c.dxpedition && call_new {
         out.push(Tier::Dxpedition);
     }
-    if ds.starts_with("W/") {
+    // Never confirmed anywhere: new on this band or mode (W/…), or worked here already ("Worked")
+    // with a new call that may confirm it.
+    if ds.starts_with("W/") || (ds == "Worked" && call_new) {
         out.push(Tier::DxccUnconfirmed);
     }
-    if ds.starts_with("C/") {
+    // Confirmed elsewhere: new on this band or mode (C/…), or worked here and not confirmed here.
+    if ds.starts_with("C/") || (c.slot_unconfirmed && call_new) {
         out.push(Tier::DxccNewSlot);
     }
     if c.new_state {
@@ -414,20 +545,29 @@ pub fn tiers_of(c: &Candidate) -> Vec<Tier> {
     if c.new_reference && call_new {
         out.push(Tier::Reference);
     }
+    if c.new_grid && call_new {
+        out.push(Tier::Grid);
+    }
     if call_new {
         out.push(Tier::NewCall);
     }
     out
 }
 
-/// The strongest tier a candidate falls in, or `None` when it is not worth calling.
+/// The strongest tier a candidate falls in by the default order, or `None` when it is not worth
+/// calling.
 pub fn tier_of(c: &Candidate) -> Option<Tier> {
-    tiers_of(c).into_iter().next()
+    let mut all = tiers_of(c);
+    all.sort_by_key(|t| rank_in(&DEFAULT_PRIORITY, *t));
+    all.into_iter().next()
 }
 
-/// The strongest tier a candidate falls in that the operator switched on.
-pub fn best_allowed_tier(c: &Candidate, tiers: &AutopilotTiers) -> Option<Tier> {
-    tiers_of(c).into_iter().find(|t| tier_allowed(*t, tiers))
+/// The strongest tier a candidate falls in that the operator switched on, by their order.
+pub fn best_allowed_tier(c: &Candidate, s: &AutomationSettings) -> Option<Tier> {
+    tiers_of(c)
+        .into_iter()
+        .filter(|t| tier_allowed(*t, &s.tiers))
+        .min_by_key(|t| s.rank(*t))
 }
 
 /// Is this tier switched on? Callers to the operator are governed by Answer callers instead.
@@ -441,12 +581,14 @@ pub fn tier_allowed(t: Tier, tiers: &AutopilotTiers) -> bool {
         Tier::UsState => tiers.us_state,
         Tier::Reference => tiers.reference,
         Tier::NewCall => tiers.new_call,
+        Tier::MostWanted => tiers.most_wanted,
+        Tier::Grid => tiers.grid,
     }
 }
 
-/// A rare target gets the long time budget.
+/// A rare target gets the long time budget, and is called from 1200 Hz above.
 pub fn is_rare(t: Tier) -> bool {
-    matches!(t, Tier::Atno | Tier::Dxpedition)
+    matches!(t, Tier::Atno | Tier::Dxpedition | Tier::MostWanted)
 }
 
 /// Which CQs the autopilot answers: a plain CQ, and the directed CQs a European station may answer
@@ -493,20 +635,22 @@ pub fn may_retry(a: Option<&Attempts>, now_unix: u64) -> bool {
 /// skipped by `skip`, are considered.
 pub fn pick<'a>(
     candidates: &'a [Candidate],
-    tiers: &AutopilotTiers,
+    s: &AutomationSettings,
     attempts: &std::collections::HashMap<String, Attempts>,
     now_unix: u64,
     skip: impl Fn(&Candidate) -> bool,
 ) -> Option<(&'a Candidate, Tier)> {
+    let far = |c: &Candidate| is_far(c, s.prefer_outside_eu);
     candidates
         .iter()
         .filter(|c| c.to_me || c.is_cq)
         .filter(|c| !skip(c))
-        .filter_map(|c| best_allowed_tier(c, tiers).map(|t| (c, t)))
+        .filter_map(|c| best_allowed_tier(c, s).map(|t| (c, t)))
         .filter(|(c, _)| may_retry(attempts.get(&c.call.to_uppercase()), now_unix))
         .min_by(|(a, ta), (b, tb)| {
-            ta.cmp(tb)
-                .then(is_dx(b).cmp(&is_dx(a)))
+            s.rank(*ta)
+                .cmp(&s.rank(*tb))
+                .then(far(b).cmp(&far(a)))
                 .then(b.snr.cmp(&a.snr))
                 .then(b.lotw.cmp(&a.lotw))
                 .then(failures(attempts, &a.call).cmp(&failures(attempts, &b.call)))
@@ -611,6 +755,33 @@ pub fn is_hunt_spot(f: &FeedEntry) -> bool {
     f.dxpedition && (f.new_entity || f.new_slot)
 }
 
+/// The least spacing between a DXpedition's audio frequency and ours when the autopilot calls it,
+/// Hz (operator, 2026-11-22: "never call on the DXpedition frequency, a minimum 1200 higher").
+pub const DXPED_SPLIT_HZ: f32 = 1200.0;
+/// A DXpedition heard above this audio frequency is retuned under it before it is called, Hz
+/// (operator, 2026-11-22: "usually a DXpedition should be within 500 Hz … if not, the software
+/// needs to retune to fit the DXpedition under 500").
+pub const DXPED_LOW_HZ: f32 = 500.0;
+/// Where such a retune puts the DXpedition's signal, Hz: under [`DXPED_LOW_HZ`] with room for its
+/// 50 Hz width and a little drift.
+pub const DXPED_PLACE_HZ: f32 = 400.0;
+/// The highest audio offset the autopilot calls a DXpedition from: an FT8 signal is 50 Hz wide
+/// and many radios' transmit passband ends near 3 kHz.
+pub const DXPED_SPLIT_TOP_HZ: f32 = 2900.0;
+/// Where to transmit when calling a DXpedition heard at `dx_hz`, from `tx_hz`: the current offset
+/// when it is already at least [`DXPED_SPLIT_HZ`] above (and inside the passband), else exactly
+/// that far above. Always above, never below (operator, 2026-11-22: "a DXpedition is usually
+/// within 500 Hz, so we can only go above; those are the rules"): one heard so high that 1200 Hz
+/// above does not fit is called from the top of the passband, still above it.
+pub fn dxped_split_hz(dx_hz: f32, tx_hz: f32) -> f32 {
+    let up = dx_hz + DXPED_SPLIT_HZ;
+    if tx_hz >= up && tx_hz <= DXPED_SPLIT_TOP_HZ {
+        tx_hz
+    } else {
+        up.min(DXPED_SPLIT_TOP_HZ)
+    }
+}
+
 /// The dial to hunt a spot from. A spot inside the standard channel's passband (the channel dial
 /// up to 3 kHz above it) keeps the standard dial; any other — a DXpedition on its own frequency —
 /// gets the spot rounded down to the kHz, which puts its signal low in the passband whether the
@@ -685,7 +856,152 @@ mod tests {
             new_state: false,
             lotw: false,
             distance_km: None,
+            continent: None,
+            most_wanted: false,
+            new_grid: false,
+            slot_unconfirmed: false,
         }
+    }
+
+    /// Default settings with these rule switches.
+    fn with(tiers: &AutopilotTiers) -> AutomationSettings {
+        AutomationSettings {
+            tiers: tiers.clone(),
+            ..AutomationSettings::default()
+        }
+    }
+
+    fn pick_call(list: &[Candidate], s: &AutomationSettings) -> Option<(String, Tier)> {
+        pick(list, s, &HashMap::new(), 0, |_| false).map(|(c, t)| (c.call.clone(), t))
+    }
+
+    /// Operator, 2026-11-22: new DXCC first, the Club Log top 50 "a must", then DXpeditions,
+    /// unconfirmed DXCC, unconfirmed band slots, US states, POTA/SOTA/IOTA, grids, then any new call.
+    #[test]
+    fn the_default_order_is_the_operators() {
+        let s = AutomationSettings::default();
+        let mut mw = cand("P5A", Some("New Call"), Some("C/New Band"), -20);
+        mw.most_wanted = true;
+        let slot = cand("ZS1A", Some("New Call"), Some("C/New Band"), 10);
+        assert_eq!(
+            pick_call(&[slot.clone(), mw.clone()], &s).unwrap(),
+            ("P5A".into(), Tier::MostWanted),
+            "a top-50 entity beats a plain new slot"
+        );
+        let mut grid = cand("DL1A", Some("New Call"), Some("Confirmed"), 20);
+        grid.new_grid = true;
+        let plain = cand("DL2A", Some("New Call"), Some("Confirmed"), 25);
+        assert_eq!(
+            pick_call(&[plain.clone(), grid.clone()], &s).unwrap(),
+            ("DL1A".into(), Tier::Grid),
+            "a new grid beats a plain new call"
+        );
+        assert_eq!(
+            pick_call(&[grid, slot.clone()], &s).unwrap().1,
+            Tier::DxccNewSlot,
+            "a band slot beats a grid"
+        );
+        // An entity worked here but never confirmed: a new call there may confirm it.
+        let unconf = cand("TR8A", Some("New Call"), Some("Worked"), -5);
+        assert_eq!(
+            pick_call(&[slot, unconf], &s).unwrap(),
+            ("TR8A".into(), Tier::DxccUnconfirmed)
+        );
+        // Confirmed elsewhere, worked here but not confirmed here: the band-slot rule.
+        let mut here = cand("JA1A", Some("New Call"), Some("Confirmed"), 0);
+        here.slot_unconfirmed = true;
+        assert_eq!(pick_call(&[plain, here], &s).unwrap().1, Tier::DxccNewSlot);
+    }
+
+    /// The operator's own order wins, and an order missing rules (an older file) is made whole.
+    #[test]
+    fn the_operator_can_reorder_the_rules() {
+        let mut grid = cand("DL1A", Some("New Call"), Some("Confirmed"), 0);
+        grid.new_grid = true;
+        let slot = cand("ZS1A", Some("New Call"), Some("C/New Band"), 0);
+        // The settings page writes the whole list: here with Grid moved to the top.
+        let s = AutomationSettings {
+            priority: std::iter::once(Tier::Grid)
+                .chain(
+                    DEFAULT_PRIORITY
+                        .iter()
+                        .copied()
+                        .filter(|t| *t != Tier::Grid),
+                )
+                .collect(),
+            ..AutomationSettings::default()
+        }
+        .sanitized();
+        assert_eq!(s.priority[0], Tier::Grid);
+        assert_eq!(
+            pick_call(&[slot.clone(), grid.clone()], &s).unwrap().1,
+            Tier::Grid
+        );
+        // CONTROL: the default order puts the slot first.
+        let d = AutomationSettings::default();
+        assert_eq!(pick_call(&[slot, grid], &d).unwrap().1, Tier::DxccNewSlot);
+        // An older file, written before Most Wanted and Grid existed: both come in at their
+        // default places, and the operator's own order of the rest is kept.
+        let old = [
+            Tier::Dxpedition,
+            Tier::Atno,
+            Tier::DxccUnconfirmed,
+            Tier::DxccNewSlot,
+            Tier::UsState,
+            Tier::Reference,
+            Tier::NewCall,
+        ];
+        assert_eq!(
+            sanitized_priority(&old),
+            vec![
+                Tier::Dxpedition,
+                Tier::Atno,
+                Tier::MostWanted,
+                Tier::DxccUnconfirmed,
+                Tier::DxccNewSlot,
+                Tier::UsState,
+                Tier::Reference,
+                Tier::Grid,
+                Tier::NewCall,
+            ]
+        );
+        // A station calling the operator is never in the list, and an unknown name is dropped.
+        let raw: AutomationSettings =
+            serde_json::from_str(r#"{"priority":["callingMe","grid","fromTheFuture","atno"]}"#)
+                .unwrap();
+        let p = raw.sanitized().priority;
+        assert!(!p.contains(&Tier::CallingMe));
+        assert_eq!(p.len(), DEFAULT_PRIORITY.len(), "{p:?}");
+        let at = |t: Tier| p.iter().position(|x| *x == t);
+        assert!(
+            at(Tier::Grid) < at(Tier::Atno),
+            "grid-before-ATNO is kept: {p:?}"
+        );
+    }
+
+    /// Within a rule, a station outside Europe comes before a louder European one — by continent,
+    /// whatever the distance; an ATNO in Europe is its own stronger rule.
+    #[test]
+    fn outside_europe_first_within_a_rule() {
+        let mut eu = cand("OH0A", Some("New Call"), Some("Confirmed"), 20);
+        eu.continent = Some("EU".into());
+        let mut af = cand("CN8A", Some("New Call"), Some("Confirmed"), -20);
+        af.continent = Some("AF".into());
+        af.distance_km = Some(2200.0); // nearer than 3000 km, still outside Europe
+        let s = AutomationSettings::default();
+        assert_eq!(pick_call(&[eu.clone(), af.clone()], &s).unwrap().0, "CN8A");
+        let off = AutomationSettings {
+            prefer_outside_eu: false,
+            ..AutomationSettings::default()
+        };
+        assert_eq!(
+            pick_call(&[eu.clone(), af.clone()], &off).unwrap().0,
+            "OH0A",
+            "CONTROL"
+        );
+        let mut atno = cand("1A0A", Some("New Call"), Some("ATNO"), -24);
+        atno.continent = Some("EU".into());
+        assert_eq!(pick_call(&[af, atno], &s).unwrap().0, "1A0A");
     }
 
     #[test]
@@ -697,7 +1013,7 @@ mod tests {
         let list = vec![near, far];
         let (c, _) = pick(
             &list,
-            &AutopilotTiers::default(),
+            &AutomationSettings::default(),
             &HashMap::new(),
             0,
             |_| false,
@@ -710,13 +1026,27 @@ mod tests {
         let list = vec![list[1].clone(), atno_near];
         let (c, _) = pick(
             &list,
-            &AutopilotTiers::default(),
+            &AutomationSettings::default(),
             &HashMap::new(),
             0,
             |_| false,
         )
         .unwrap();
         assert_eq!(c.call, "Z60A");
+    }
+
+    #[test]
+    fn a_dxpedition_is_always_called_from_above_never_on_or_below_it() {
+        // The usual case: a DXpedition low in the passband, called 1200 Hz above.
+        assert_eq!(dxped_split_hz(450.0, 450.0), 1650.0);
+        assert_eq!(dxped_split_hz(450.0, 300.0), 1650.0, "never below");
+        // Already far enough above, and inside the passband: left where it is.
+        assert_eq!(dxped_split_hz(450.0, 2200.0), 2200.0);
+        // Too close above: moved out to the full spacing.
+        assert_eq!(dxped_split_hz(1500.0, 2000.0), 2700.0);
+        // Too high to fit 1200 above: the top of the passband, still above, never below.
+        assert_eq!(dxped_split_hz(2000.0, 2000.0), DXPED_SPLIT_TOP_HZ);
+        assert_eq!(dxped_split_hz(2000.0, 500.0), DXPED_SPLIT_TOP_HZ);
     }
 
     #[test]
@@ -858,7 +1188,7 @@ mod tests {
         ];
         let (c, t) = pick(
             &list,
-            &AutopilotTiers::default(),
+            &AutomationSettings::default(),
             &HashMap::new(),
             0,
             |_| false,
@@ -875,7 +1205,7 @@ mod tests {
         ];
         let (c, _) = pick(
             &list,
-            &AutopilotTiers::default(),
+            &AutomationSettings::default(),
             &HashMap::new(),
             0,
             |_| false,
@@ -893,7 +1223,7 @@ mod tests {
         let mut not_cq = cand("TALK", Some("New Call"), Some("ATNO"), 0);
         not_cq.is_cq = false;
         let list = vec![cand("NEW1", Some("New Call"), Some("Confirmed"), 0), not_cq];
-        assert!(pick(&list, &tiers, &HashMap::new(), 0, |_| false).is_none());
+        assert!(pick(&list, &with(&tiers), &HashMap::new(), 0, |_| false).is_none());
     }
 
     #[test]
@@ -907,8 +1237,22 @@ mod tests {
             },
         );
         let list = vec![cand("RARE", Some("New Call"), Some("ATNO"), 0)];
-        assert!(pick(&list, &AutopilotTiers::default(), &a, 1000 + 599, |_| false).is_none());
-        assert!(pick(&list, &AutopilotTiers::default(), &a, 1000 + 600, |_| false).is_some());
+        assert!(pick(
+            &list,
+            &AutomationSettings::default(),
+            &a,
+            1000 + 599,
+            |_| false
+        )
+        .is_none());
+        assert!(pick(
+            &list,
+            &AutomationSettings::default(),
+            &a,
+            1000 + 600,
+            |_| false
+        )
+        .is_some());
         a.insert(
             "RARE".to_string(),
             Attempts {
@@ -916,7 +1260,14 @@ mod tests {
                 last_unix: 0,
             },
         );
-        assert!(pick(&list, &AutopilotTiers::default(), &a, 10_000_000, |_| false).is_none());
+        assert!(pick(
+            &list,
+            &AutomationSettings::default(),
+            &a,
+            10_000_000,
+            |_| false
+        )
+        .is_none());
     }
 
     #[test]
@@ -925,9 +1276,13 @@ mod tests {
             cand("DONE", Some("New Call"), Some("ATNO"), 0),
             cand("NEXT", Some("New Call"), Some("Confirmed"), 0),
         ];
-        let (c, _) = pick(&list, &AutopilotTiers::default(), &HashMap::new(), 0, |c| {
-            c.call == "DONE"
-        })
+        let (c, _) = pick(
+            &list,
+            &AutomationSettings::default(),
+            &HashMap::new(),
+            0,
+            |c| c.call == "DONE",
+        )
         .unwrap();
         assert_eq!(c.call, "NEXT");
     }
@@ -941,7 +1296,7 @@ mod tests {
         assert!(
             pick(
                 &list,
-                &AutopilotTiers::default(),
+                &AutomationSettings::default(),
                 &HashMap::new(),
                 0,
                 |_| false
@@ -953,10 +1308,10 @@ mod tests {
             us_state: true,
             ..AutopilotTiers::default()
         };
-        assert!(pick(&list, &tiers, &HashMap::new(), 0, |_| false).is_some());
+        assert!(pick(&list, &with(&tiers), &HashMap::new(), 0, |_| false).is_some());
         let slot = cand("ZZ1", Some("New Call"), Some("C/New Band"), -20);
         let list = vec![ny, slot];
-        let (c, _) = pick(&list, &tiers, &HashMap::new(), 0, |_| false).unwrap();
+        let (c, _) = pick(&list, &with(&tiers), &HashMap::new(), 0, |_| false).unwrap();
         assert_eq!(c.call, "ZZ1", "a DXCC slot outranks a state");
     }
 
@@ -990,7 +1345,7 @@ mod tests {
             us_state: true,
             ..AutopilotTiers::default()
         };
-        assert_eq!(best_allowed_tier(&both, &tiers), Some(Tier::UsState));
+        assert_eq!(best_allowed_tier(&both, &with(&tiers)), Some(Tier::UsState));
         assert_eq!(tier_of(&both), Some(Tier::Atno));
     }
 
