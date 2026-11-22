@@ -571,3 +571,99 @@ fn an_autopilot_band_change_re_arms_without_releasing_the_broker_hold() {
         "a foreign broker key still waits for the operator after the move"
     );
 }
+
+#[test]
+fn a_station_just_worked_is_never_answered_again_from_its_old_call() {
+    // Field report 2026-11-22: SP4NKJ called us while we finished EW4M, so Answer callers
+    // queued it. We then worked SP4NKJ; once our RR73 was out, the stale queue entry
+    // "answered" SP4NKJ again with a fresh report, after the contact was already made.
+    let mut e = engine();
+    e.settings.automation.answer_callers = true;
+    contact_with_a_caller(&mut e); // K1ABC queued at slot 17 while we work 7P8RU
+    assert!(
+        e.automation_dto().callers.iter().any(|c| c == CALLER),
+        "premise: K1ABC is queued"
+    );
+    // The operator works K1ABC directly (any path other than the queue).
+    e.work_station(
+        CALLER,
+        None,
+        Some("OM0RX K1ABC FN42"),
+        Some(-5),
+        Some(1200.0),
+    )
+    .expect("K1ABC's contact starts");
+    let sent = key_once(&mut e, 18);
+    assert!(sent.starts_with("K1ABC OM0RX"), "our report: {sent:?}");
+    e.ingest_decodes_for_test(&[dec_snr("OM0RX K1ABC R-07", -5)], 19);
+    let sent = key_once(&mut e, 20);
+    assert!(sent.contains("RR73"), "our RR73: {sent:?}");
+    // Still inside the caller's freshness window: the old entry must not restart the contact.
+    e.ingest_decodes_for_test(&[dec_snr("OM0RX K1ABC 73", -5)], 20);
+    assert!(
+        !e.automation_dto().callers.iter().any(|c| c == CALLER),
+        "the station being worked is not a caller: {:?}",
+        e.automation_dto().callers
+    );
+    let next = tx_now(&e);
+    assert!(
+        !next.starts_with("K1ABC OM0RX -") && !next.starts_with("K1ABC OM0RX R"),
+        "no fresh report to a station already worked: {next:?}"
+    );
+}
+
+/// The autopilot calling N0ABC on 20 m with a one-minute watchdog and a ten-minute target
+/// budget, its first over keyed. Returns the next slot.
+fn pilot_calling_past_the_watchdog(e: &mut Engine) -> u64 {
+    e.settings.tx_watchdog_min = 1;
+    e.settings.automation.autopilot_enabled = true;
+    e.settings.automation.target_budget_secs = 600;
+    e.settings.automation.listen_slots = 1;
+    e.settings.automation.schedule = vec![crate::automation::AutopilotWindow {
+        start: "00:00".into(),
+        bands: vec!["20m".into()],
+        mode: "FT8".into(),
+    }];
+    e.set_tx_enabled(true);
+    e.set_autopilot(true).unwrap();
+    e.ingest_decodes_for_test(&[dec_snr("CQ N0ABC EM48", -3)], 30);
+    e.ingest_decodes_for_test(&[dec_snr("CQ N0ABC EM48", -3)], 32);
+    assert_eq!(e.automation_dx().as_deref(), Some("N0ABC"), "premise");
+    key_once(e, 33);
+    // More than the watchdog's minute of unanswered calling has passed.
+    e.tx_watchdog_start = Some(now_unix_secs().saturating_sub(61));
+    35
+}
+
+#[test]
+fn the_watchdog_does_not_end_a_contact_the_autopilot_still_keeps() {
+    // Operator 2026-11-22: "make sure the TX watchdog can't just stop it for no reason". The
+    // contact is inside its own time budget, so the watchdog clock restarts with each step.
+    let mut e = engine();
+    let s = pilot_calling_past_the_watchdog(&mut e);
+    e.ingest_decodes_for_test(&[dec_snr("CQ W9XYZ EN52", -3)], s - 1);
+    let sent = key_once(&mut e, s);
+    assert!(sent.starts_with("N0ABC OM0RX"), "still calling: {sent:?}");
+    assert!(e.tx_enabled && e.automation_dto().autopilot_on);
+}
+
+#[test]
+fn the_watchdog_still_trips_when_the_autopilot_step_stops_running() {
+    // Control: with no decode fold (a wedged decoder, a dead loop) nothing restarts the clock,
+    // and the watchdog ends it exactly as before.
+    let mut e = engine();
+    let s = pilot_calling_past_the_watchdog(&mut e);
+    for slot in [s, s + 1] {
+        let _ = e.poll_tx(slot);
+    }
+    assert!(!e.tx_enabled, "the watchdog tripped");
+}
+
+#[test]
+fn a_dxpedition_is_called_for_at_least_ten_minutes() {
+    let s = crate::automation::AutomationSettings {
+        rare_budget_secs: 300,
+        ..Default::default()
+    };
+    assert_eq!(s.sanitized().rare_budget_secs, 600);
+}

@@ -107,6 +107,9 @@ pub struct AutomationSettings {
     pub min_dwell_secs: u32,
     /// Time with nothing worth calling before moving on, seconds.
     pub quiet_secs: u32,
+    /// Time on a band that offers only ordinary new calls (nothing needed, no DXCC slot, no
+    /// DXpedition) before moving on to look for better ones, seconds.
+    pub ordinary_dwell_secs: u32,
     /// Time budget for an ordinary target, seconds.
     pub target_budget_secs: u32,
     /// Time budget for an ATNO or DXpedition, seconds.
@@ -158,6 +161,7 @@ impl Default for AutomationSettings {
             listen_slots: 2,
             min_dwell_secs: 180,
             quiet_secs: 300,
+            ordinary_dwell_secs: 600,
             target_budget_secs: 120,
             rare_budget_secs: 900,
             max_qso_per_hour: 60,
@@ -186,8 +190,11 @@ impl AutomationSettings {
         self.listen_slots = self.listen_slots.clamp(1, 20);
         self.min_dwell_secs = self.min_dwell_secs.clamp(30, 3600);
         self.quiet_secs = self.quiet_secs.clamp(60, 7200);
+        self.ordinary_dwell_secs = self.ordinary_dwell_secs.clamp(120, 7200);
         self.target_budget_secs = self.target_budget_secs.clamp(30, 1800);
-        self.rare_budget_secs = self.rare_budget_secs.clamp(60, 10800);
+        // A DXpedition or ATNO is called for at least ten minutes (operator, 2026-11-22: a
+        // pileup is rarely broken in five to eight calls).
+        self.rare_budget_secs = self.rare_budget_secs.clamp(600, 10800);
         self.max_qso_per_hour = self.max_qso_per_hour.clamp(1, 300);
         self.schedule
             .retain(|w| parse_hhmm(&w.start).is_some() && is_auto_mode(&w.mode));
@@ -325,6 +332,57 @@ pub struct Candidate {
     /// ([`AutomationSettings::wants_state`] already applied).
     pub new_state: bool,
     pub lotw: bool,
+    /// Great-circle distance from the operator's grid to the grid the station sent, when both
+    /// are known.
+    pub distance_km: Option<f64>,
+}
+
+/// From this far away a station counts as DX and is called before a nearer one of the same tier
+/// (operator, 2026-11-22: "it really needs to prioritize DX stations"). 3000 km takes a European
+/// station outside Europe, and a North American one off its own coast.
+pub const DX_KM: f64 = 3000.0;
+
+/// Is the candidate DX ([`DX_KM`] or more away)?
+pub fn is_dx(c: &Candidate) -> bool {
+    c.distance_km.is_some_and(|d| d >= DX_KM)
+}
+
+/// The centre of a 4- or 6-character Maidenhead locator, `(lat, lon)` in degrees.
+pub fn grid_latlon(grid: &str) -> Option<(f64, f64)> {
+    let g: Vec<char> = grid.trim().to_uppercase().chars().collect();
+    if g.len() < 4 {
+        return None;
+    }
+    let field = |c: char| (('A'..='R').contains(&c)).then(|| f64::from(c as u8 - b'A'));
+    let digit = |c: char| c.to_digit(10).map(f64::from);
+    let mut lon = field(g[0])? * 20.0 - 180.0 + digit(g[2])? * 2.0;
+    let mut lat = field(g[1])? * 10.0 - 90.0 + digit(g[3])?;
+    let sub = |c: char| (('A'..='X').contains(&c)).then(|| f64::from(c as u8 - b'A'));
+    match (
+        g.get(4).copied().and_then(sub),
+        g.get(5).copied().and_then(sub),
+    ) {
+        (Some(x), Some(y)) if g.len() >= 6 => {
+            lon += x * (2.0 / 24.0) + 1.0 / 24.0;
+            lat += y * (1.0 / 24.0) + 0.5 / 24.0;
+        }
+        _ => {
+            lon += 1.0;
+            lat += 0.5;
+        }
+    }
+    Some((lat, lon))
+}
+
+/// Great-circle distance between two locators, km.
+pub fn grid_km(a: &str, b: &str) -> Option<f64> {
+    let (la1, lo1) = grid_latlon(a)?;
+    let (la2, lo2) = grid_latlon(b)?;
+    let (p1, p2) = (la1.to_radians(), la2.to_radians());
+    let dp = p2 - p1;
+    let dl = (lo2 - lo1).to_radians();
+    let h = (dp / 2.0).sin().powi(2) + p1.cos() * p2.cos() * (dl / 2.0).sin().powi(2);
+    Some(2.0 * 6371.0 * h.sqrt().min(1.0).asin())
 }
 
 /// Every tier a candidate falls in, strongest first (empty when it is not worth calling: Worked,
@@ -430,8 +488,8 @@ pub fn may_retry(a: Option<&Attempts>, now_unix: u64) -> bool {
     }
 }
 
-/// The best candidate: strongest tier first, then signal, then LoTW, then fewest failures, then the
-/// call (so the pick is stable). Only candidates in an allowed tier that may be tried now, and not
+/// The best candidate: strongest tier first, then DX before a nearer station, then signal, then
+/// LoTW, then fewest failures, then the call (so the pick is stable). Only candidates in an allowed tier that may be tried now, and not
 /// skipped by `skip`, are considered.
 pub fn pick<'a>(
     candidates: &'a [Candidate],
@@ -448,6 +506,7 @@ pub fn pick<'a>(
         .filter(|(c, _)| may_retry(attempts.get(&c.call.to_uppercase()), now_unix))
         .min_by(|(a, ta), (b, tb)| {
             ta.cmp(tb)
+                .then(is_dx(b).cmp(&is_dx(a)))
                 .then(b.snr.cmp(&a.snr))
                 .then(b.lotw.cmp(&a.lotw))
                 .then(failures(attempts, &a.call).cmp(&failures(attempts, &b.call)))
@@ -625,7 +684,50 @@ mod tests {
             new_reference: false,
             new_state: false,
             lotw: false,
+            distance_km: None,
         }
+    }
+
+    #[test]
+    fn dx_is_called_before_a_louder_nearby_station_of_the_same_tier() {
+        let mut near = cand("SP1ZMO", Some("New Call"), Some("Confirmed"), 15);
+        near.distance_km = grid_km("JN88", "JO73");
+        let mut far = cand("PY2XX", Some("New Call"), Some("Confirmed"), -15);
+        far.distance_km = grid_km("JN88", "GG66");
+        let list = vec![near, far];
+        let (c, _) = pick(
+            &list,
+            &AutopilotTiers::default(),
+            &HashMap::new(),
+            0,
+            |_| false,
+        )
+        .unwrap();
+        assert_eq!(c.call, "PY2XX");
+        // A stronger tier still wins over distance.
+        let mut atno_near = cand("Z60A", Some("New Call"), Some("ATNO"), 0);
+        atno_near.distance_km = Some(900.0);
+        let list = vec![list[1].clone(), atno_near];
+        let (c, _) = pick(
+            &list,
+            &AutopilotTiers::default(),
+            &HashMap::new(),
+            0,
+            |_| false,
+        )
+        .unwrap();
+        assert_eq!(c.call, "Z60A");
+    }
+
+    #[test]
+    fn locator_distances_are_about_right() {
+        // JN88 (Bratislava) to FN31 (Connecticut) is about 6900 km; JN88 to JO73 about 600.
+        let d = grid_km("JN88", "FN31").unwrap();
+        assert!((6500.0..7300.0).contains(&d), "{d}");
+        let d = grid_km("JN88", "JO73").unwrap();
+        assert!((400.0..800.0).contains(&d), "{d}");
+        assert!(grid_km("JN88", "R73").is_none());
+        assert!(grid_km("JN88", "ZZ00").is_none());
     }
 
     #[test]

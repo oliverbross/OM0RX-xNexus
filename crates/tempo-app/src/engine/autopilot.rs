@@ -62,6 +62,9 @@ const LOG_KEEP: usize = 40;
 const BAND_HOLD_SLOTS: u64 = 4;
 /// A partner heard within this many slots is still sending to us: start nothing new.
 const PARTNER_REPEAT_SLOTS: u64 = 2;
+/// How long a finished contact keeps its station out of Answer callers' queue, in slots
+/// (ten minutes of FT8): long enough for every repeat of its call and its 73.
+const DONE_FORGET_SLOTS: u64 = 40;
 
 /// A station that called the operator.
 #[derive(Debug, Clone, PartialEq)]
@@ -121,7 +124,11 @@ struct Pilot {
     band: Option<String>,
     band_since_unix: u64,
     last_worthwhile_unix: u64,
+    /// The last moment something better than an ordinary new call was called here.
+    last_needed_unix: u64,
     slots_on_band: u32,
+    /// The slot the listen counter last counted (it counts slots, not decode folds — REVIEW N-06).
+    last_listen_slot: Option<u64>,
     target: Option<Target>,
     chase: Option<Chase>,
     chased: HashMap<String, u64>,
@@ -156,6 +163,10 @@ pub struct Automation {
     last_slot: u64,
     /// The last "holding the band" reason written to the log, so a hold is noted once.
     last_hold: Option<String>,
+    /// Stations whose contact is made, with the slot it was last seen made: their calls to us are
+    /// not answered again (field report 2026-11-22: SP4NKJ called while we finished EW4M, we then
+    /// worked SP4NKJ, and the stale queue entry answered it with a fresh report after its 73).
+    done: HashMap<String, u64>,
 }
 
 impl Automation {
@@ -266,7 +277,9 @@ impl Engine {
         p.band = (!self.settings.band.is_empty()).then(|| self.settings.band.clone());
         p.band_since_unix = now;
         p.last_worthwhile_unix = now;
+        p.last_needed_unix = now;
         p.slots_on_band = 0;
+        p.last_listen_slot = None;
         p.target = None;
         p.chase = None;
         p.status = "listening";
@@ -299,6 +312,8 @@ impl Engine {
         self.automation.pilot.presence.ack(now);
         if self.automation.pilot.on {
             note(&mut self.automation.pilot.log, "presence confirmed");
+            // A confirmation is an operator action at the station: the watchdog starts over.
+            self.tx_watchdog_start = None;
         }
         self.automation_refresh_keep();
     }
@@ -383,6 +398,11 @@ impl Engine {
             p.reason = "transmit went off".into();
             note(&mut p.log, "transmit went off: autopilot off");
         }
+        // Switched off in Settings ▸ Automation while running: stop as the off switch does
+        // (REVIEW N-05: it kept running with its control hidden).
+        if self.automation.pilot.on && !self.settings.automation.autopilot_enabled {
+            let _ = self.set_autopilot(false);
+        }
         self.automation_track_to_me(decodes, slot);
         self.answer_callers_step(decodes, slot);
         if self.automation.pilot.on {
@@ -421,6 +441,18 @@ impl Engine {
         self.automation
             .to_me
             .retain(|_, s| slot.saturating_sub(*s) < BAND_HOLD_SLOTS);
+        // A contact made with the station we work now closes any older call it queued (it called
+        // us while we finished someone else, and we then worked it): it is never answered again.
+        if let Mode::Qso { station, .. } = &self.mode {
+            if let Some(dx) = station.dxcall.clone() {
+                if super::ft_contact_complete(station, self.qso_report_sent) {
+                    self.automation.done.insert(dx.to_uppercase(), slot);
+                }
+            }
+        }
+        self.automation
+            .done
+            .retain(|_, s| slot.saturating_sub(*s) < DONE_FORGET_SLOTS);
         let unsettled = match &self.mode {
             Mode::Qso { station, .. } => station.dxcall.clone().filter(|_| {
                 matches!(
@@ -568,8 +600,14 @@ impl Engine {
             if self.settings.blocked_calls.iter().any(|b| same_call(b, de)) {
                 continue;
             }
-            // A caller that already signed off is not calling.
+            // A caller that already signed off is not calling — and an older call it queued is
+            // withdrawn with it.
             if matches!(m, Msg::Bye73 { .. } | Msg::Rr73 { .. } | Msg::Rrr { .. }) {
+                self.automation.callers.retain(|c| !same_call(&c.call, de));
+                continue;
+            }
+            // Just worked: its call to us is the contact we already made, not a new one.
+            if self.automation.done.contains_key(&de.to_uppercase()) {
                 continue;
             }
             let entry = QueuedCaller {
@@ -589,9 +627,14 @@ impl Engine {
                 None => self.automation.callers.push(entry),
             }
         }
-        self.automation
-            .callers
-            .retain(|c| slot.saturating_sub(c.slot) <= CALLER_FRESH_SLOTS);
+        // Never the station being worked now (it may have been queued before we started working
+        // it), nor one whose contact is already made.
+        let done = &self.automation.done;
+        self.automation.callers.retain(|c| {
+            slot.saturating_sub(c.slot) <= CALLER_FRESH_SLOTS
+                && !same_call(&c.call, &dx)
+                && !done.contains_key(&c.call.to_uppercase())
+        });
         if self.automation.callers.is_empty() || !self.tx_enabled {
             return;
         }
@@ -686,6 +729,7 @@ impl Engine {
                     .callers
                     .retain(|q| !same_call(&q.call, &call));
                 if self.automation.pilot.on {
+                    self.automation_watchdog_restart();
                     let now = now_unix_secs();
                     let band = self.settings.band.clone();
                     let p = &mut self.automation.pilot;
@@ -700,6 +744,30 @@ impl Engine {
                 }
             }
             Err(e) => self.automation_note(&format!("could not call {call}: {e}")),
+        }
+    }
+
+    /// Restart the TX watchdog's clock for a contact the running autopilot is responsible for.
+    ///
+    /// Operator ruling 2026-11-22 (OM0RX, after live runs where the 6-minute watchdog switched
+    /// the autopilot off while it was calling a DXpedition): "make sure the TX watchdog can't
+    /// just stop it for no reason". While the supervised autopilot runs, each contact it keeps is
+    /// already bounded — by its own time budget (ordinary or rare), the sequencer's call cap, the
+    /// hourly cap and the presence check — so those, not the watchdog, end it. The watchdog is
+    /// NOT weakened: it still trips on everything else, and on the autopilot too if its step stops
+    /// running (no decode folds, a wedged loop), because only that step restarts the clock. The
+    /// same reasoning as the CQ pause's restart in `plan_tx`.
+    fn automation_watchdog_restart(&mut self) {
+        let s = &self.settings.automation;
+        let pilot_live = self.automation.pilot.on
+            && self.tx_enabled
+            && !self
+                .automation
+                .pilot
+                .presence
+                .expired(now_unix_secs(), s.presence_minutes());
+        if pilot_live {
+            self.tx_watchdog_start = None;
         }
     }
 
@@ -773,11 +841,16 @@ impl Engine {
                 } else {
                     self.automation.pilot.status = if advanced { "inQso" } else { "calling" };
                     self.automation.pilot.last_worthwhile_unix = now;
+                    // Its own time budget bounds this contact, so the watchdog clock restarts
+                    // on each step that keeps it (see `automation_watchdog_restart`).
+                    self.automation_watchdog_restart();
                     return;
                 }
             } else {
-                // Ended: logged (worked) or not.
-                let worked = self.qso_logged;
+                // Ended: worked (logged, or the exchange complete on the air — REVIEW N-04: with
+                // auto-log off nothing is logged, and the station was called again) or not.
+                let worked =
+                    self.qso_logged || self.automation.done.contains_key(&t.call.to_uppercase());
                 if worked {
                     self.automation
                         .pilot
@@ -880,9 +953,12 @@ impl Engine {
             }
         }
 
-        // Listen first.
+        // Listen first: whole slots, however many decode passes each one brings.
         if self.automation.pilot.slots_on_band < s.listen_slots {
-            self.automation.pilot.slots_on_band += 1;
+            if self.automation.pilot.last_listen_slot != Some(slot) {
+                self.automation.pilot.last_listen_slot = Some(slot);
+                self.automation.pilot.slots_on_band += 1;
+            }
             self.automation.pilot.status = "listening";
             return;
         }
@@ -892,6 +968,7 @@ impl Engine {
         let mycall = self.settings.mycall.clone();
         let blocked = self.settings.blocked_calls.clone();
         let worked = self.automation.pilot.worked.clone();
+        let done = self.automation.done.clone();
         let hound = self.settings.special_op != SpecialOp::None;
         let picked = automation::pick(
             &candidates,
@@ -902,6 +979,8 @@ impl Engine {
                 same_call(&c.call, &mycall)
                     || blocked.iter().any(|b| same_call(b, &c.call))
                     || worked.contains(&format!("{}|{}|{}", c.call.to_uppercase(), cur_band, cur_mode))
+                    // A contact just made: its repeats and 73s are not a new call.
+                    || done.contains_key(&c.call.to_uppercase())
                     // A DXpedition running Fox/Hound calls below 1000 Hz: Hound is the operator's
                     // per-DXpedition choice, so the autopilot leaves a Fox alone.
                     || (c.dxpedition && c.freq_hz < 1000.0 && !hound)
@@ -934,8 +1013,34 @@ impl Engine {
             }
         }
 
+        // A band offering only ordinary new calls for its whole ordinary dwell gives way to the
+        // next one, to look for needed stations there (between contacts only: the switch holds).
+        let p = &self.automation.pilot;
+        let ordinary_for = now.saturating_sub(p.last_needed_unix.max(p.band_since_unix));
+        let only_ordinary = picked.as_ref().is_none_or(|(_, t)| *t == Tier::NewCall);
+        if only_ordinary
+            && chasing.is_none()
+            && now.saturating_sub(p.band_since_unix) >= u64::from(s.min_dwell_secs)
+            && ordinary_for >= u64::from(s.ordinary_dwell_secs)
+        {
+            if let Some(next) = next_band(&window, Some(&cur_band)).map(String::from) {
+                if !next.eq_ignore_ascii_case(&cur_band)
+                    && self.automation_switch(None, &next, None)
+                {
+                    self.automation_note(&format!(
+                        "only ordinary calls on {cur_band} for {} min: moving to {next}",
+                        ordinary_for / 60
+                    ));
+                    return;
+                }
+            }
+        }
+
         if let Some((c, t)) = picked {
             self.automation.pilot.last_worthwhile_unix = now;
+            if t < Tier::NewCall {
+                self.automation.pilot.last_needed_unix = now;
+            }
             self.automation_note(&format!(
                 "calling {} ({t:?}, {} dB) on {cur_band}",
                 c.call, c.snr
@@ -1094,6 +1199,11 @@ impl Engine {
                     new_reference: fed.filter(on_this_band).is_some_and(|e| e.new_reference),
                     new_state,
                     lotw: row.lotw_user,
+                    distance_km: row
+                        .grid
+                        .as_deref()
+                        .filter(|g| !g.eq_ignore_ascii_case("RR73"))
+                        .and_then(|g| automation::grid_km(&self.settings.mygrid, g)),
                 })
             })
             .collect()
@@ -1209,7 +1319,9 @@ impl Engine {
         p.band = Some(self.settings.band.clone());
         p.band_since_unix = now;
         p.last_worthwhile_unix = now;
+        p.last_needed_unix = now;
         p.slots_on_band = 0;
+        p.last_listen_slot = None;
         p.status = "moving";
         true
     }
@@ -1357,7 +1469,9 @@ impl Engine {
         });
         if let Some(d) = heard_here {
             hunt.heard = true;
+            // Fox/Hound exists only in FT8 (REVIEW N-11).
             if s.hunt_hound
+                && self.app.tier() == LinkTier::Ft8
                 && d.freq < 1000.0
                 && self.settings.special_op == SpecialOp::None
                 && hunt.hound_from.is_none()
@@ -1456,6 +1570,15 @@ impl Engine {
         // Counted once, when the hunt really ends (not on every held slot).
         if !ch.done {
             self.note_failed(&ch.call);
+        }
+        // Never heard there: the band is most likely closed to it (a 15 m spot at night), so it
+        // waits twice the usual cool-down before it is hunted again.
+        if !hunt.heard && !ch.done {
+            let until = now_unix_secs() + CHASE_COOLDOWN_SECS;
+            self.automation
+                .pilot
+                .chased
+                .insert(ch.call.to_uppercase(), until);
         }
         if let Some(prev) = hunt.hound_from {
             self.settings.special_op = prev;
