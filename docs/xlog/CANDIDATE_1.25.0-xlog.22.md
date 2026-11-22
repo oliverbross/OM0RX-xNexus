@@ -46,3 +46,36 @@ The field report of 2026-11-22 (operator OM0RX):
 | `cargo test -p tempo-app --lib` | 4053 passed, 10 failed. 6 of the 10 are the review's known baseline failures on this machine (fd_scoreboard, logstore, 4 upload_start). The other 3 shown in the output (two sweep-timing tests and `radio_claim` peek) pass when run alone, so they failed under load. |
 | `cargo clippy -p tempo-app --lib --tests -D warnings` | one error: the existing `logstore::lane_of` dead code, which was already on main before this change |
 | Not run | src-tauri tests, tempo-audio full, UI suites, CI (GitHub Actions billing is blocked) |
+
+## Package and installation (2026-11-22)
+
+- **Source:** `73bcd5b6e` (this reservation), canonical `main`, clean, equal to `origin/main`.
+- **Guard:** profile `optimized-no-lto-cgu16-7GiB-physical14-commit12p5-reserve6`, the xlog.21 wrapper
+  with only the expected version changed.
+  - Attempt 1 (`20261122T0932532730843Z-…`) was interrupted at 11:34 UTC, `host-commit-below-6GiB`.
+    The operator's Home Assistant VM had been saved for the build with their approval, but its
+    availability task restarted it at 09:34, one minute in. The guard stopped the build cleanly and
+    nothing was retried inside that attempt.
+  - Attempt 2 set the availability task's own `maintenance.pause` file and saved the VM again. It
+    passed: admission 19.9 GiB physical / 15.9 GiB commit; 11:36–12:26 UTC; peak 5.44 GiB. Afterwards
+    the pause file was removed and the VM started again.
+- **Evidence:** `.build/xnexus-xlog22-package-7g/evidence/20261122T1136245185978Z-93b7e8bd5dcc43d0b9f6ce93c0cc4a79`.
+- **Receipt:** `target/xnexus-provenance/1.25.0-xlog.22.json` (source `73bcd5b6e`, upstream base
+  `21f743404` v1.25.0-beta.2, toolchain 1.93.1-x86_64-pc-windows-gnu).
+- **Installer:** `OM0RX-xNexus_1.25.0-xlog.22_x64-setup.exe`, 356,536,348 bytes, SHA-256
+  `9AB71A4B8076796A34B7AE784B0ED9579F1B08EE242A0C94C1BC89BE21C2F47C`.
+- **Built exe:** `AC6030CC…4255`. **Installed exe:** `9B65CCE5…4043`, version 1.25.0-xlog.22
+  (bundler-stamped, as before).
+- **Install:** Nexus was not running; silent `/S` install, exit 0; the uninstall entry reads 1.25.0-xlog.22.
+- **Launch:** SmartSDR started first, and its CAT was listening on 5002. One Nexus instance started
+  (12:28:52 UTC). The log reads `Nexus 1.25.0-xlog.22`, CAT connected through rigctld (model 2036),
+  and DAX capture is delivering.
+- **Live run:** TX on, then the autopilot on at 12:29 UTC.
+  - It followed the schedule to 20 m and worked LA2JKA, M0WWE, UB1AUW, BA3KY (an Answer-callers
+    caller), RU4LM, then UA3QQG and SP5UTI on 17 m.
+  - Within its tier it called the distant BA7SAY (-19 dB) first, and moved on after the
+    120 s budget.
+  - No station was given a second report, and the TX watchdog did not stop it.
+  - One defect found: the ordinary-dwell move came 14 minutes in, not 10, because a held move let
+    another ordinary call start. It is fixed on `xnexus/autopilot-reliability` (`4d5b7d016`) for the
+    next candidate.
