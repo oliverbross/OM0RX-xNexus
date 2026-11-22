@@ -448,6 +448,44 @@ fn dxped_spot(call: &str, band: &str, freq: f64) -> crate::automation::FeedEntry
     }
 }
 
+/// Field report 2026-11-22: the autopilot followed a 5U4JSF spot (a new band slot) to 20 m and,
+/// while listening for it, called SA7SVR, an ordinary new call that could keep it busy for two
+/// minutes just when 5U4JSF appears. A spot chase listens for its station and calls nothing
+/// ordinary; the chased station itself is called as soon as it is heard.
+#[test]
+fn a_spot_chase_waits_for_its_station_instead_of_calling_ordinary_ones() {
+    let mut e = two_band_pilot();
+    e.autopilot_feed(vec![crate::automation::FeedEntry {
+        call: "5U4JSF".into(),
+        band: "17m".into(),
+        mode: Some("FT8".into()),
+        freq_mhz: Some(18.101),
+        new_slot: true,
+        ..Default::default()
+    }]);
+    // The first slot is the listening one; the spot is weighed from the next.
+    e.ingest_decodes_for_test(&[], 30);
+    e.ingest_decodes_for_test(&[], 32);
+    assert_eq!(e.settings.band, "17m", "premise: the spot is chased");
+    for s in [34, 36, 38] {
+        e.ingest_decodes_for_test(&[dec_snr("CQ N0ABC EM48", -3)], s);
+        assert_eq!(
+            e.automation_dx(),
+            None,
+            "slot {s}: chasing 5U4JSF, N0ABC is not called"
+        );
+    }
+    e.ingest_decodes_for_test(
+        &[dec_snr("CQ N0ABC EM48", -3), dec_snr("CQ 5U4JSF JK73", -15)],
+        40,
+    );
+    assert_eq!(
+        e.automation_dx().as_deref(),
+        Some("5U4JSF"),
+        "the chased station is called the moment it is heard"
+    );
+}
+
 fn dec_at(msg: &str, snr: i32, freq: f32) -> modes::Decode {
     let mut d = dec_snr(msg, snr);
     d.freq = freq;

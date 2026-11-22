@@ -971,23 +971,36 @@ impl Engine {
         let worked = self.automation.pilot.worked.clone();
         let done = self.automation.done.clone();
         let hound = self.settings.special_op != SpecialOp::None;
-        let picked = automation::pick(
-            &candidates,
-            &s.tiers,
-            &self.automation.pilot.attempts,
-            now,
-            |c| {
-                same_call(&c.call, &mycall)
-                    || blocked.iter().any(|b| same_call(b, &c.call))
-                    || worked.contains(&format!("{}|{}|{}", c.call.to_uppercase(), cur_band, cur_mode))
-                    // A contact just made: its repeats and 73s are not a new call.
-                    || done.contains_key(&c.call.to_uppercase())
-                    // A DXpedition running Fox/Hound calls below 1000 Hz: Hound is the operator's
-                    // per-DXpedition choice, so the autopilot leaves a Fox alone.
-                    || (c.dxpedition && c.freq_hz < 1000.0 && !hound)
-            },
-        )
-        .map(|(c, t)| (c.clone(), t));
+        let skip = |c: &Candidate| {
+            same_call(&c.call, &mycall)
+                || blocked.iter().any(|b| same_call(b, &c.call))
+                || worked.contains(&format!("{}|{}|{}", c.call.to_uppercase(), cur_band, cur_mode))
+                // A contact just made: its repeats and 73s are not a new call.
+                || done.contains_key(&c.call.to_uppercase())
+                // A DXpedition running Fox/Hound calls below 1000 Hz: Hound is the operator's
+                // per-DXpedition choice, so the autopilot leaves a Fox alone.
+                || (c.dxpedition && c.freq_hz < 1000.0 && !hound)
+        };
+        let attempts = &self.automation.pilot.attempts;
+        let picked = automation::pick(&candidates, &s.tiers, attempts, now, |c| skip(c))
+            .map(|(c, t)| (c.clone(), t));
+        let chase_call = chasing
+            .as_ref()
+            .filter(|ch| ch.hunt.is_none())
+            .map(|ch| ch.call.clone());
+        // A chase moved here for one needed station: an ordinary new call started now could still
+        // be running (two minutes) when that station shows up, so the chase calls its station the
+        // moment it is heard, anything better than ordinary, and nothing ordinary (field report
+        // 2026-11-22: chasing 5U4JSF on 20 m, the autopilot called SA7SVR). The chase gives up
+        // after CHASE_UNHEARD_SECS.
+        let picked = match (chase_call, picked) {
+            (Some(_), Some((c, t))) if t < Tier::NewCall => Some((c, t)),
+            (Some(want), _) => automation::pick(&candidates, &s.tiers, attempts, now, |c| {
+                skip(c) || !same_call(&c.call, &want)
+            })
+            .map(|(c, t)| (c.clone(), t)),
+            (None, p) => p,
+        };
 
         // A better spot on another scheduled band beats what is heard here.
         let spot = if s.chase_spots {
