@@ -372,6 +372,60 @@ fn a_station_calling_us_holds_the_band_even_with_answer_callers_off() {
     }
 }
 
+/// Field report 2026-11-22: ten minutes of only ordinary calls made the move due while the last
+/// partner was still finishing, the move was held, and the same pass started another ordinary call
+/// (BA3KY → RU4LM) — which holds the band again, so the move kept slipping. A due move that is held
+/// waits; nothing ordinary starts in its place, and the band moves once the hold lapses.
+#[test]
+fn a_held_band_move_is_not_put_off_by_another_ordinary_call() {
+    let mut e = two_band_pilot();
+    for s in [30, 32] {
+        e.automation_backdate_band(10_000);
+        e.ingest_decodes_for_test(
+            &[
+                dec_snr("CQ N0ABC EM48", -3),
+                dec_snr("OM0RX K1ABC FN42", -5),
+            ],
+            s,
+        );
+        assert_eq!(
+            e.settings.band, "20m",
+            "slot {s}: K1ABC calling holds the band"
+        );
+        assert_eq!(
+            e.automation_dx(),
+            None,
+            "slot {s}: the move is due, so no ordinary call starts in its place"
+        );
+    }
+    for s in [34, 36, 38, 40] {
+        e.ingest_decodes_for_test(&[dec_snr("CQ N0ABC EM48", -3)], s);
+        if e.settings.band == "17m" {
+            break;
+        }
+        assert_eq!(e.automation_dx(), None, "slot {s}: still waiting to move");
+    }
+    assert_eq!(e.settings.band, "17m", "the hold lapsed: the band moved");
+}
+
+/// CONTROL for the test above: with the ordinary dwell not yet spent, the same held band still
+/// lets the autopilot call an ordinary new station.
+#[test]
+fn an_ordinary_call_still_starts_on_a_held_band_before_the_dwell_is_spent() {
+    let mut e = two_band_pilot();
+    for s in [30, 32] {
+        e.ingest_decodes_for_test(
+            &[
+                dec_snr("CQ N0ABC EM48", -3),
+                dec_snr("OM0RX K1ABC FN42", -5),
+            ],
+            s,
+        );
+    }
+    assert_eq!(e.automation_dx().as_deref(), Some("N0ABC"));
+    assert_eq!(e.settings.band, "20m");
+}
+
 #[test]
 fn the_band_never_changes_during_a_cq_run() {
     let mut e = two_band_pilot();

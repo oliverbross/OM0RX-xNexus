@@ -341,6 +341,7 @@ impl Engine {
         let p = &mut self.automation.pilot;
         p.band_since_unix = p.band_since_unix.saturating_sub(secs);
         p.last_worthwhile_unix = p.last_worthwhile_unix.saturating_sub(secs);
+        p.last_needed_unix = p.last_needed_unix.saturating_sub(secs);
     }
 
     /// Test hook: the station the sequencer is working.
@@ -1024,13 +1025,19 @@ impl Engine {
             && ordinary_for >= u64::from(s.ordinary_dwell_secs)
         {
             if let Some(next) = next_band(&window, Some(&cur_band)).map(String::from) {
-                if !next.eq_ignore_ascii_case(&cur_band)
-                    && self.automation_switch(None, &next, None)
-                {
-                    self.automation_note(&format!(
-                        "only ordinary calls on {cur_band} for {} min: moving to {next}",
-                        ordinary_for / 60
-                    ));
+                if !next.eq_ignore_ascii_case(&cur_band) {
+                    if self.automation_switch(None, &next, None) {
+                        self.automation_note(&format!(
+                            "only ordinary calls on {cur_band} for {} min: moving to {next}",
+                            ordinary_for / 60
+                        ));
+                        return;
+                    }
+                    // The move is due but held (the last partner still finishing, somebody
+                    // calling): starting another ordinary call here would hold the band again,
+                    // and the move would never come. Wait instead; every hold reason lapses
+                    // within a few slots (field report 2026-11-22: BA3KY finished, RU4LM called).
+                    self.automation.pilot.status = "holding";
                     return;
                 }
             }
