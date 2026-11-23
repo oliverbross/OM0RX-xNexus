@@ -190,6 +190,32 @@ fn an_unanswered_first_call_gives_way_to_a_caller() {
     );
 }
 
+/// Live run 2026-11-22 (xlog.23): the operator called VK9XY (a DXpedition in the feed) from its
+/// pileup, and after two unanswered calls Answer callers dropped it for N5EI, who was calling us,
+/// twice. A DXpedition is a long call by nature: a caller never takes over from one.
+#[test]
+fn a_caller_never_takes_over_from_a_dxpedition() {
+    let mut e = engine();
+    e.settings.automation.answer_callers = true;
+    e.settings.automation.answer_takeover_slots = 2;
+    e.autopilot_feed(vec![dxped_spot(DX, "20m", 14.074)]);
+    e.ingest_decodes_for_test(&[dec_snr("CQ 7P8RU KG30", -12)], 11);
+    e.work_station(DX, None, Some("CQ 7P8RU KG30"), Some(-12), Some(1500.0))
+        .unwrap();
+    key_once(&mut e, 12);
+    e.ingest_decodes_for_test(&[dec_snr("CQ N0ABC EM48", -3)], 14);
+    key_once(&mut e, 15);
+    for s in [17, 20, 23] {
+        e.ingest_decodes_for_test(&[dec_snr("OM0RX K1ABC FN42", -5)], s);
+        assert_eq!(
+            e.automation_dx().as_deref(),
+            Some(DX),
+            "slot {s}: still calling the DXpedition"
+        );
+        key_once(&mut e, s + 1);
+    }
+}
+
 #[test]
 fn a_caller_does_not_interrupt_a_contact_under_way() {
     let mut e = engine();
@@ -329,6 +355,35 @@ fn a_quiet_band_is_left_once_everything_is_finished() {
     assert_eq!(
         e.settings.band, "17m",
         "positive control: a quiet band is left"
+    );
+}
+
+/// Field report 2026-11-22 (xlog.23): the autopilot took OM0RX to 60 m at 5.3715 MHz, the US
+/// channel of the raw band table, and decoded nothing there for eight periods. A station whose call
+/// is not a US one works 60 m FT8 at 5.357 (#175), the dial its own 60 m button tunes; 5.3715 +
+/// audio is outside the WRC-15 segment most of the world is licensed for.
+#[test]
+fn the_autopilot_tunes_60m_where_the_stations_own_band_button_does() {
+    let mut e = two_band_pilot();
+    e.settings.automation.schedule[0].bands = vec!["20m".into(), "60m".into()];
+    e.automation_backdate_band(10_000);
+    e.ingest_decodes_for_test(&[], 30);
+    e.ingest_decodes_for_test(&[], 32);
+    assert_eq!(e.settings.band, "60m", "premise: the quiet band is left");
+    let button = e
+        .band_plan()
+        .into_iter()
+        .find(|c| c.band == "60m")
+        .map(|c| c.dial_mhz)
+        .unwrap();
+    assert!(
+        (button - crate::bandplan::SIXTY_M_FT8_WORLDWIDE_MHZ).abs() < 1e-9,
+        "premise: a non-US station's 60 m button is the worldwide dial, got {button}"
+    );
+    assert!(
+        (e.settings.dial_mhz - button).abs() < 1e-9,
+        "the autopilot tuned {} MHz, its own 60 m button tunes {button}",
+        e.settings.dial_mhz
     );
 }
 
@@ -485,6 +540,121 @@ fn a_spot_chase_waits_for_its_station_instead_of_calling_ordinary_ones() {
         e.automation_dx().as_deref(),
         Some("5U4JSF"),
         "the chased station is called the moment it is heard"
+    );
+}
+
+/// Live run 2026-11-22 (xlog.23): VK9XY's CQ came in the early fold of a slot that was the
+/// autopilot's listening slot; the boundary fold of the same slot (which carries only what the early
+/// one did not) held other stations, so the DXpedition was never ranked and a US-state spot was
+/// chased instead. Everything heard in the slot counts, whichever fold brought it.
+#[test]
+fn a_station_from_the_early_fold_still_counts_in_the_boundary_fold() {
+    let mut e = two_band_pilot();
+    e.autopilot_feed(vec![dxped_spot("3Y0K", "20m", 14.074)]);
+    // Early fold: the listening slot.
+    // Heard at 1200 Hz: above the Fox range, so not left alone as a Fox would be.
+    e.ingest_decodes_for_test(&[dec_at("CQ 3Y0K JD15", -14, 1200.0)], 30);
+    assert_eq!(e.automation_dx(), None, "premise: the first slot listens");
+    // Boundary fold of the same slot: nothing new in it.
+    e.ingest_decodes_for_test(&[], 30);
+    assert_eq!(
+        e.automation_dx().as_deref(),
+        Some("3Y0K"),
+        "the DXpedition heard earlier in this slot is called"
+    );
+}
+
+fn state_spot(call: &str, band: &str, freq: f64) -> crate::automation::FeedEntry {
+    crate::automation::FeedEntry {
+        call: call.into(),
+        band: band.into(),
+        mode: Some("FT8".into()),
+        freq_mhz: Some(freq),
+        new_state: true,
+        state: Some("MA".into()),
+        ..Default::default()
+    }
+}
+
+/// The dial each band of [`two_band_pilot`] sits on, and the other band.
+fn other_band(e: &Engine) -> (&'static str, f64) {
+    if e.settings.band == "20m" {
+        ("17m", 18.101)
+    } else {
+        ("20m", 14.075)
+    }
+}
+
+/// Live run 2026-11-22 (xlog.23): from 22:39 the autopilot chased five US-state spots back to back
+/// (N7ILO, K0JWI, AJ6T, K6AFW, K9TD), five minutes each, 40 s on a band between two, and made no
+/// contact in 22 minutes. After a chase that never heard its station, a lower rule's spot waits
+/// [`CHASE_REST_SECS`] so the schedule gets its turn; a DXCC slot is still chased at once.
+#[test]
+fn after_an_unheard_chase_a_us_state_spot_waits_and_a_dxcc_slot_does_not() {
+    let mut e = two_band_pilot();
+    e.settings.automation.tiers.us_state = true;
+    e.autopilot_feed(vec![state_spot("N7ILO", "17m", 18.101)]);
+    e.ingest_decodes_for_test(&[], 30);
+    e.ingest_decodes_for_test(&[], 32);
+    assert_eq!(e.settings.band, "17m", "premise: the state spot is chased");
+    // Five minutes without N7ILO: given up.
+    e.automation_backdate_band(400);
+    // The first slot on the new band only listens.
+    e.ingest_decodes_for_test(&[], 34);
+    e.ingest_decodes_for_test(&[], 36);
+    assert!(
+        e.automation_dto()
+            .log
+            .iter()
+            .any(|l| l.contains("N7ILO not heard")),
+        "premise: the chase was given up"
+    );
+    let (band, freq) = other_band(&e);
+    let here = e.settings.band.clone();
+    e.autopilot_feed(vec![state_spot("K0JWI", band, freq)]);
+    for s in [38, 40, 42] {
+        e.ingest_decodes_for_test(&[], s);
+        assert_eq!(e.settings.band, here, "slot {s}: K0JWI waits out the rest");
+    }
+    // A DXCC slot is not a lower rule: chased at once.
+    e.autopilot_feed(vec![
+        state_spot("K0JWI", band, freq),
+        crate::automation::FeedEntry {
+            call: "5U4JSF".into(),
+            band: band.into(),
+            mode: Some("FT8".into()),
+            freq_mhz: Some(freq),
+            new_slot: true,
+            ..Default::default()
+        },
+    ]);
+    e.ingest_decodes_for_test(&[], 44);
+    assert_eq!(
+        e.settings.band, band,
+        "the DXCC slot is chased during the rest"
+    );
+}
+
+#[test]
+fn the_chase_rest_ends() {
+    let mut e = two_band_pilot();
+    e.settings.automation.tiers.us_state = true;
+    e.autopilot_feed(vec![state_spot("N7ILO", "17m", 18.101)]);
+    e.ingest_decodes_for_test(&[], 30);
+    e.ingest_decodes_for_test(&[], 32);
+    e.automation_backdate_band(400);
+    // The first slot on the new band only listens.
+    e.ingest_decodes_for_test(&[], 34);
+    e.ingest_decodes_for_test(&[], 36);
+    let (band, freq) = other_band(&e);
+    e.autopilot_feed(vec![state_spot("K0JWI", band, freq)]);
+    e.automation_backdate_band(700);
+    // A band change in the give-up pass makes this slot a listening one.
+    e.ingest_decodes_for_test(&[], 38);
+    e.ingest_decodes_for_test(&[], 40);
+    assert_eq!(
+        e.settings.band, band,
+        "after the rest a state spot is chased again"
     );
 }
 
