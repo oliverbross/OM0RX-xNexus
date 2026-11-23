@@ -33,3 +33,23 @@ installed xlog.25 keeps its logbook and settings.
 | Failing-first | shown for the caller before the first call, the station working others (two tests), the DXpedition below 1000 Hz, the lost link, the missed reading |
 | `cargo clippy` tempo-app, tempo-audio (device,serial) `-D warnings` | pass |
 | Not run | src-tauri check (no src-tauri change), the UI suites (no UI change), browser probe, CI (GitHub Actions billing is blocked) |
+
+## Package and installation (2026-11-23)
+
+- **Source:** `d089512d1` (the reservation `3eae65321` plus a correction to `UPSTREAM.json`), canonical
+  `main`, clean, equal to `origin/main`.
+- **Guard:** the xlog.25 wrapper and profile (`optimized-no-lto-cgu16-7GiB-physical14-commit12p5-reserve6`)
+  with only the expected version changed. The first attempt (13:01 UTC) was held at admission, 12.47 GiB
+  commit of the 12.5 required; nothing was built. Second attempt passed: admission 19.5 GiB physical /
+  13.8 GiB commit (after the operator closed Docker); 13:04–13:59 UTC; peak 5.44 GiB; cleanup confirmed.
+  The Home Assistant VM had been saved with the operator's approval and its availability task paused;
+  afterwards the VM was started and the pause file removed.
+- **Evidence:** `.build/xnexus-xlog26-package-7g/evidence/20261123T1304436137617Z-dd781f0e99f44d8094418f3b3a39a529`
+  (held attempt: `20261123T1301198675929Z-c0c2dc6f37084f3d95dbc0efb658cdc5`).
+- **Receipt:** `target/xnexus-provenance/1.25.0-xlog.26.json` (source `d089512d1`, upstream base
+  `21f743404` v1.25.0-beta.2, toolchain 1.93.1-x86_64-pc-windows-gnu, unsigned).
+- **Installer:** `OM0RX-xNexus_1.25.0-xlog.26_x64-setup.exe`, 356,568,561 bytes, SHA-256
+  `BEE6426AA06A16EA0CA22C8D133B733B43B89BE06A19F5225ABC9C5927989A51`.
+- **Built exe:** `A166701D…8482`. **Installed exe:** `83B99DC5…4D58`, version 1.25.0-xlog.26.
+- **Install:** 14:00 UTC, `/S`, exit 0, with no Nexus running; `settings.json` unchanged.
+- **Not launched yet:** nothing of xlog.26 has been seen on the air.
