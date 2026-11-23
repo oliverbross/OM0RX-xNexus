@@ -64,3 +64,21 @@ with this candidate it can go back to 2.
 - **Install:** 02:32 UTC, `/S`, exit 0, with no Nexus running.
 - **Launch:** 02:32:57 UTC. CAT connected on the first open (02:33:03).
 - **Live run:** TX on, then the autopilot on at 02:33 UTC.
+  - 50 minutes, ended at 03:23 by the incident below. Contacts: RW3VA (160 m), R4WZ and R1QD (80 m).
+    Eight spots chased (AA9JC, HI8R, KH6XX.W0, PY5CC, XE1KK, HI3T, HC1BI, XE2SSB on 160/80/40 m);
+    none was heard here.
+  - No watchdog stop, no unplanned disarm before 03:23, no repeated report seen. 60 m was not
+    visited, so the 60 m dial was not seen on the air; nor was a DXpedition.
+  - Defects found, fixed on `xnexus/autopilot-reliability` (`3ee505282`) for the next candidate:
+    a garbled spot (E34XQXUYE9H, in the xlog.23 run) is chased; PSK Reporter's `KH6XX.W0`
+    (KH6XX/W0, in the US) is chased as Hawaii.
+- **Incident, 03:23 UTC: the radio stayed keyed after the CAT program closed.**
+  - SmartSDR CAT and DAX both closed during an over (03:23:00, W5RL, 80 m); why is not known (no
+    crash event in the part of the Windows log read).
+  - Nexus sent the unkey at 03:23:14, recorded it as done and raised no alarm. MOX stayed on,
+    at 0 W (no DAX audio), until it was released by hand in SmartSDR at 03:24:08.
+  - Nexus turned transmit off at 03:23:17 (audio rebuild) and reported SOUND CARD FAILED. CAT was
+    shown as down only after 03:23:27.
+  - Stop TX in Nexus (03:23:42) could not release it: it had no CAT link.
+  - Not fixed. Likely cause, not proven: rigctld answered the `T 0` as done although its connection
+    to SmartSDR CAT had gone, and `Rig::ptt` takes that answer as the release.
