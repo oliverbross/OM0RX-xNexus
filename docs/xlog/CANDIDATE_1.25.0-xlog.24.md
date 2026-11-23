@@ -82,3 +82,15 @@ with this candidate it can go back to 2.
   - Stop TX in Nexus (03:23:42) could not release it: it had no CAT link.
   - Not fixed. Likely cause, not proven: rigctld answered the `T 0` as done although its connection
     to SmartSDR CAT had gone, and `Rig::ptt` takes that answer as the release.
+- **Second live run:** CAT and DAX restarted; autopilot on from 03:29 to 07:03:57 UTC, when the
+  operator closed Nexus (clean shutdown, last over unkeyed 07:03:44).
+  - 14 contacts: OH7TV (160 m); LY5A, IS0BOY, CN2JA, IK4CBO, F4GAJ, 4O7CC, IZ3XAN, HA0ML (60 m);
+    K0KP, F9IE (80 m); RQ7R, MI7RDK, R4CA (30 m). CN2JA and 4O7CC were called as DXCC slots. 60 m ran
+    at 5.357 MHz.
+  - No watchdog stop. The autopilot armed transmit again after each of its band changes.
+  - 22 spots chased; 21 chases ended "not heard". Two lost-samples reports.
+  - Defects found, fixed in 1.25.0-xlog.25: N9ATF not answered while DO8JB was called nine times;
+    30 m not visited until 05:44; long calling.
+  - Defect found, not fixed: SQ2MMX answered us (06:25:00), then worked IK4CBO, HB9DWR and ON1JP and
+    went back to CQ. `R+04` was sent eight times (06:25:15 to 06:28:45), two of them after its CQ.
+    N9ATF, answered by the operator, got its report eight times and was not heard again.
