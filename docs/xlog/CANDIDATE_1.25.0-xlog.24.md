@@ -46,3 +46,21 @@ with this candidate it can go back to 2.
 | Failing-first | each fix fails without it: the 60 m dial (5.3715 vs 5.357), the chase rest, the takeover guard, the slot-wide ranking |
 | `cargo clippy -p tempo-app --lib --tests -D warnings` | only the existing `logstore::lane_of` dead code |
 | Not run | src-tauri check (no src-tauri change), the UI suites (no UI change), browser probe, CI (GitHub Actions billing is blocked) |
+
+## Package and installation (2026-11-23)
+
+- **Source:** `17177d04b` (this reservation), canonical `main`, clean, equal to `origin/main`.
+- **Guard:** the xlog.23 wrapper and profile (`optimized-no-lto-cgu16-7GiB-physical14-commit12p5-reserve6`)
+  with only the expected version changed. Passed on the first attempt: admission 18.5 GiB physical /
+  12.8 GiB commit; 00:57–02:31 UTC; peak 5.44 GiB; cleanup confirmed. The Home Assistant VM had been
+  saved with the operator's approval and its availability task paused; afterwards the VM was started
+  and the pause file removed.
+- **Evidence:** `.build/xnexus-xlog24-package-7g/evidence/20261123T0057359423976Z-08a4cef7daf645f18981c00fc4971128`.
+- **Receipt:** `target/xnexus-provenance/1.25.0-xlog.24.json` (source `17177d04b`, upstream base
+  `21f743404` v1.25.0-beta.2, toolchain 1.93.1-x86_64-pc-windows-gnu, unsigned).
+- **Installer:** `OM0RX-xNexus_1.25.0-xlog.24_x64-setup.exe`, 356,522,455 bytes, SHA-256
+  `4462994422F467B36A407EBFF7DB2DEAD724E6CE620F7BF65E448A260028420C`.
+- **Built exe:** `ED9E04B0…89EB`. **Installed exe:** `F369AFAD…F75E`, version 1.25.0-xlog.24.
+- **Install:** 02:32 UTC, `/S`, exit 0, with no Nexus running.
+- **Launch:** 02:32:57 UTC. CAT connected on the first open (02:33:03).
+- **Live run:** TX on, then the autopilot on at 02:33 UTC.
