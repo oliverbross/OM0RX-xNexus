@@ -66,5 +66,24 @@ sequencer's own limit (SQ2MMX, 2026-11-23). The four-call limit is for a station
   `B7F0A00266605EDB4196DBEB4BA56764F8286CEA2B16C68AC218C13A9D6F483E`.
 - **Built exe:** `477AE555…AD81`. **Installed exe:** `0B8B928C…47DB`, version 1.25.0-xlog.25.
 - **Install:** 09:42 UTC, `/S`, exit 0, with no Nexus running; `settings.json` unchanged.
-- **Not launched yet:** the operator had closed the station (Nexus, SmartSDR, CAT, DAX). Nothing of
-  xlog.25 has been seen on the air.
+- **Launch:** 10:20:43 UTC, after SmartSDR, CAT and DAX were started with the operator's go-ahead.
+  CAT connected on the first open (10:20:50).
+- **Live run:** TX and the autopilot on from 10:21 UTC. First hour, to 11:22 UTC:
+  - 14 contacts: BG5IOG, TA4INO, TA2TDW, F1CCQ (20 m); RU3GF (17 m); VU2KPH, OE2VEL, R8LCA (12 m);
+    R9WKU, RA1NBG, YH8MJ, VU2NRO, TA3LFT, HZ1YJ (15 m). 70 key-downs, 70 releases logged. No error,
+    no watchdog stop, no unplanned disarm.
+  - **Seen working:** a caller answered after one unanswered call (RU3GF, with "A caller takes over"
+    at 0); the four-call limit (Z62NS, EW7EL, SH2PMO); the answer to the fourth call taken (OE2VEL,
+    YH8MJ); a late answer taken (F1CCQ); a station called again later (Z62NS after 11 minutes);
+    the rotation going on from 17 m to 15 m after a chase to 12 m.
+  - **Not seen:** 30 m (night schedule only), a DXpedition, an ATNO, a switched-off continent.
+  - **Defects found, not fixed in this candidate:**
+    - VU2NRO called at 11:07:45, after R3WF was picked (11:07:32) and before the first call to it
+      (11:08:00). Only a caller heard since our last over counts, so R3WF was called. VU2NRO was
+      answered at 11:08:30 without an autopilot log line, so probably by the operator.
+    - F1CCQ called us once, then called DL7JU and worked IU0SKX, and got three reports meanwhile
+      (TA2TDW and LZ2MP were waiting). Same gap as SQ2MMX.
+    - The log says "answering caller F1CCQ (4 of 3)": the chain limit does not apply with the
+      autopilot on, so the count should not be shown as "of 3".
+  - xLog follows the call Nexus works (VU2NRO, TA3LFT and EW7EL seen), but its rotor did not turn:
+    Auto rotor was off in xLog.
