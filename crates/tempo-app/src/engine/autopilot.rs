@@ -52,6 +52,11 @@ const CALLER_FRESH_SLOTS: u64 = 3;
 const CHASE_UNHEARD_SECS: u64 = 300;
 /// How long a chased call is not chased again, seconds.
 const CHASE_COOLDOWN_SECS: u64 = 900;
+/// After a chase that never heard its station, how long a spot of a lower rule (a US state, a park,
+/// a grid) may not move the radio again, seconds: the schedule gets its turn (live run 2026-11-22,
+/// xlog.23: five US-state chases back to back from 22:39, 40 s on a band between two, no contact in
+/// 22 minutes). New entities, Most Wanted, DXpeditions and DXCC slots are chased at once regardless.
+const CHASE_REST_SECS: u64 = 600;
 /// How long a fed entry stays usable, seconds.
 const FEED_FRESH_SECS: u64 = 600;
 /// Decisions kept for the panel's log.
@@ -74,6 +79,15 @@ pub struct QueuedCaller {
     pub snr: i32,
     pub freq_hz: f32,
     pub slot: u64,
+}
+
+/// Does a spot of this rule wait out [`CHASE_REST_SECS`] after a chase that heard nothing? Only the
+/// rules below the DXCC ones: those are the spots there are many of.
+fn chase_rests(t: Tier) -> bool {
+    matches!(
+        t,
+        Tier::UsState | Tier::Reference | Tier::Grid | Tier::NewCall
+    )
 }
 
 /// The contact the autopilot started, until it ends.
@@ -132,6 +146,8 @@ struct Pilot {
     target: Option<Target>,
     chase: Option<Chase>,
     chased: HashMap<String, u64>,
+    /// No chase of a lower rule before this moment ([`CHASE_REST_SECS`]).
+    chase_rest_until: u64,
     status: &'static str,
     reason: String,
     log: VecDeque<String>,
@@ -170,6 +186,8 @@ pub struct Automation {
     /// What the autopilot knows about a DXCC entity by its cty.dat name (continent, number), wired
     /// by the launch ([`Engine::set_automation_entity_resolver`]); absent in headless tests.
     entity_info: EntityInfoResolver,
+    /// Everything decoded so far in the slot the autopilot last saw, across its folds.
+    slot_heard: Option<(u64, Vec<modes::Decode>)>,
 }
 
 /// A DXCC entity's continent code and ARRL number, as the autopilot ranks stations by them.
@@ -372,13 +390,18 @@ impl Engine {
         p.last_ack_unix = p.last_ack_unix.saturating_sub(secs);
     }
 
-    /// Test hook: move the band clocks (time on band, last worthwhile moment) `secs` into the past.
+    /// Test hook: move the band clocks (time on band, last worthwhile moment, a chase's start, the
+    /// chase rest) `secs` into the past.
     #[cfg(test)]
     pub(super) fn automation_backdate_band(&mut self, secs: u64) {
         let p = &mut self.automation.pilot;
         p.band_since_unix = p.band_since_unix.saturating_sub(secs);
         p.last_worthwhile_unix = p.last_worthwhile_unix.saturating_sub(secs);
         p.last_needed_unix = p.last_needed_unix.saturating_sub(secs);
+        p.chase_rest_until = p.chase_rest_until.saturating_sub(secs);
+        if let Some(ch) = p.chase.as_mut() {
+            ch.since_unix = ch.since_unix.saturating_sub(secs);
+        }
     }
 
     /// Test hook: the station the sequencer is working.
@@ -443,8 +466,23 @@ impl Engine {
         }
         self.automation_track_to_me(decodes, slot);
         self.answer_callers_step(decodes, slot);
+        // The autopilot ranks everything heard this slot so far, not only this fold: a slot comes in
+        // two folds (the early decode and the boundary one, which carries only what the early one
+        // did not), and a station heard in the first must still count in the second (live run
+        // 2026-11-22: VK9XY's CQ came in a fold spent listening; the next fold of the same slot
+        // held only other stations, and a US-state spot was chased instead).
+        let heard = match &mut self.automation.slot_heard {
+            Some((s, all)) if *s == slot => {
+                all.extend(decodes.iter().cloned());
+                all.clone()
+            }
+            _ => {
+                self.automation.slot_heard = Some((slot, decodes.to_vec()));
+                decodes.to_vec()
+            }
+        };
         if self.automation.pilot.on {
-            self.autopilot_step(decodes, slot);
+            self.autopilot_step(&heard, slot);
         }
         // The TX path held its after-73 disable for a next contact that did not come.
         if self.automation.held_disable && !self.automation_next_contact_started() {
@@ -694,7 +732,22 @@ impl Engine {
         // Take-over: our first call has gone unanswered for N slots and somebody is calling us.
         // It counts toward the chain limit like any other answered caller.
         let unanswered = matches!(state, QsoState::AwaitReport | QsoState::AwaitRoger) && !advanced;
+        // Never from a DXpedition, a new entity or a rare autopilot target: those are long calls
+        // by nature (live run 2026-11-22: the operator's call to VK9XY was dropped for N5EI).
+        let fed_rare = self
+            .automation
+            .feed
+            .get(&dx.to_uppercase())
+            .is_some_and(|(e, _)| e.dxpedition || e.new_entity);
+        let target_rare = self
+            .automation
+            .pilot
+            .target
+            .as_ref()
+            .is_some_and(|t| same_call(&t.call, &dx) && is_rare(t.tier));
         if s.answer_takeover_slots > 0
+            && !fed_rare
+            && !target_rare
             && unanswered
             && tx_count >= s.answer_takeover_slots
             && self.automation.chain < s.answer_chain_limit.max(1)
@@ -1079,7 +1132,8 @@ impl Engine {
             let beats = picked
                 .as_ref()
                 .is_none_or(|(_, t)| s.rank(spot_t) < s.rank(*t));
-            if beats && chasing.is_none() && self.automation_band_hold().is_none() {
+            let rested = !chase_rests(spot_t) || now >= self.automation.pilot.chase_rest_until;
+            if beats && rested && chasing.is_none() && self.automation_band_hold().is_none() {
                 self.automation.pilot.chased.insert(spot_call.clone(), now);
                 self.automation.pilot.chase = Some(Chase {
                     call: spot_call.clone(),
@@ -1156,6 +1210,7 @@ impl Engine {
                     .pilot
                     .chased
                     .insert(call.to_uppercase(), now + CHASE_COOLDOWN_SECS);
+                self.automation.pilot.chase_rest_until = now + CHASE_REST_SECS;
                 self.automation_note(&format!(
                     "{call} not heard on {}: back to the schedule",
                     ch.band
@@ -1409,7 +1464,9 @@ impl Engine {
         if let Some(t) = tier {
             self.set_tier(t);
         }
-        let plan = crate::bandplan::band_plan_for(self.app.tier());
+        // The station's own plan (#175: 60 m follows the licence country) with the operator's
+        // frequency overrides, the one the band buttons tune: never the raw US-default table.
+        let plan = self.band_plan_for_tier(self.app.tier());
         if let Some(ch) = plan.iter().find(|c| c.band.eq_ignore_ascii_case(band)) {
             let (dial, b, m) = (
                 dial_mhz.unwrap_or(ch.dial_mhz),
@@ -1539,7 +1596,7 @@ impl Engine {
                 .as_deref()
                 .and_then(link_tier_of)
                 .unwrap_or(self.app.tier());
-            let plan = crate::bandplan::band_plan_for(tier);
+            let plan = self.band_plan_for_tier(tier);
             let channel = plan
                 .iter()
                 .find(|c| c.band.eq_ignore_ascii_case(&e.band))
