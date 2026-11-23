@@ -194,6 +194,10 @@ pub struct AutomationSettings {
     pub ordinary_dwell_secs: u32,
     /// Time budget for an ordinary target, seconds.
     pub target_budget_secs: u32,
+    /// Calls a station may leave unanswered before the autopilot moves on (operator, 2026-11-23:
+    /// "just 4 calls, no answer move on … need it, call again later"). An ATNO, DXpedition or
+    /// top-50 station has no such limit, only its own time budget.
+    pub target_max_calls: u32,
     /// Time budget for an ATNO or DXpedition, seconds.
     pub rare_budget_secs: u32,
     /// Most contacts the autopilot starts in an hour.
@@ -222,6 +226,17 @@ pub struct AutomationSettings {
     /// "always prioritising DX from outside of Europe unless the EU station is an all-time new
     /// one" — an ATNO is its own, stronger rule).
     pub prefer_outside_eu: bool,
+    /// The continents not called ([`CONTINENTS`] codes); empty = every continent. An ATNO is
+    /// called wherever it is, and a station calling the operator is always answered.
+    pub skip_continents: Vec<String>,
+}
+
+/// The continents a station can be skipped by: cty.dat's codes.
+pub const CONTINENTS: [&str; 7] = ["EU", "AS", "AF", "NA", "SA", "OC", "AN"];
+
+/// Does the operator call stations on this continent? One that is not known is called.
+pub fn continent_wanted(continent: Option<&str>, skip: &[String]) -> bool {
+    continent.is_none_or(|c| !skip.iter().any(|s| s.eq_ignore_ascii_case(c)))
 }
 
 impl Default for AutomationSettings {
@@ -263,6 +278,8 @@ impl Default for AutomationSettings {
             hunt_hound: true,
             priority: DEFAULT_PRIORITY.to_vec(),
             prefer_outside_eu: true,
+            target_max_calls: 4,
+            skip_continents: Vec::new(),
         }
     }
 }
@@ -285,6 +302,16 @@ impl AutomationSettings {
         self.quiet_secs = self.quiet_secs.clamp(60, 7200);
         self.ordinary_dwell_secs = self.ordinary_dwell_secs.clamp(120, 7200);
         self.target_budget_secs = self.target_budget_secs.clamp(30, 1800);
+        self.target_max_calls = self.target_max_calls.clamp(1, 30);
+        self.skip_continents = CONTINENTS
+            .iter()
+            .filter(|k| {
+                self.skip_continents
+                    .iter()
+                    .any(|s| s.trim().eq_ignore_ascii_case(k))
+            })
+            .map(|k| (*k).to_string())
+            .collect();
         // A DXpedition or ATNO is called for at least ten minutes (operator, 2026-11-22: a
         // pileup is rarely broken in five to eight calls).
         self.rare_budget_secs = self.rare_budget_secs.clamp(600, 10800);
@@ -646,7 +673,14 @@ pub fn pick<'a>(
         .filter(|c| c.to_me || c.is_cq)
         .filter(|c| !skip(c))
         .filter_map(|c| best_allowed_tier(c, s).map(|t| (c, t)))
-        .filter(|(c, _)| may_retry(attempts.get(&c.call.to_uppercase()), now_unix))
+        // A station on a skipped continent: only when it calls us, or is an ATNO.
+        .filter(|(c, t)| {
+            *t == Tier::CallingMe
+                || (s.tiers.atno && tiers_of(c).contains(&Tier::Atno))
+                || continent_wanted(c.continent.as_deref(), &s.skip_continents)
+        })
+        // One that calls us is answered now, however lately it left our calls unanswered.
+        .filter(|(c, _)| c.to_me || may_retry(attempts.get(&c.call.to_uppercase()), now_unix))
         .min_by(|(a, ta), (b, tb)| {
             s.rank(*ta)
                 .cmp(&s.rank(*tb))
@@ -849,6 +883,10 @@ pub struct AutomationDto {
     pub mode: Option<String>,
     pub target: Option<String>,
     pub target_tier: Option<Tier>,
+    /// Calls the target has left unanswered, and how many it may (absent: no target, it answered,
+    /// or it is rare and has no limit).
+    pub calls_made: Option<u32>,
+    pub calls_max: Option<u32>,
     /// Seconds until the operator must confirm presence.
     pub presence_remaining_secs: u64,
     pub presence_minutes: u32,

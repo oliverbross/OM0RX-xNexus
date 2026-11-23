@@ -7520,6 +7520,10 @@ export interface AutomationSettings {
   priority: AutopilotRule[]
   /** Within a rule, call a station outside Europe before a European one. */
   preferOutsideEu: boolean
+  /** Calls a station may leave unanswered before the autopilot moves on, 1–30 (never a rare one). */
+  targetMaxCalls: number
+  /** Continents not called (cty.dat codes: EU AS AF NA SA OC AN); empty = every continent. */
+  skipContinents: string[]
 }
 
 export type AutopilotTier =
@@ -7560,6 +7564,10 @@ export interface AutomationState {
   mode?: string | null
   target?: string | null
   targetTier?: AutopilotTier | null
+  /** Calls the target has left unanswered, and how many it may; absent for a rare target, or once
+   *  it has answered. */
+  callsMade?: number | null
+  callsMax?: number | null
   presenceRemainingSecs: number
   presenceMinutes: number
   nextWindow?: string | null

@@ -147,6 +147,25 @@ describe('SettingsAutomation', () => {
     expect(change).toHaveBeenLastCalledWith(expect.objectContaining({ preferOutsideEu: false }))
   })
 
+  it('switches a continent off and on, and sets the call limit', () => {
+    const change = vi.fn()
+    const { rerender } = render(<SettingsAutomation form={{} as Settings} onChange={change} />)
+    expect((screen.getByTestId('automation-continent-EU') as HTMLInputElement).checked).toBe(true)
+    fireEvent.click(screen.getByTestId('automation-continent-EU'))
+    expect(change).toHaveBeenLastCalledWith(expect.objectContaining({ skipContinents: ['EU'] }))
+    rerender(
+      <SettingsAutomation
+        form={{ automation: { skipContinents: ['EU', 'AF'] } } as unknown as Settings}
+        onChange={change}
+      />,
+    )
+    expect((screen.getByTestId('automation-continent-EU') as HTMLInputElement).checked).toBe(false)
+    fireEvent.click(screen.getByTestId('automation-continent-EU'))
+    expect(change).toHaveBeenLastCalledWith(expect.objectContaining({ skipContinents: ['AF'] }))
+    fireEvent.change(screen.getByTestId('automation-max-calls'), { target: { value: '6' } })
+    expect(change).toHaveBeenLastCalledWith(expect.objectContaining({ targetMaxCalls: 6 }))
+  })
+
   it('shows a saved order as saved', () => {
     const priority = ['grid', ...DEFAULT_PRIORITY.filter((r) => r !== 'grid')]
     render(<SettingsAutomation form={{ automation: { priority } } as unknown as Settings} onChange={vi.fn()} />)
