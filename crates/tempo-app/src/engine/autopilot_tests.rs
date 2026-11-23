@@ -1302,3 +1302,90 @@ fn a_chase_does_not_restart_the_band_rotation() {
     }
     assert_eq!(e.settings.band, "15m", "on from 17 m, not from 20 m again");
 }
+
+/// Live run 2026-11-23: R3WF was picked, VU2NRO called us before our first call went out, and R3WF
+/// was called. Nobody has answered us yet, so the caller comes first.
+#[test]
+fn a_caller_heard_before_our_first_call_is_answered_instead() {
+    let mut e = answering_pilot();
+    pick(&mut e, "DO8JB");
+    e.ingest_decodes_for_test(&[dec_snr("OM0RX K1ABC FN42", 3)], 11);
+    assert_eq!(e.automation_dx().as_deref(), Some(CALLER));
+    assert!(tx_now(&e).starts_with("K1ABC OM0RX"), "{:?}", tx_now(&e));
+}
+
+/// A contact with DO8JB up to our R-report, after which it calls somebody else. The next slot.
+fn answered_then_moved_on(e: &mut Engine) -> u64 {
+    pick(e, "DO8JB");
+    let s = over(e, 12);
+    e.ingest_decodes_for_test(&[dec_snr("OM0RX DO8JB -11", -9)], s + 1);
+    let s = over(e, s + 2);
+    e.ingest_decodes_for_test(&[dec_snr("IK4CBO <DO8JB> +00", -9)], s + 1);
+    assert_eq!(e.automation_dx().as_deref(), Some("DO8JB"));
+    s + 1
+}
+
+/// Live run 2026-11-23: SQ2MMX answered once, worked three others and called CQ again, and was sent
+/// the R-report eight times. It gets the same four as a station that never answered.
+#[test]
+fn a_station_that_answered_and_then_works_others_gets_four_reports() {
+    let mut e = answering_pilot();
+    let mut s = answered_then_moved_on(&mut e);
+    for text in ["HB9DWR DO8JB -16", "HB9DWR DO8JB RR73", "CQ DO8JB JN88"] {
+        s = over(&mut e, s + 1) + 1;
+        e.ingest_decodes_for_test(&[dec_snr(text, -9)], s);
+        assert_eq!(e.automation_dx().as_deref(), Some("DO8JB"), "slot {s}");
+    }
+    assert!(e.poll_tx(s + 1).is_empty(), "no fifth report");
+    e.ingest_decodes_for_test(&[], s + 1);
+    assert_eq!(e.automation_dx(), None, "moved on");
+    assert!(e.tx_enabled && e.automation_dto().autopilot_on);
+}
+
+/// Live run 2026-11-23: F1CCQ called us, then called and worked others while TA2TDW waited.
+#[test]
+fn a_caller_is_answered_instead_of_a_station_working_others() {
+    let mut e = answering_pilot();
+    let s = answered_then_moved_on(&mut e);
+    let s = over(&mut e, s + 1) + 1;
+    e.ingest_decodes_for_test(&[dec_snr("OM0RX K1ABC FN42", -20)], s);
+    assert_eq!(e.automation_dx().as_deref(), Some(CALLER));
+}
+
+/// It comes back to us: the contact is under way again, and the limit no longer applies.
+#[test]
+fn a_station_that_comes_back_is_kept() {
+    let mut e = answering_pilot();
+    let mut s = answered_then_moved_on(&mut e);
+    for _ in 0..2 {
+        s = over(&mut e, s + 1) + 1;
+        e.ingest_decodes_for_test(&[dec_snr("HB9DWR DO8JB -16", -9)], s);
+    }
+    s = over(&mut e, s + 1) + 1;
+    e.ingest_decodes_for_test(
+        &[
+            dec_snr("OM0RX DO8JB -11", -9),
+            dec_snr("OM0RX K1ABC FN42", -5),
+        ],
+        s,
+    );
+    assert_eq!(e.automation_dx().as_deref(), Some("DO8JB"));
+    assert!(!e.poll_tx(s + 1).is_empty(), "our R-report goes out again");
+}
+
+/// A station running two streams answers us and somebody else in one slot: it has not moved on.
+#[test]
+fn a_station_working_two_at_once_has_not_moved_on() {
+    let mut e = answering_pilot();
+    pick(&mut e, "DO8JB");
+    let s = over(&mut e, 12);
+    e.ingest_decodes_for_test(
+        &[
+            dec_snr("OM0RX DO8JB -11", -9),
+            dec_snr("IK4CBO DO8JB -05", -9),
+        ],
+        s + 1,
+    );
+    e.ingest_decodes_for_test(&[dec_snr("OM0RX K1ABC FN42", -5)], s + 1);
+    assert_eq!(e.automation_dx().as_deref(), Some("DO8JB"));
+}
