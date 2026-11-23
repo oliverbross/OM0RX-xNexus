@@ -69,3 +69,39 @@ Found by watching xlog.22 on the air:
 | Vitest, the 187 files touching Settings, the registry, the catalogs and the autopilot control | 2343 passed, 3 failed: `SettingsPanel.rttyauto` (no `navigator`), one `contestgroups` and two `experience` tests. All three fail identically on `main` |
 | `node scripts/gen-settings-reference.mjs --check` | up to date |
 | Not run | the whole vitest suite to completion with its summary, browser probe, CI (GitHub Actions billing is blocked) |
+
+## Package and installation (2026-11-22)
+
+- **Source:** `617615f44` (this reservation), canonical `main`, clean, equal to `origin/main`.
+- **Guard:** the xlog.22 wrapper and profile (`optimized-no-lto-cgu16-7GiB-physical14-commit12p5-reserve6`)
+  with only the expected version changed.
+  - Attempt 1 (`20261122T2108398756475Z-…`) was held at admission: 12.26 GiB commit available,
+    12.5 needed. The Home Assistant VM had been saved with the operator's approval and its
+    availability task paused. Nothing was built.
+  - Attempt 2 passed after the running Nexus had closed: admission 18.3 GiB physical / 13.7 GiB
+    commit; 21:09–22:29 UTC; peak 5.44 GiB. Afterwards the pause file was removed and the VM
+    started again.
+- **Evidence:** `.build/xnexus-xlog23-package-7g/evidence/20261122T2109127786560Z-09fefd1730af43efaaa2e979ffb56f8e`.
+- **Receipt:** `target/xnexus-provenance/1.25.0-xlog.23.json` (source `617615f44`, upstream base
+  `21f743404` v1.25.0-beta.2, toolchain 1.93.1-x86_64-pc-windows-gnu).
+- **Installer:** `OM0RX-xNexus_1.25.0-xlog.23_x64-setup.exe`, 356,521,737 bytes, SHA-256
+  `F2A5571DE7110FFB9D7A617C9C633C67BF0B4FC4B36A461DC131F1AC4D0EDECF`.
+- **Built exe:** `10408E6B…1524`. **Installed exe:** `E7F336A8…DFB0`, version 1.25.0-xlog.23.
+- **Install:** the first silent install exited 2 because the operator had restarted Nexus; with
+  their go-ahead it was installed after they quit it (22:31 UTC): `/S`, exit 0.
+- **Launch:** 22:32 UTC. CAT failed on the first open (Hamlib: empty reply from SmartSDR CAT,
+  `verify_flexradio_id`) and did not recover by itself; a graceful restart at 22:34 connected at
+  once. Whether the CAT breaker would have recovered is not in the log (its re-probes write
+  nothing there).
+- **Live run:** TX on, then the autopilot on at 22:35 UTC.
+  - 60 m: F4BND (Grid), G0ORC, IU8STX (an Answer-callers caller); 40 m: BA7LUI, TA2TDW while it
+    listened for a spotted SU3YM.
+  - Defects found, all fixed for the next candidate:
+    - the autopilot tuned 60 m to the US channel 5.3715 MHz instead of the station's 5.357;
+    - five US-state spot chases ran back to back with no contact in 22 minutes;
+    - VK9XY (a DXpedition, CQ on 40 m) was passed over for a US-state spot, because the
+      autopilot ranked the boundary decode fold alone;
+    - Answer callers' takeover dropped the operator's call to VK9XY for a caller, twice.
+  - The operator called VK9XY by hand from 23:32 at 7.0571 MHz (VK9XY at 401 Hz, TX at 1375–2375 Hz):
+    it answered at 23:48 (-16), did not copy our R report in three tries, and was not heard after
+    23:50. No contact.
