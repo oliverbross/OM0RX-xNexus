@@ -92,7 +92,7 @@ pub const REGION_SPOT_CAP: usize = 60_000;
 /// sender) and "who I hear" (we're the receiver). `#` matches the trailing topic
 /// levels so it's robust to PSK Reporter schema tweaks.
 pub fn mqtt_topics(mycall: &str) -> Vec<String> {
-    let c = mycall.trim().to_ascii_uppercase();
+    let c = mycall.trim().to_ascii_uppercase().replace('/', ".");
     vec![
         format!("pskr/filter/v2/+/+/{c}/#"), // sender == me  → who heard me
         format!("pskr/filter/v2/+/+/+/{c}/#"), // receiver == me → who I hear
@@ -166,6 +166,12 @@ fn non_empty(s: &str) -> Option<String> {
     }
 }
 
+/// The call a topic segment names. A segment cannot carry '/', so the feed writes it as '.'
+/// (`KH6XX.W0` is KH6XX/W0); no callsign has a '.' of its own.
+fn call_from_topic(seg: &str) -> String {
+    seg.to_ascii_uppercase().replace('.', "/")
+}
+
 /// Parse a PSK Reporter MQTT topic into a [`PathSpot`] stamped `now` (Unix secs).
 /// `None` if it isn't a `pskr/filter/v2` reception report on a band we model.
 /// (SNR + exact frequency are payload-only, so SNR is left `None`; the band comes
@@ -189,9 +195,9 @@ pub fn parse_mqtt_report(topic: &str, now: i64) -> Option<PathSpot> {
     }
     Some(PathSpot {
         time: now,
-        tx_call: sender.to_ascii_uppercase(),
+        tx_call: call_from_topic(sender),
         tx_grid: non_empty(p[7]),
-        rx_call: receiver.to_ascii_uppercase(),
+        rx_call: call_from_topic(receiver),
         rx_grid: non_empty(p[8]),
         band,
         mode: non_empty(mode),
@@ -305,6 +311,16 @@ mod tests {
         assert_eq!(s.band, Band::B20); // from the "20m" label segment
         assert_eq!(s.mode.as_deref(), Some("FT8"));
         assert_eq!(s.time, 1_700_000_000);
+    }
+
+    #[test]
+    fn a_portable_call_gets_its_slash_back() {
+        // A topic segment cannot carry '/', so the broker writes it as '.'. Read as "KH6XX.W0" a
+        // station in the US was placed in Hawaii (2026-11-23).
+        let topic = "pskr/filter/v2/40m/FT8/KH6XX.W0/EA8.OM0RX/EN35/IL18/291/29";
+        let s = parse_mqtt_report(topic, 1).unwrap();
+        assert_eq!(s.tx_call, "KH6XX/W0");
+        assert_eq!(s.rx_call, "EA8/OM0RX");
     }
 
     #[test]

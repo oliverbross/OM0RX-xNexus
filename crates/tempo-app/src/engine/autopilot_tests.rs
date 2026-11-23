@@ -998,3 +998,19 @@ fn a_dxpedition_is_called_for_at_least_ten_minutes() {
     };
     assert_eq!(s.sanitized().rare_budget_secs, 600);
 }
+
+#[test]
+fn a_garbled_spot_is_no_station_to_chase() {
+    // 2026-11-23, live: "E34XQXUYE9H" was chased for five minutes as a new entity, and
+    // "89EARO/J8Z5" as a band slot.
+    for call in ["E34XQXUYE9H", "89EARO/J8Z5", "KH6XX.W0"] {
+        let mut e = two_band_pilot();
+        e.autopilot_feed(vec![crate::automation::FeedEntry {
+            new_entity: true,
+            ..state_spot(call, "17m", 18.101)
+        }]);
+        e.ingest_decodes_for_test(&[], 30);
+        e.ingest_decodes_for_test(&[], 32);
+        assert_eq!(e.settings.band, "20m", "{call} is no callsign");
+    }
+}

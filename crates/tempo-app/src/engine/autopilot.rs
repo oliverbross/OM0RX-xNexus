@@ -38,8 +38,8 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use super::{now_unix_secs, Engine, Mode};
 use crate::automation::{
     self, answerable_cq, hunt_dial, in_passband, is_hunt_spot, is_rare, next_band,
-    next_window_start, spot_tier, window_at, Attempts, AutomationDto, Candidate, FeedEntry,
-    HourlyCount, PresenceClock, Tier,
+    next_window_start, spot_call_ok, spot_tier, window_at, Attempts, AutomationDto, Candidate,
+    FeedEntry, HourlyCount, PresenceClock, Tier,
 };
 use crate::dto::Tier as LinkTier;
 use crate::settings::SpecialOp;
@@ -373,12 +373,13 @@ impl Engine {
         self.automation.entity_info = EntityInfoResolver(Some(std::sync::Arc::new(resolve)));
     }
 
-    /// The UI's need feed (cluster, RBN, OTA, DXpeditions), replacing the last one.
+    /// The UI's need feed (cluster, RBN, OTA, DXpeditions), replacing the last one. A spot whose
+    /// call is no callsign (a false decode someone's software reported) is left out.
     pub fn autopilot_feed(&mut self, entries: Vec<FeedEntry>) {
         let now = now_unix_secs();
         self.automation.feed = entries
             .into_iter()
-            .filter(|e| !e.call.trim().is_empty())
+            .filter(|e| spot_call_ok(&e.call))
             .map(|e| (e.call.trim().to_uppercase(), (e, now)))
             .collect();
     }

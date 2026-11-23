@@ -733,6 +733,30 @@ pub struct FeedEntry {
     pub state: Option<String>,
 }
 
+/// Could a station hold this call? Spots carry false decodes ("E34XQXUYE9H", "89EARO/J8Z5": both
+/// chased for five minutes, 2026-11-23), and a garbled call reads as a new entity.
+///
+/// Wider than WSJT-X's standard call on purpose, since a dropped real one could be the ATNO: one
+/// part of the call must be a prefix of one to three characters with a letter in it (`3DA`, `3X`),
+/// one to four digits (`TM100VERDUN`), and one to six letters. `KH6XX/W0` and `F/OM0RX/P` pass on
+/// the part that does.
+pub fn spot_call_ok(call: &str) -> bool {
+    let call = call.trim().to_ascii_uppercase();
+    let alnum = |p: &str| !p.is_empty() && p.bytes().all(|b| b.is_ascii_alphanumeric());
+    let full = |p: &str| {
+        let head = p.trim_end_matches(|c: char| c.is_ascii_alphabetic());
+        let letters = p.len() - head.len();
+        // The digits before the suffix; the prefix keeps any of its own (`9A3SWO`, `E51ABC`).
+        let prefix = head.trim_end_matches(|c: char| c.is_ascii_digit());
+        let digits = head.len() - prefix.len();
+        (1..=6).contains(&letters)
+            && (1..=4).contains(&digits)
+            && (1..=3).contains(&prefix.len())
+            && prefix.bytes().any(|b| b.is_ascii_alphabetic())
+    };
+    call.len() <= 14 && call.split('/').all(alnum) && call.split('/').any(full)
+}
+
 /// The tier a spot would put its station in, for chasing it to another band; `None` = not worth
 /// leaving the band for (only ATNO, DXpeditions and DXCC slots move the radio).
 pub fn spot_tier(f: &FeedEntry) -> Option<Tier> {
@@ -1397,5 +1421,47 @@ mod tests {
         assert_eq!(h.count(200), 2);
         assert_eq!(h.count(3600), 1);
         assert_eq!(h.count(3700), 0);
+    }
+
+    #[test]
+    fn only_a_possible_callsign_is_a_spot() {
+        for c in [
+            "3DA0RU",
+            "3XY1T",
+            "VK9XY",
+            "9A3SWO",
+            "E51ABC",
+            "1A0C",
+            "4U1ITU",
+            "H40GC",
+            "J88DR",
+            "TM100VERDUN",
+            "R2026NY",
+            "II7MGBR",
+            "W1A",
+            "KH6XX/W0",
+            "F/OM0RX/P",
+            "vp8/g4abc",
+            "3B9FR",
+            "T88XX",
+            "S01WS",
+            "3D2AG/R",
+            "BV9P",
+        ] {
+            assert!(spot_call_ok(c), "{c}");
+        }
+        for c in [
+            "",
+            "E34XQXUYE9H",
+            "89EARO/J8Z5",
+            "KH6XX.W0",
+            "<...>",
+            "CQ",
+            "73",
+            "JN88",
+            "W1/",
+        ] {
+            assert!(!spot_call_ok(c), "{c}");
+        }
     }
 }
