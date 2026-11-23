@@ -87,3 +87,12 @@ sequencer's own limit (SQ2MMX, 2026-11-23). The four-call limit is for a station
       autopilot on, so the count should not be shown as "of 3".
   - xLog follows the call Nexus works (VU2NRO, TA3LFT and EW7EL seen), but its rotor did not turn:
     Auto rotor was off in xLog.
+- **Live run, to the end (11:22–12:29 UTC):** 7 more contacts: SV7LYG (12 m), EP2AES (10 m, a needed
+  DXCC slot), R5VCV, YC8BUL, VU2NRO (20 m), VK9XY (12 m FT4) and CT2KCK (20 m FT4, by hand).
+  - The rotation visited 20, 17, 15, 12 and 10 m. No watchdog stop; the autopilot stopped only when
+    the operator changed the mode by hand (FT2 at 12:26:49, FT4 at 12:27:50). Clean close at 12:29:43.
+  - FT2 dropped decode periods (12:26:52–12:27:48), with a test build and xLog's worker (over two
+    cores) running on the same machine.
+  - **Defect found, not fixed in this candidate:** VK9XY was hunted on 12 m FT4 from 11:54:26 and heard
+    at 978 Hz, +3 to +5 dB, but never called by the autopilot: below 1000 Hz it called only with Hound
+    on, which is FT8's. The operator called it by a double-click (12:08:22, worked 12:10).
