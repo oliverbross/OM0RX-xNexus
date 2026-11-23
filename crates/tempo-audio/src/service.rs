@@ -1917,6 +1917,9 @@ const FREQ_MISS_LIMIT: u32 = 3;
 /// change, a USB-serial spike — must not lose its CTCSS for the session, while a rig with no
 /// repeater support at all must not be sent three commands on every tick forever.
 const FM_PUSH_MISS_LIMIT: u8 = 3;
+/// How long after a slot over's unkey a dial reading proves that the radio was still there to take
+/// it (ms): past Hamlib's own half-second cache, which answers a reading without the radio.
+const UNKEY_PROVED_MS: f64 = 1_500.0;
 /// First re-probe delay after the CAT breaker trips (ms). Short enough that a transient stall —
 /// a band-stack switch, a USB-serial spike, the reconnect churn a refused command causes — costs
 /// a couple of seconds of read-back, not the whole session.
@@ -4532,6 +4535,13 @@ struct RadioLoop {
     /// tick has already dropped ([`Self::retest_ft_window`]): the deadline below then ends the over
     /// without a second unkey.
     window_unkeyed: Option<f64>,
+    /// When a slot over's CAT unkey was accepted (loop clock), until a reading from the radio
+    /// proves the link was still there ([`UNKEY_PROVED_MS`]). rigctld can answer `RPRT 0` to an
+    /// unkey whose CAT program has just gone (field incident 2026-11-23: SmartSDR CAT closed during
+    /// an over, and the radio stayed keyed with nothing said).
+    unkey_unproved: Option<f64>,
+    /// The link was lost with the unkey unproved: the unkey is owed as soon as CAT is back.
+    unkey_owed: bool,
     /// Deadline (same clock as `tx_until_ms`) of the voice-keyer message this loop last keyed
     /// through Nexus's Flex client's switch to DAX, the radio having had the mic: its over ends at
     /// that deadline whatever PTT the operator holds, since the radio's DAX would not carry the
@@ -5609,6 +5619,8 @@ impl RadioLoop {
             tick_now: 0.0,
             slot_audio_stop: None,
             window_unkeyed: None,
+            unkey_unproved: None,
+            unkey_owed: false,
             flex_voice_until_ms: None,
             voice_until_ms: None,
             voice_tee_until_ms: None,
@@ -7529,6 +7541,16 @@ impl RadioLoop {
         let _ = eng.ft_midover_switch(live, now, clicked, |tail| backend.retune_tx(tail));
     }
 
+    /// A slot over's unkey was sent at `now` with this answer. Accepted over CAT, it is unproved
+    /// until the radio answers something after it ([`Self::unkey_unproved`]).
+    fn note_slot_unkey(&mut self, rig: &Rig, unkey: &std::io::Result<()>, now: f64) {
+        let over_cat =
+            rig.has_control() && matches!(rig.ptt_mode(), PttMode::Cat | PttMode::CatData);
+        if over_cat && unkey.is_ok() {
+            self.unkey_unproved = Some(now);
+        }
+    }
+
     /// Whether this loop's PTT hold is a slot over's (FT8, FT4, JS8 and the other timed-slot
     /// modes): the two slot keying sites stamp its deadline on `slot_tx_until_ms` as well, and
     /// every other keyed source leaves that behind. The unkey that drops it follows WSJT-X when the
@@ -7593,6 +7615,7 @@ impl RadioLoop {
             backend.flush_output();
             let unkey = rig.ptt(false);
             self.window_unkeyed = Some(t);
+            self.note_slot_unkey(rig, &unkey, now);
             if let Some(why) = crate::slot::slot_unkey_failure(&unkey, true) {
                 engine_lock(engine).halt_tx_for_failed_unkey(&why);
             }
@@ -9358,6 +9381,9 @@ impl RadioLoop {
         self.last_smeter_poll = 0.0;
         self.freq_misses = 0;
         self.cat_ok = None; // re-establish CAT health from the new rig
+                            // An unkey left unproved or owed was the OLD radio's.
+        self.unkey_unproved = None;
+        self.unkey_owed = false;
         self.cat_retry_at = 0.0;
         self.cat_retry_ms = CAT_RETRY_BASE_MS;
         // ⚠️ MUST reset with the radio. Carrying the OLD radio's frequency ranges over a handoff
@@ -10222,6 +10248,10 @@ impl RadioLoop {
                     && self
                         .remote_radio_id
                         .is_none_or(|served| served == remote_want_radio);
+                if !same_radio {
+                    self.unkey_unproved = None;
+                    self.unkey_owed = false;
+                }
                 if !same_radio && self.rigctld_proc.is_some() {
                     self.key_watch_until = None;
                     self.atu_tune_started_at = None;
@@ -11810,6 +11840,16 @@ impl RadioLoop {
                                 eng.remote_observe_dial(remote_read.as_ref(), Some(hz));
                             }
                         }
+                        if let Some(t) = self.unkey_unproved {
+                            if self.freq_misses > 0 {
+                                // Readings were missed since the unkey, so it may have been lost
+                                // with them: sent again (the idle self-heal) now they answer.
+                                rig.keyed = true;
+                                self.unkey_unproved = Some(now);
+                            } else if now - t >= UNKEY_PROVED_MS {
+                                self.unkey_unproved = None;
+                            }
+                        }
                         self.freq_misses = 0; // a good read clears the breaker's miss run
                                               // A tripped breaker's re-probe answered: the link is BACK. Reset the health
                                               // verdict + the backoff and re-probe the rig's capabilities, exactly like
@@ -12957,9 +12997,23 @@ impl RadioLoop {
                         // read-back. A VOX/serial rig errors instantly + meaninglessly: never counts.
                         if rig.has_control() {
                             self.freq_misses = self.freq_misses.saturating_add(1);
+                            // The unkey before this may not have reached the radio: the idle
+                            // self-heal sends it again in this tick.
+                            if self.unkey_unproved.is_some() {
+                                rig.keyed = true;
+                            }
                         }
                         if rig.has_control() && self.freq_misses >= FREQ_MISS_LIMIT {
                             self.cat_ok = Some(false);
+                            // ⛔ LOST BEFORE THE RADIO ANSWERED ANYTHING AFTER ITS UNKEY: it may
+                            // still be transmitting. TX halts and the operator is told, as for an
+                            // unkey it refused, and the unkey is owed when the link is back.
+                            if self.unkey_unproved.take().is_some() {
+                                self.unkey_owed = true;
+                                engine_lock(engine).halt_tx_for_failed_unkey(
+                                    "the CAT link was lost right after it, so it is not confirmed",
+                                );
+                            }
                             // DOWN ON THE LINK, which withholds the dial and the mode until the
                             // re-probe finds the radio: Hamlib's own codes for a rig that did not
                             // answer (`is_link_fault`), and any failed read through Nexus's CI-V
@@ -16395,6 +16449,9 @@ impl RadioLoop {
                     backend.flush_output();
                     let slot_over = self.holds_slot_over();
                     let unkey = rig.ptt(false);
+                    if slot_over {
+                        self.note_slot_unkey(rig, &unkey, now);
+                    }
                     // A slot over's unkey the radio does not take halts TX and says so, as in
                     // WSJT-X; the idle self-heal below goes on sending it.
                     if let Some(why) = crate::slot::slot_unkey_failure(&unkey, slot_over) {
@@ -17442,9 +17499,26 @@ impl RadioLoop {
             let slot_over = self.holds_slot_over();
             let unkey = rig.ptt(false);
             self.tx_until_ms = None;
+            if slot_over {
+                self.note_slot_unkey(rig, &unkey, now);
+            }
             // Cutting a slot over is WSJT-X's Halt Tx, and its PTT off fails as the over's end does.
             if let Some(why) = crate::slot::slot_unkey_failure(&unkey, slot_over) {
                 eng.halt_tx_for_failed_unkey(&why);
+            }
+        }
+
+        // An unkey owed since the CAT link was lost right after it (`unkey_unproved`): the link is
+        // back, so the self-heal below sends it now.
+        if self.unkey_owed
+            && self.cat_ok != Some(false)
+            && self.tx_until_ms.is_none()
+            && !self.tuning_keyed
+            && !self.manual_ptt_applied
+        {
+            self.unkey_owed = false;
+            if rig.has_control() {
+                rig.keyed = true;
             }
         }
 

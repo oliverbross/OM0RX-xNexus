@@ -33,6 +33,9 @@ enum Unkey {
     Fails { code: i32, n: usize },
     /// `RPRT 0` to the first unkey after [`LATE`], and at once after that: a slow radio.
     AnswersLate,
+    /// `RPRT 0` to every unkey, none of which reaches the radio while its link is lost
+    /// ([`Station::link_lost`], set by the first): the CAT program behind rigctld has gone.
+    LinkLost,
 }
 
 /// How many unkeys a failing radio refuses before it takes one: about two seconds of the loop's
@@ -62,6 +65,9 @@ struct Station {
     /// While set, the rigctld answers the CW stop (`\stop_morse`) only after [`LATE`]: a radio
     /// that has stopped answering it.
     slow_cw_stop: Arc<AtomicBool>,
+    /// While set, the radio's CAT link is gone: the rigctld answers `RPRT -6` to everything but
+    /// the unkey, which it answers `RPRT 0` and the radio never hears.
+    link_lost: Arc<AtomicBool>,
     /// The sound card's flushes (`flush`) and the unkeys the rigctld was sent (`T 0`, logged as it
     /// arrives, before any answer), in the order they happened.
     order: Arc<Mutex<Vec<String>>>,
@@ -92,6 +98,9 @@ impl Station {
         let refuse = Arc::clone(&refuses_key);
         let slow_cw_stop = Arc::new(AtomicBool::new(false));
         let slow = Arc::clone(&slow_cw_stop);
+        let link_lost = Arc::new(AtomicBool::new(false));
+        let lost = Arc::clone(&link_lost);
+        let cut = AtomicBool::new(false);
         let answered = AtomicUsize::new(0);
         let order = Arc::new(Mutex::new(Vec::new()));
         let heard = Arc::clone(&order);
@@ -101,6 +110,17 @@ impl Station {
             if line == "T 0" {
                 heard_at.lock().unwrap().push(Instant::now());
                 heard.lock().unwrap().push(line.to_string());
+            }
+            if unkey == Unkey::LinkLost && line == "T 0" && radio.keyed {
+                if !cut.swap(true, Ordering::SeqCst) {
+                    lost.store(true, Ordering::SeqCst);
+                }
+                if lost.load(Ordering::SeqCst) {
+                    return Some("RPRT 0\n".into());
+                }
+            }
+            if lost.load(Ordering::SeqCst) && line != "T 0" {
+                return Some("RPRT -6\n".into());
             }
             match line {
                 "T 1" | "T 3" if refuse.load(Ordering::SeqCst) => {
@@ -149,6 +169,7 @@ impl Station {
             on_air,
             refuses_key,
             slow_cw_stop,
+            link_lost,
             order,
             unkey_heard,
             slot,
@@ -812,4 +833,62 @@ fn order_pin_a_loggers_halt_tx_flushes_then_unkeys() {
         ["flush", "T 0"],
         "a logger's HaltTx flushes, then unkeys"
     );
+}
+
+/// Field incident 2026-11-23 (OM0RX, FLEX-8400 through SmartSDR CAT): the CAT program closed during
+/// an over, rigctld answered the unkey `RPRT 0`, and the radio stayed keyed with nothing said. The
+/// release is unproved until the radio has answered something after it. Lost before that, TX halts,
+/// the operator is told, and the unkey goes out again once the link is back.
+#[test]
+fn a_link_lost_right_after_the_unkey_halts_tx_and_unkeys_again_when_it_is_back() {
+    let mut s = Station::new(Unkey::LinkLost);
+    let end = s.key_the_over();
+    s.run_to(end + 5_000.0);
+    assert!(s.on_air(), "premise: the radio never heard the unkey");
+    let told = s.unkey_failed().expect("the operator is told");
+    assert!(told.why.contains("CAT link"), "{}", told.why);
+    assert!(!s.armed(), "TX is halted");
+    s.link_lost.store(false, Ordering::SeqCst);
+    s.run_to(end + 20_000.0);
+    assert!(!s.on_air(), "the radio is unkeyed once the link is back");
+    assert!(!s.rig.keyed);
+    assert!(
+        s.unkey_failed().is_some(),
+        "said until TX is turned on again"
+    );
+}
+
+/// The control: a link lost after the radio has answered since its unkey says nothing about it.
+#[test]
+fn a_link_lost_after_the_radio_answered_again_raises_no_unkey_alarm() {
+    let mut s = Station::new(Unkey::Accepts);
+    let end = s.key_the_over();
+    s.run_to(end + 4_000.0);
+    assert!(!s.on_air(), "premise: unkeyed");
+    assert!(s.armed() && s.unkey_failed().is_none());
+    s.link_lost.store(true, Ordering::SeqCst);
+    s.run_to(end + 9_000.0);
+    assert_eq!(s.state.cat_ok, Some(false), "premise: the link is down");
+    assert!(s.unkey_failed().is_none());
+}
+
+/// One failed reading straight after an unkey, on a link that then answers, halts nothing.
+#[test]
+fn one_missed_reading_after_the_unkey_halts_nothing() {
+    let mut s = Station::new(Unkey::LinkLost);
+    let end = s.key_the_over();
+    let (mut t, mut seen) = (end, false);
+    while t < end + 3_000.0 {
+        t += 20.0;
+        s.run_to(t);
+        if s.link_lost.load(Ordering::SeqCst) && s.state.freq_misses >= 1 {
+            s.link_lost.store(false, Ordering::SeqCst);
+            seen = true;
+            break;
+        }
+    }
+    assert!(seen, "premise: a reading was missed");
+    s.run_to(t + 4_000.0);
+    assert!(!s.on_air(), "the unkey sent again reached the radio");
+    assert!(s.armed() && s.unkey_failed().is_none());
 }

@@ -183,6 +183,10 @@ pub struct Automation {
     /// was last heard in. Kept whether or not Answer callers is on: while any is fresh, the band
     /// does not change ([`Engine::automation_band_hold`]).
     to_me: HashMap<String, u64>,
+    /// Stations heard calling CQ or somebody else since they last addressed the operator, with the
+    /// slot. A station we are in contact with that is here has gone on to others
+    /// ([`Automation::moved_on`]).
+    elsewhere: HashMap<String, u64>,
     /// The contact that is made on our side but not yet closed by the partner (they owe a 73, or
     /// stopped mid-exchange), and the slot it was first seen in that state.
     settle: Option<(String, u64)>,
@@ -228,11 +232,23 @@ impl std::fmt::Debug for EntityInfoResolver {
 }
 
 impl Automation {
+    /// Was `call` last heard calling CQ or somebody else, not us? Live run 2026-11-23: SQ2MMX
+    /// answered us once, then worked three others, and was sent our R-report eight times.
+    fn moved_on(&self, call: &str) -> bool {
+        self.elsewhere.keys().any(|c| same_call(c, call))
+    }
+
     /// Has the autopilot's target had all its calls without answering? Read by the TX path, which
-    /// then sends it nothing more. Never for a rare target, nor once the station has answered.
+    /// then sends it nothing more. Never for a rare target, nor once the station has answered,
+    /// unless it has since gone on to others.
     pub(super) fn calls_spent(&self, station: &tempo_core::qso::Station, max: u32) -> bool {
+        let answered = station.advanced_on_air;
         self.pilot.on
-            && !station.advanced_on_air
+            && (!answered
+                || station
+                    .dxcall
+                    .as_deref()
+                    .is_some_and(|dx| self.moved_on(dx)))
             && matches!(
                 station.state,
                 QsoState::AwaitReport | QsoState::AwaitRoger | QsoState::AwaitRr73
@@ -243,7 +259,7 @@ impl Automation {
                         .dxcall
                         .as_deref()
                         .is_some_and(|dx| same_call(dx, &t.call))
-                    && station.tx_count >= if t.out_of_time { 1 } else { max }
+                    && station.tx_count >= if t.out_of_time && !answered { 1 } else { max }
             })
     }
 
@@ -544,12 +560,20 @@ impl Engine {
         self.automation.last_slot = slot;
         for d in decodes {
             let m = Msg::parse(&d.message);
-            let (Some(to), Some(de)) = (m.addressee(), m.sender()) else {
+            let Some(de) = m.sender().filter(|de| !de.contains("<...>")) else {
                 continue;
             };
-            if !same_call(to, &mycall) || de.contains("<...>") {
+            if !m.addressee().is_some_and(|to| same_call(to, &mycall)) {
+                // To somebody else, or a CQ. Not one of two streams sent in the slot that also
+                // answered us.
+                let de = de.trim_matches(['<', '>']).to_uppercase();
+                if self.automation.to_me.get(&de) != Some(&slot) {
+                    self.automation.elsewhere.insert(de, slot);
+                }
                 continue;
             }
+            let of = de.trim_matches(['<', '>']);
+            self.automation.elsewhere.retain(|c, _| !same_call(c, of));
             // A plain 73 closes; everything else (a call, a report, a repeated RR73) still wants us.
             if matches!(m, Msg::Bye73 { .. }) {
                 self.automation.to_me.remove(&de.to_uppercase());
@@ -560,6 +584,9 @@ impl Engine {
         self.automation
             .to_me
             .retain(|_, s| slot.saturating_sub(*s) < BAND_HOLD_SLOTS);
+        self.automation
+            .elsewhere
+            .retain(|_, s| slot.saturating_sub(*s) < DONE_FORGET_SLOTS);
         // A contact made with the station we work now closes any older call it queued (it called
         // us while we finished someone else, and we then worked it): it is never answered again.
         if let Mode::Qso { station, .. } = &self.mode {
@@ -774,7 +801,14 @@ impl Engine {
         }
         // Take-over: our first call has gone unanswered for N slots and somebody is calling us.
         // It counts toward the chain limit like any other answered caller.
-        let unanswered = matches!(state, QsoState::AwaitReport | QsoState::AwaitRoger) && !advanced;
+        // A station that answered and has since gone on to others is as good as unanswered.
+        let moved_on = self.automation.pilot.on && self.automation.moved_on(&dx);
+        let unanswered = (matches!(state, QsoState::AwaitReport | QsoState::AwaitRoger)
+            && !advanced)
+            || (matches!(
+                state,
+                QsoState::AwaitReport | QsoState::AwaitRoger | QsoState::AwaitRr73
+            ) && moved_on);
         // Never from a DXpedition, a new entity or a rare autopilot target: those are long calls
         // by nature (live run 2026-11-22: the operator's call to VK9XY was dropped for N5EI).
         let fed_rare = self
@@ -790,20 +824,24 @@ impl Engine {
             .is_some_and(|t| same_call(&t.call, &dx) && is_rare(t.tier));
         // With the autopilot on, nobody waits for a station that has not answered (operator,
         // 2026-11-23: "if no ongoing QSO is happening and someone is calling us, we answer"; N9ATF
-        // called while DO8JB left nine calls unanswered). A station that has addressed us is a
-        // contact under way, so it keeps its turns, and every station picked gets one call: only a
-        // caller heard since our last over counts. The chain limit is about turning TX off, which the autopilot does
-        // not do, so it does not apply either.
+        // called while DO8JB left nine calls unanswered), nor for one picked and not called yet
+        // (live run 2026-11-23: VU2NRO called between the pick of R3WF and the first call to it). A
+        // station that has addressed us is a contact under way, so it keeps its turns, until it
+        // goes on to others. A caller counts from the slot before our last over, whose decodes can
+        // come in after that over has begun, and is never answered in the middle of an over. The
+        // chain limit is about turning TX off, which the autopilot does not do, so it does not
+        // apply either.
         let pilot_on = self.automation.pilot.on;
         let addressed_us = self.automation.to_me.keys().any(|c| same_call(c, &dx));
-        let at_once = pilot_on && !addressed_us && tx_count >= 1;
+        let at_once =
+            pilot_on && (!addressed_us || moved_on) && slot > self.automation.last_over_slot;
         let chain_ok = pilot_on || self.automation.chain < s.answer_chain_limit.max(1);
         let waited = s.answer_takeover_slots > 0 && tx_count >= s.answer_takeover_slots;
         if !fed_rare && !target_rare && unanswered && (at_once || waited) && chain_ok {
             let from = if waited {
                 0
             } else {
-                self.automation.last_over_slot + 1
+                self.automation.last_over_slot.saturating_sub(1)
             };
             if let Some(c) = self.best_caller(from) {
                 self.automation.chain += 1;
@@ -824,11 +862,19 @@ impl Engine {
         if finished && chain_ok {
             if let Some(c) = self.best_caller(0) {
                 self.automation.chain += 1;
+                // The chain limit does not apply with the autopilot on, so it is not shown.
+                let count = if pilot_on {
+                    String::new()
+                } else {
+                    format!(
+                        " ({} of {})",
+                        self.automation.chain,
+                        s.answer_chain_limit.max(1)
+                    )
+                };
                 self.automation_note(&format!(
-                    "contact with {dx} done: answering caller {} ({} of {})",
-                    c.call,
-                    self.automation.chain,
-                    s.answer_chain_limit.max(1)
+                    "contact with {dx} done: answering caller {}{count}",
+                    c.call
                 ));
                 self.start_auto_contact(&c, Tier::CallingMe);
             }
@@ -836,7 +882,7 @@ impl Engine {
     }
 
     /// The caller to answer: the operator's best-caller strategy over the fresh queue, among those
-    /// heard in slot `from` or later.
+    /// heard in slot `from` or later. One that has since called somebody else comes last.
     fn best_caller(&self, from: u64) -> Option<QueuedCaller> {
         let floor = self.settings.best_caller_min_snr;
         let mut list: Vec<&QueuedCaller> = self
@@ -850,6 +896,7 @@ impl Engine {
             // "first" and every other strategy: the longest-waiting caller first.
             _ => list.sort_by_key(|c| c.slot),
         }
+        list.sort_by_key(|c| self.automation.moved_on(&c.call));
         list.first().map(|c| (*c).clone())
     }
 
@@ -1034,6 +1081,8 @@ impl Engine {
                     self.note_failed(&t.call);
                     self.automation_note(&if rare || calls == 0 {
                         format!("{} did not answer in {budget} s: moving on", t.call)
+                    } else if advanced {
+                        format!("{} answered, then went on to others: moving on", t.call)
                     } else {
                         format!(
                             "{} did not answer {calls} call{}: moving on",
@@ -1915,12 +1964,12 @@ impl Engine {
         }
         let band = self.settings.band.clone();
         let candidates = self.automation_candidates(decodes, slot, &band, &cur_mode);
-        let hound = self.settings.special_op != SpecialOp::None;
+        // Wherever it is heard: a Fox in FT8 has put Hound on above, and any other DXpedition is
+        // called from 1200 Hz above it (live run 2026-11-23: one below 1000 Hz was never called
+        // in FT4, where there is no Hound).
         let target = candidates
             .iter()
             .filter(|c| c.to_me || same_call(&c.call, &ch.call))
-            // A Fox (below 1000 Hz) only in Hound; the Hound rules then take it from there.
-            .filter(|c| c.to_me || c.freq_hz >= 1000.0 || hound)
             .min_by_key(|c| (!c.to_me, -c.snr))
             .cloned();
         if let Some(c) = target {
