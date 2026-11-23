@@ -1389,3 +1389,33 @@ fn a_station_working_two_at_once_has_not_moved_on() {
     e.ingest_decodes_for_test(&[dec_snr("OM0RX K1ABC FN42", -5)], s + 1);
     assert_eq!(e.automation_dx().as_deref(), Some("DO8JB"));
 }
+
+/// Live run 2026-11-23: VK9XY ran FT4 at 978 Hz, +5 dB, and was never called: a station below
+/// 1000 Hz was only called with Hound on, and Hound exists only in FT8. It is called from 1200 Hz
+/// above it, as every DXpedition is.
+#[test]
+fn a_dxpedition_below_1000_hz_is_called_without_hound() {
+    for hunt_hound in [true, false] {
+        for mode in ["FT4", "FT8"] {
+            if mode == "FT8" && hunt_hound {
+                continue; // Fox/Hound: `a_fox_switches_the_hunt_to_hound_and_stop_tx_puts_it_back`.
+            }
+            let mut e = two_band_pilot();
+            e.settings.automation.hunt_hound = hunt_hound;
+            e.autopilot_feed(vec![crate::automation::FeedEntry {
+                mode: Some(mode.into()),
+                ..dxped_spot("3Y0K", "40m", 7.056)
+            }]);
+            e.ingest_decodes_for_test(&[], 30);
+            assert_eq!(e.settings.band, "40m", "premise: hunting");
+            e.ingest_decodes_for_test(&[dec_at("CQ 3Y0K JD15", 5, 978.0)], 32);
+            assert_eq!(e.automation_dx().as_deref(), Some("3Y0K"), "{mode}");
+            let above = e.tx_offset_hz - 400.0;
+            assert!(
+                (1195.0..=2500.0).contains(&above),
+                "{mode}: {above} Hz above where it now sits"
+            );
+            assert!(e.tx_enabled && e.settings.special_op == crate::settings::SpecialOp::None);
+        }
+    }
+}

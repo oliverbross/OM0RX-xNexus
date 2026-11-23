@@ -1964,12 +1964,12 @@ impl Engine {
         }
         let band = self.settings.band.clone();
         let candidates = self.automation_candidates(decodes, slot, &band, &cur_mode);
-        let hound = self.settings.special_op != SpecialOp::None;
+        // Wherever it is heard: a Fox in FT8 has put Hound on above, and any other DXpedition is
+        // called from 1200 Hz above it (live run 2026-11-23: one below 1000 Hz was never called
+        // in FT4, where there is no Hound).
         let target = candidates
             .iter()
             .filter(|c| c.to_me || same_call(&c.call, &ch.call))
-            // A Fox (below 1000 Hz) only in Hound; the Hound rules then take it from there.
-            .filter(|c| c.to_me || c.freq_hz >= 1000.0 || hound)
             .min_by_key(|c| (!c.to_me, -c.snr))
             .cloned();
         if let Some(c) = target {
