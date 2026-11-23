@@ -588,9 +588,10 @@ fn other_band(e: &Engine) -> (&'static str, f64) {
 /// Live run 2026-11-22 (xlog.23): from 22:39 the autopilot chased five US-state spots back to back
 /// (N7ILO, K0JWI, AJ6T, K6AFW, K9TD), five minutes each, 40 s on a band between two, and made no
 /// contact in 22 minutes. After a chase that never heard its station, a lower rule's spot waits
-/// [`CHASE_REST_SECS`] so the schedule gets its turn; a DXCC slot is still chased at once.
+/// its rest so the schedule gets its turn. On 2026-11-23 DXCC slots did the same for two and a half
+/// hours, so they wait too, but half as long; an ATNO is still chased at once.
 #[test]
-fn after_an_unheard_chase_a_us_state_spot_waits_and_a_dxcc_slot_does_not() {
+fn after_an_unheard_chase_a_spot_waits_its_rest_and_an_atno_does_not() {
     let mut e = two_band_pilot();
     e.settings.automation.tiers.us_state = true;
     e.autopilot_feed(vec![state_spot("N7ILO", "17m", 18.101)]);
@@ -616,23 +617,21 @@ fn after_an_unheard_chase_a_us_state_spot_waits_and_a_dxcc_slot_does_not() {
         e.ingest_decodes_for_test(&[], s);
         assert_eq!(e.settings.band, here, "slot {s}: K0JWI waits out the rest");
     }
-    // A DXCC slot is not a lower rule: chased at once.
-    e.autopilot_feed(vec![
-        state_spot("K0JWI", band, freq),
-        crate::automation::FeedEntry {
-            call: "5U4JSF".into(),
-            band: band.into(),
-            mode: Some("FT8".into()),
-            freq_mhz: Some(freq),
-            new_slot: true,
-            ..Default::default()
-        },
-    ]);
+    let slot_spot = |new_entity: bool| crate::automation::FeedEntry {
+        call: "5U4JSF".into(),
+        band: band.into(),
+        mode: Some("FT8".into()),
+        freq_mhz: Some(freq),
+        new_slot: true,
+        new_entity,
+        ..Default::default()
+    };
+    e.autopilot_feed(vec![slot_spot(false)]);
     e.ingest_decodes_for_test(&[], 44);
-    assert_eq!(
-        e.settings.band, band,
-        "the DXCC slot is chased during the rest"
-    );
+    assert_eq!(e.settings.band, here, "a DXCC slot waits too");
+    e.autopilot_feed(vec![slot_spot(true)]);
+    e.ingest_decodes_for_test(&[], 46);
+    assert_eq!(e.settings.band, band, "an ATNO is chased during the rest");
 }
 
 #[test]
@@ -997,4 +996,309 @@ fn a_dxpedition_is_called_for_at_least_ten_minutes() {
         ..Default::default()
     };
     assert_eq!(s.sanitized().rare_budget_secs, 600);
+}
+
+#[test]
+fn a_garbled_spot_is_no_station_to_chase() {
+    // 2026-11-23, live: "E34XQXUYE9H" was chased for five minutes as a new entity, and
+    // "89EARO/J8Z5" as a band slot.
+    for call in ["E34XQXUYE9H", "89EARO/J8Z5", "KH6XX.W0"] {
+        let mut e = two_band_pilot();
+        e.autopilot_feed(vec![crate::automation::FeedEntry {
+            new_entity: true,
+            ..state_spot(call, "17m", 18.101)
+        }]);
+        e.ingest_decodes_for_test(&[], 30);
+        e.ingest_decodes_for_test(&[], 32);
+        assert_eq!(e.settings.band, "20m", "{call} is no callsign");
+    }
+}
+
+/// A pilot on one band all day (no schedule move), listening one slot, with Answer callers on and
+/// its takeover setting at "never".
+fn answering_pilot() -> Engine {
+    let mut e = engine();
+    e.settings.automation.autopilot_enabled = true;
+    e.settings.automation.answer_callers = true;
+    e.settings.automation.answer_takeover_slots = 0;
+    e.settings.automation.tiers.grid = false;
+    e.settings.automation.schedule = vec![crate::automation::AutopilotWindow {
+        start: "00:00".into(),
+        bands: vec!["20m".into()],
+        mode: "FT8".into(),
+    }];
+    e.settings.automation.listen_slots = 1;
+    e.set_tx_enabled(true);
+    e.set_autopilot(true).unwrap();
+    e
+}
+
+/// Key our next over from slot `s` on; the slot it went out in.
+fn over(e: &mut Engine, s: u64) -> u64 {
+    (s..s + 3)
+        .find(|slot| !e.poll_tx(*slot).is_empty())
+        .expect("an over goes out")
+}
+
+/// The operator double-clicks `call`'s CQ heard in slot 11.
+fn pick(e: &mut Engine, call: &str) {
+    let cq = format!("CQ {call} JN88");
+    e.ingest_decodes_for_test(&[dec_snr(&cq, -12)], 11);
+    e.work_station(call, None, Some(&cq), Some(-12), Some(1500.0))
+        .unwrap();
+}
+
+/// Field report 2026-11-23: the operator double-clicked DO8JB, who left nine calls unanswered, and
+/// N9ATF, calling us meanwhile, was not answered. "If no ongoing QSO is happening and someone is
+/// calling us, we answer."
+#[test]
+fn a_caller_is_answered_at_once_while_our_call_is_unanswered() {
+    let mut e = answering_pilot();
+    pick(&mut e, "DO8JB");
+    let s = over(&mut e, 12);
+    e.ingest_decodes_for_test(&[], s + 1);
+    assert_eq!(e.automation_dx().as_deref(), Some("DO8JB"));
+    let s = over(&mut e, s + 2);
+    e.ingest_decodes_for_test(&[dec_snr("OM0RX K1ABC FN42", -24)], s + 1);
+    assert_eq!(
+        e.automation_dx().as_deref(),
+        Some(CALLER),
+        "K1ABC is answered with the takeover setting at never"
+    );
+    assert!(tx_now(&e).starts_with("K1ABC OM0RX"), "{:?}", tx_now(&e));
+}
+
+/// A station that has addressed us is a contact under way: a second caller does not cut it off.
+#[test]
+fn a_second_caller_does_not_cut_off_the_one_we_answer() {
+    let mut e = answering_pilot();
+    pick(&mut e, "DO8JB");
+    let s = over(&mut e, 12);
+    e.ingest_decodes_for_test(&[dec_snr("OM0RX K1ABC FN42", -24)], s + 1);
+    assert_eq!(e.automation_dx().as_deref(), Some(CALLER), "premise");
+    let s = over(&mut e, s + 2);
+    e.ingest_decodes_for_test(&[dec_snr("OM0RX W1AW FN31", -5)], s + 1);
+    assert_eq!(e.automation_dx().as_deref(), Some(CALLER));
+}
+
+#[test]
+fn the_operators_call_to_a_dxpedition_is_kept_from_a_caller_with_the_autopilot_on() {
+    let mut e = answering_pilot();
+    e.autopilot_feed(vec![dxped_spot(DX, "20m", 14.074)]);
+    pick(&mut e, DX);
+    let mut s = 10;
+    for _ in 0..6 {
+        s = over(&mut e, s + 2);
+        e.ingest_decodes_for_test(&[dec_snr("OM0RX K1ABC FN42", -5)], s + 1);
+        assert_eq!(e.automation_dx().as_deref(), Some(DX), "slot {}", s + 1);
+    }
+}
+
+/// "Just 4 calls, no answer move on": the operator's own pick too, and the fifth is never sent.
+#[test]
+fn four_unanswered_calls_then_the_autopilot_moves_on() {
+    let mut e = answering_pilot();
+    pick(&mut e, "DO8JB");
+    let mut s = 10;
+    for _ in 0..4 {
+        s = over(&mut e, s + 2);
+        e.ingest_decodes_for_test(&[], s + 1);
+        assert_eq!(
+            e.automation_dx().as_deref(),
+            Some("DO8JB"),
+            "slot {}: the last call's answer is still waited for",
+            s + 1
+        );
+    }
+    assert_eq!(e.automation_dto().calls_made, Some(4));
+    assert!(e.poll_tx(s + 2).is_empty(), "no fifth call");
+    e.ingest_decodes_for_test(&[], s + 2);
+    assert_eq!(e.automation_dx(), None, "moved on");
+    assert!(e.tx_enabled && e.automation_dto().autopilot_on);
+}
+
+/// "Receive an answer later: take it": the station that left four calls unanswered calls us.
+#[test]
+fn a_late_answer_is_taken() {
+    let mut e = answering_pilot();
+    pick(&mut e, "DO8JB");
+    let mut s = 10;
+    for _ in 0..4 {
+        s = over(&mut e, s + 2);
+        e.ingest_decodes_for_test(&[], s + 1);
+    }
+    e.ingest_decodes_for_test(&[], s + 2);
+    assert_eq!(e.automation_dx(), None, "premise: given up");
+    e.ingest_decodes_for_test(&[dec_snr("OM0RX DO8JB -11", -9)], s + 3);
+    assert_eq!(e.automation_dx().as_deref(), Some("DO8JB"));
+    assert!(tx_now(&e).contains("R-"), "{:?}", tx_now(&e));
+}
+
+/// The answer to the fourth call, in the boundary fold of the next slot, is taken.
+#[test]
+fn the_answer_to_the_last_call_is_taken() {
+    let mut e = answering_pilot();
+    pick(&mut e, "DO8JB");
+    let mut s = 10;
+    for _ in 0..3 {
+        s = over(&mut e, s + 2);
+        e.ingest_decodes_for_test(&[], s + 1);
+    }
+    s = over(&mut e, s + 2);
+    e.ingest_decodes_for_test(&[], s + 1);
+    e.ingest_decodes_for_test(&[dec_snr("OM0RX DO8JB -11", -9)], s + 1);
+    assert_eq!(e.automation_dx().as_deref(), Some("DO8JB"));
+    assert!(tx_now(&e).contains("R-"), "{:?}", tx_now(&e));
+    assert!(!e.poll_tx(s + 2).is_empty(), "our R-report goes out");
+}
+
+/// The limit is the unanswered call's, never the contact's: a station that answered keeps the
+/// sequencer's own.
+#[test]
+fn a_station_that_answered_is_not_given_four_calls_only() {
+    let mut e = answering_pilot();
+    pick(&mut e, "DO8JB");
+    let mut s = over(&mut e, 12);
+    e.ingest_decodes_for_test(&[dec_snr("OM0RX DO8JB -11", -9)], s + 1);
+    for _ in 0..5 {
+        s = over(&mut e, s + 2);
+        e.ingest_decodes_for_test(&[], s + 1);
+        assert_eq!(
+            e.automation_dx().as_deref(),
+            Some("DO8JB"),
+            "slot {}",
+            s + 1
+        );
+    }
+}
+
+/// With the autopilot off, the operator's call goes on as before: no limit of ours.
+#[test]
+fn with_the_autopilot_off_a_call_goes_on() {
+    let mut e = engine();
+    pick(&mut e, "DO8JB");
+    let mut s = 10;
+    for _ in 0..6 {
+        s = over(&mut e, s + 2);
+        e.ingest_decodes_for_test(&[], s + 1);
+    }
+    assert_eq!(e.automation_dx().as_deref(), Some("DO8JB"));
+}
+
+/// Europe switched off: its CQs and spots are left alone; a European calling us is answered.
+#[test]
+fn a_skipped_continent_is_not_called_but_its_callers_are_answered() {
+    let eu = |e: &mut Engine| {
+        e.set_dxcc_resolver(|call| {
+            Some(
+                if call.starts_with('D') {
+                    "Germany"
+                } else {
+                    "United States"
+                }
+                .to_string(),
+            )
+        });
+        e.set_automation_entity_resolver(|name| super::autopilot::EntityInfo {
+            continent: Some(if name == "Germany" { "EU" } else { "NA" }.into()),
+            dxcc: None,
+        });
+        e.settings.automation.tiers.atno = false;
+        e.settings.automation.skip_continents = vec!["EU".into()];
+    };
+    let mut e = answering_pilot();
+    eu(&mut e);
+    e.ingest_decodes_for_test(&[], 29);
+    for s in [30, 32] {
+        e.ingest_decodes_for_test(&[dec_snr("CQ DL1ABC JO31", -3)], s);
+        assert_eq!(e.automation_dx(), None, "a European CQ is left alone");
+    }
+    e.ingest_decodes_for_test(
+        &[dec_snr("CQ DL1ABC JO31", -3), dec_snr("CQ N0ABC EM48", -15)],
+        34,
+    );
+    assert_eq!(e.automation_dx().as_deref(), Some("N0ABC"));
+
+    let mut e = answering_pilot();
+    eu(&mut e);
+    e.ingest_decodes_for_test(&[], 29);
+    e.ingest_decodes_for_test(&[dec_snr("OM0RX DL1ABC JO31", -3)], 31);
+    assert_eq!(e.automation_dx().as_deref(), Some("DL1ABC"), "answered");
+
+    let mut e = two_band_pilot();
+    eu(&mut e);
+    e.autopilot_feed(vec![crate::automation::FeedEntry {
+        new_slot: true,
+        new_state: false,
+        ..state_spot("DL1ABC", "17m", 18.101)
+    }]);
+    e.ingest_decodes_for_test(&[], 30);
+    e.ingest_decodes_for_test(&[], 32);
+    assert_eq!(e.settings.band, "20m", "its spot is not chased");
+}
+
+/// A DXCC slot waits five minutes after an unheard chase, not the ten of a state spot.
+#[test]
+fn a_dxcc_slot_is_chased_again_after_five_minutes() {
+    let mut e = two_band_pilot();
+    e.settings.automation.tiers.us_state = true;
+    e.autopilot_feed(vec![state_spot("N7ILO", "17m", 18.101)]);
+    e.ingest_decodes_for_test(&[], 30);
+    e.ingest_decodes_for_test(&[], 32);
+    e.automation_backdate_band(400);
+    e.ingest_decodes_for_test(&[], 34);
+    e.ingest_decodes_for_test(&[], 36);
+    let (band, freq) = other_band(&e);
+    let here = e.settings.band.clone();
+    let slot = |call: &str| crate::automation::FeedEntry {
+        new_slot: true,
+        new_state: false,
+        ..state_spot(call, band, freq)
+    };
+    e.autopilot_feed(vec![state_spot("K0JWI", band, freq)]);
+    e.automation_backdate_band(310);
+    e.ingest_decodes_for_test(&[dec_snr("OM0RX K1ABC FN42", -5)], 38);
+    assert_eq!(e.settings.band, here, "the state spot still waits");
+    e.autopilot_feed(vec![slot("5U4JSF")]);
+    for s in [40, 42, 44, 46, 48, 50] {
+        e.ingest_decodes_for_test(&[], s);
+    }
+    assert_eq!(e.settings.band, band, "the DXCC slot is chased");
+}
+
+/// Operator, 2026-11-23: "I don't see it switching to 30 m, I thought it is configured". Every chase
+/// restarted the rotation from the spot's band, so spots on 160 and 80 m kept the later bands from
+/// ever coming up. The rotation goes on from the band the chase left.
+#[test]
+fn a_chase_does_not_restart_the_band_rotation() {
+    let mut e = two_band_pilot();
+    e.settings.automation.schedule[0].bands =
+        vec!["20m".into(), "17m".into(), "15m".into(), "12m".into()];
+    let spot = |call: &str| crate::automation::FeedEntry {
+        new_slot: true,
+        new_state: false,
+        ..state_spot(call, "20m", 14.074)
+    };
+    let mut s = 30;
+    // 20 m is quiet: the schedule moves to 17 m.
+    while e.settings.band == "20m" && s < 60 {
+        e.automation_backdate_band(10_000);
+        e.ingest_decodes_for_test(&[], s);
+        s += 2;
+    }
+    assert_eq!(e.settings.band, "17m", "premise");
+    // A needed spot on 20 m is chased from 17 m and never heard.
+    e.autopilot_feed(vec![spot("5U4JSF")]);
+    while e.settings.band == "17m" && s < 100 {
+        e.ingest_decodes_for_test(&[], s);
+        s += 2;
+    }
+    assert_eq!(e.settings.band, "20m", "premise: chased");
+    e.autopilot_feed(vec![]);
+    while e.settings.band == "20m" && s < 160 {
+        e.automation_backdate_band(10_000);
+        e.ingest_decodes_for_test(&[], s);
+        s += 2;
+    }
+    assert_eq!(e.settings.band, "15m", "on from 17 m, not from 20 m again");
 }

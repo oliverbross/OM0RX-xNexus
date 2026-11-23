@@ -34155,6 +34155,16 @@ contact yourself."
                     // IR-HARQ to escalate redundancy over.
                     break 'qso_over Some(m.to_text());
                 }
+                // OM0RX-xNexus: the autopilot's call limit. This station has had its calls and not
+                // answered: nothing more goes out, and the autopilot listens for its answer once
+                // before it moves on (`autopilot_step`). Withholds only; never keys.
+                if self
+                    .automation
+                    .calls_spent(station, self.settings.automation.target_max_calls.max(1))
+                {
+                    self.app.set_transmitting(false);
+                    return None;
+                }
                 let next = station.outgoing_rv();
                 if let Some(why) = next
                     .as_ref()
@@ -34191,6 +34201,7 @@ contact yourself."
                                 Some(wsjtx_qso_on(now_unix_secs(), n, qso_period_s));
                         }
                         station.after_tx();
+                        self.automation.last_over_slot = slot;
                         // Stock "Disable Tx after sending 73": the over leaving
                         // NOW is our final 73 (after_tx just cleared pending at
                         // Done), or our RR73, a 73 message too (#416,

@@ -36542,6 +36542,22 @@ td.aw-cc {
   cursor: default;
   opacity: 0.35;
 }
+.automation-continents {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+.automation-continents-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
+}
+.automation-continents-row > label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4em;
+}
 .automation-rules-actions {
   display: flex;
   justify-content: flex-end;

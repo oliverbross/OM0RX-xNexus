@@ -97,6 +97,9 @@ export function AutopilotControl({
             {automation.mode ? ` ${automation.mode}` : ''}
             {automation.target ? ` · ${automation.target}` : ''}
             {tierText ? ` (${tierText})` : ''}
+            {automation.callsMax
+              ? ` · ${t('autopilot.calls', { made: automation.callsMade ?? 0, max: automation.callsMax })}`
+              : ''}
           </span>
           <button
             type="button"

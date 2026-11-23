@@ -12860,6 +12860,7 @@ export const EN = {
   'autopilot.log.empty': 'No decisions yet.',
   'autopilot.callers.label': 'Calling you: {{calls}}',
   'autopilot.callers.title': 'Stations calling you, answered after the current contact (Answer callers)',
+  'autopilot.calls': '{{made}} of {{max}} calls',
   'autopilot.prompt.title': 'Autopilot: are you at the station?',
   'autopilot.prompt.text': 'Transmit turns off in {{time}} unless you confirm.',
   'autopilot.prompt.confirm': "I'm here",
@@ -12890,6 +12891,8 @@ export const EN = {
   'settings.automation.answer.on.hint':
     'Stations calling you while you work a station you called are queued and answered once your 73 or RR73 is sent, instead of transmit going off.',
   'settings.automation.answer.takeover': 'A caller takes over after this many unanswered calls (0 = never)',
+  'settings.automation.answer.takeover.hint':
+    'With the autopilot running, a station calling you is answered at once while the station you call has not answered, unless that one is an ATNO, a DXpedition or on the top 50.',
   'settings.automation.answer.chain': 'Callers answered in a row before transmit goes off',
   'settings.automation.pilot.head': 'Autopilot',
   'settings.automation.pilot.on': 'Allow the autopilot (adds the Autopilot button to the top bar)',
@@ -12902,6 +12905,11 @@ export const EN = {
   'settings.automation.pilot.budget': 'Time budget per station (seconds)',
   'settings.automation.pilot.rareBudget': 'Time budget for an ATNO or DXpedition (seconds)',
   'settings.automation.pilot.maxHour': 'Most contacts started per hour',
+  'settings.automation.pilot.maxCalls':
+    'Calls without an answer before moving on (not for an ATNO, DXpedition or top 50)',
+  'settings.automation.pilot.continents': 'Continents to call',
+  'settings.automation.pilot.continents.hint':
+    'Switch a continent off to leave its stations alone. An ATNO is called wherever it is, and a station calling you is always answered.',
   'settings.automation.pilot.chase': 'Move to another scheduled band for a needed spot (listen there first)',
   'settings.automation.pilot.hunt': 'Hunt needed DXpeditions spotted on any band',
   'settings.automation.pilot.hunt.hint':

@@ -63,7 +63,12 @@ export const DEFAULT_AUTOMATION: AutomationSettings = {
   huntHound: true,
   priority: DEFAULT_PRIORITY,
   preferOutsideEu: true,
+  targetMaxCalls: 4,
+  skipContinents: [],
 }
+
+/** The continents offered, in the order shown (cty.dat codes; automation.rs `CONTINENTS`). */
+export const CONTINENTS = ['NA', 'SA', 'OC', 'AS', 'AF', 'EU'] as const
 
 /**
  * The stored order made whole, as the engine makes it (automation.rs `sanitized_priority`): each
@@ -104,6 +109,7 @@ export function automationOf(s: Pick<Settings, 'automation'> | null | undefined)
     tiers: { ...DEFAULT_AUTOMATION.tiers, ...(a?.tiers ?? {}) },
     schedule: Array.isArray(a?.schedule) ? a!.schedule : DEFAULT_AUTOMATION.schedule,
     wantedStates: Array.isArray(a?.wantedStates) ? a!.wantedStates : [],
+    skipContinents: Array.isArray(a?.skipContinents) ? a!.skipContinents : [],
     priority: ruleOrder(Array.isArray(a?.priority) ? a!.priority : DEFAULT_PRIORITY),
   }
 }
@@ -247,6 +253,43 @@ function WantedStates({
   )
 }
 
+/** A continent's name. Each label is a literal `t('…')`, as the rules' are. */
+function continentLabel(code: (typeof CONTINENTS)[number]): string {
+  switch (code) {
+    case 'NA': return t('hideCountries.continent.na')
+    case 'SA': return t('hideCountries.continent.sa')
+    case 'OC': return t('hideCountries.continent.oc')
+    case 'AS': return t('hideCountries.continent.as')
+    case 'AF': return t('hideCountries.continent.af')
+    case 'EU': return t('hideCountries.continent.eu')
+  }
+}
+
+/** One checkbox per continent: ticked = called. */
+function Continents({ skip, onChange }: { skip: string[]; onChange: (skip: string[]) => void }) {
+  return (
+    <fieldset className="settings-field automation-continents" data-testid="automation-continents">
+      <legend className="settings-label">{t('settings.automation.pilot.continents')}</legend>
+      <div className="automation-continents-row">
+        {CONTINENTS.map((code) => (
+          <label key={code}>
+            <input
+              type="checkbox"
+              checked={!skip.includes(code)}
+              onChange={(e) =>
+                onChange(e.target.checked ? skip.filter((c) => c !== code) : [...skip, code])
+              }
+              data-testid={`automation-continent-${code}`}
+            />
+            {continentLabel(code)}
+          </label>
+        ))}
+      </div>
+      <span className="settings-hint">{t('settings.automation.pilot.continents.hint')}</span>
+    </fieldset>
+  )
+}
+
 /** The ordered rule list: a switch per rule and arrows to move it. */
 function Rules({
   order,
@@ -384,6 +427,10 @@ export function SettingsAutomation({
           onChange={(preferOutsideEu) => set({ preferOutsideEu })}
           testId="automation-outside-eu"
         />
+        <Continents
+          skip={a.skipContinents}
+          onChange={(skipContinents) => set({ skipContinents })}
+        />
       </section>
 
       <section className="automation-card">
@@ -505,6 +552,14 @@ export function SettingsAutomation({
             testId="automation-ordinary-dwell"
           />
           <NumberField
+            label={t('settings.automation.pilot.maxCalls')}
+            value={a.targetMaxCalls}
+            lo={1}
+            hi={30}
+            onChange={(targetMaxCalls) => set({ targetMaxCalls })}
+            testId="automation-max-calls"
+          />
+          <NumberField
             label={t('settings.automation.pilot.budget')}
             value={a.targetBudgetSecs}
             lo={30}
@@ -544,6 +599,7 @@ export function SettingsAutomation({
             lo={0}
             hi={20}
             onChange={(answerTakeoverSlots) => set({ answerTakeoverSlots })}
+            hint={t('settings.automation.answer.takeover.hint')}
           />
           <NumberField
             label={t('settings.automation.answer.chain')}
