@@ -496,6 +496,10 @@ export function SettingsAutomation({
                   <option value="FT8">FT8</option>
                   <option value="FT4">FT4</option>
                   <option value="FT2">FT2</option>
+                  <option value="FT8+FT4">FT8 + FT4</option>
+                  {!['FT8', 'FT4', 'FT2', 'FT8+FT4'].includes(w.mode) && (
+                    <option value={w.mode}>{w.mode}</option>
+                  )}
                 </select>
               </label>
               <button

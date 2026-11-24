@@ -294,6 +294,9 @@ mod crashlog {
     }
 }
 
+#[cfg(all(windows, target_env = "gnu"))]
+mod fortran_locale;
+
 fn main() {
     #[cfg(windows)]
     crashlog::install();

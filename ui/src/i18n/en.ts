@@ -12928,7 +12928,7 @@ export const EN = {
   'settings.automation.tiers.newCall': 'Calls new on this band and mode',
   'settings.automation.schedule.head': 'Band schedule (UTC)',
   'settings.automation.schedule.hint':
-    'Each window runs from its start time until the next one. Bands are patrolled in order. Example bands: 20m 17m 15m.',
+    'Each window runs from its start time until the next one; windows with the same start run together. Bands are patrolled in order, in each mode. Example bands: 20m 17m 15m.',
   'settings.automation.schedule.start': 'Start',
   'settings.automation.schedule.bands': 'Bands',
   'settings.automation.schedule.mode': 'Mode',

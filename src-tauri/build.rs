@@ -106,5 +106,10 @@ fn main() {
         }
     }
 
+    // The Fortran runtime's locale switching, on Windows: src/fortran_locale.rs (OM0RX-xNexus).
+    if windows && std::env::var("CARGO_CFG_TARGET_ENV").as_deref() == Ok("gnu") {
+        println!("cargo:rustc-link-arg-bins=-Wl,--wrap=setlocale");
+    }
+
     tauri_build::build();
 }

@@ -7470,7 +7470,7 @@ export interface PcMicEnded {
 export interface AutopilotWindow {
   start: string
   bands: string[]
-  /** 'FT8' | 'FT4' | 'FT2' */
+  /** 'FT8' | 'FT4' | 'FT2', or several joined by '+' ('FT8+FT4') */
   mode: string
 }
 

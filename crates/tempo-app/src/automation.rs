@@ -34,8 +34,62 @@ pub struct AutopilotWindow {
     pub start: String,
     /// Bands to patrol, in order (`"20m"`, `"17m"`, …).
     pub bands: Vec<String>,
-    /// `"FT8"`, `"FT4"` or `"FT2"`.
+    /// `"FT8"`, `"FT4"` or `"FT2"`, or several of them joined by `+` (`"FT8+FT4"`): every band is
+    /// then worked in each of them.
     pub mode: String,
+}
+
+impl AutopilotWindow {
+    /// The window's modes, in order.
+    pub fn modes(&self) -> impl Iterator<Item = &str> {
+        self.mode
+            .split('+')
+            .map(str::trim)
+            .filter(|m| !m.is_empty())
+    }
+}
+
+/// A band in a mode: one stop of the autopilot's patrol.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Stop {
+    pub band: String,
+    pub mode: String,
+}
+
+impl Stop {
+    pub fn is(&self, band: &str, mode: &str) -> bool {
+        self.band.eq_ignore_ascii_case(band) && self.mode.eq_ignore_ascii_case(mode)
+    }
+}
+
+/// The patrol in force: every band in every mode the running windows give it, band by band in the
+/// schedule's order. Windows with the same start run together (operator, 2026-11-24: FT8 and FT4
+/// "in the same time switching between bands and modes"). Never empty.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Patrol(Vec<Stop>);
+
+impl Patrol {
+    pub fn stops(&self) -> &[Stop] {
+        &self.0
+    }
+    pub fn has(&self, band: &str, mode: &str) -> bool {
+        self.0.iter().any(|s| s.is(band, mode))
+    }
+    pub fn has_mode(&self, mode: &str) -> bool {
+        self.0.iter().any(|s| s.mode.eq_ignore_ascii_case(mode))
+    }
+    pub fn many_modes(&self) -> bool {
+        self.0.iter().any(|s| s.mode != self.0[0].mode)
+    }
+    /// The stops in order from the one after `band` in `mode`: all of them, that one last, from the
+    /// first when it is not on the patrol.
+    pub fn after(&self, band: &str, mode: &str) -> Vec<&Stop> {
+        let at = self.0.iter().position(|s| s.is(band, mode));
+        let from = at.map_or(0, |i| i + 1);
+        (0..self.0.len())
+            .map(|i| &self.0[(from + i) % self.0.len()])
+            .collect()
+    }
 }
 
 impl Default for AutopilotWindow {
@@ -317,10 +371,15 @@ impl AutomationSettings {
         self.rare_budget_secs = self.rare_budget_secs.clamp(600, 10800);
         self.max_qso_per_hour = self.max_qso_per_hour.clamp(1, 300);
         self.schedule
-            .retain(|w| parse_hhmm(&w.start).is_some() && is_auto_mode(&w.mode));
+            .retain(|w| parse_hhmm(&w.start).is_some() && w.modes().any(is_auto_mode));
         for w in &mut self.schedule {
             w.bands.retain(|b| !b.trim().is_empty());
-            w.mode = w.mode.trim().to_uppercase();
+            let modes: Vec<String> = w
+                .modes()
+                .filter(|m| is_auto_mode(m))
+                .map(str::to_uppercase)
+                .collect();
+            w.mode = modes.join("+");
         }
         self.schedule.retain(|w| !w.bands.is_empty());
         self.wanted_states = self
@@ -380,6 +439,38 @@ pub fn window_at(schedule: &[AutopilotWindow], minute: u32) -> Option<&Autopilot
         .map(|(_, w)| *w)
 }
 
+/// The patrol at `minute`: the windows that share the start [`window_at`] chooses.
+pub fn patrol_at(schedule: &[AutopilotWindow], minute: u32) -> Option<Patrol> {
+    let start = parse_hhmm(&window_at(schedule, minute)?.start);
+    let running: Vec<&AutopilotWindow> = schedule
+        .iter()
+        .filter(|w| parse_hhmm(&w.start) == start)
+        .collect();
+    let mut bands: Vec<&str> = Vec::new();
+    for b in running.iter().flat_map(|w| &w.bands) {
+        if !bands.iter().any(|have| have.eq_ignore_ascii_case(b)) {
+            bands.push(b);
+        }
+    }
+    let mut stops: Vec<Stop> = Vec::new();
+    for band in bands {
+        for w in &running {
+            if !w.bands.iter().any(|b| b.eq_ignore_ascii_case(band)) {
+                continue;
+            }
+            for mode in w.modes().filter(|m| is_auto_mode(m)) {
+                if !stops.iter().any(|s| s.is(band, mode)) {
+                    stops.push(Stop {
+                        band: band.to_string(),
+                        mode: mode.to_uppercase(),
+                    });
+                }
+            }
+        }
+    }
+    (!stops.is_empty()).then_some(Patrol(stops))
+}
+
 /// The start (`HH:MM`) of the next window after `minute`, wrapping to tomorrow's first; `None` with
 /// fewer than two windows (nothing ever changes).
 pub fn next_window_start(schedule: &[AutopilotWindow], minute: u32) -> Option<String> {
@@ -398,17 +489,6 @@ pub fn next_window_start(schedule: &[AutopilotWindow], minute: u32) -> Option<St
         .or(starts.first())
         .copied()?;
     Some(format!("{:02}:{:02}", next / 60, next % 60))
-}
-
-/// The band to patrol after `current` in a window: the next in its list, wrapping, or its first
-/// when `current` is not in it.
-pub fn next_band<'a>(w: &'a AutopilotWindow, current: Option<&str>) -> Option<&'a str> {
-    let i = current.and_then(|c| w.bands.iter().position(|b| b.eq_ignore_ascii_case(c)));
-    match i {
-        Some(i) => w.bands.get((i + 1) % w.bands.len()),
-        None => w.bands.first(),
-    }
-    .map(String::as_str)
 }
 
 /// The target rules ("tiers"). Their strength is the operator's order
@@ -620,6 +700,11 @@ pub fn tier_allowed(t: Tier, tiers: &AutopilotTiers) -> bool {
 /// grid, an ordinary new call and a caller to us.
 pub fn is_needed(t: Tier) -> bool {
     !matches!(t, Tier::Grid | Tier::NewCall | Tier::CallingMe)
+}
+
+/// An ordinary call, which holds neither the band nor a contact: a new call, or only a new grid.
+pub fn is_ordinary(t: Tier) -> bool {
+    matches!(t, Tier::Grid | Tier::NewCall)
 }
 
 /// A rare target gets the long time budget, and is called from 1200 Hz above.
@@ -1186,12 +1271,64 @@ mod tests {
     }
 
     #[test]
-    fn bands_rotate_in_order_and_wrap() {
-        let w = &AutomationSettings::default().schedule[0];
-        assert_eq!(next_band(w, Some("20m")), Some("17m"));
-        assert_eq!(next_band(w, Some("10m")), Some("20m"));
-        assert_eq!(next_band(w, Some("40m")), Some("20m"));
-        assert_eq!(next_band(w, None), Some("20m"));
+    fn the_patrol_goes_round_the_windows_bands() {
+        let s = AutomationSettings::default().schedule;
+        let p = patrol_at(&s, parse_hhmm("12:00").unwrap()).unwrap();
+        let after = |band: &str| p.after(band, "FT8")[0].band.clone();
+        assert_eq!(after("20m"), "17m");
+        assert_eq!(after("10m"), "20m");
+        assert_eq!(after("40m"), "20m", "not on the patrol: from its first");
+        assert!(!p.many_modes());
+    }
+
+    /// Operator, 2026-11-24: "it can work both FT4 and FT8 in the same time switching between bands
+    /// and modes". A window with both modes, or two windows with the same start, give every band in
+    /// each mode; a window that starts later takes over as before.
+    #[test]
+    fn a_patrol_of_two_modes_visits_every_band_in_both() {
+        let w = |start: &str, bands: &[&str], mode: &str| AutopilotWindow {
+            start: start.into(),
+            bands: bands.iter().map(|b| b.to_string()).collect(),
+            mode: mode.into(),
+        };
+        let stops = |s: &[AutopilotWindow], at: &str| -> Vec<String> {
+            patrol_at(s, parse_hhmm(at).unwrap())
+                .unwrap()
+                .stops()
+                .iter()
+                .map(|s| format!("{} {}", s.band, s.mode))
+                .collect()
+        };
+        let both = ["20m FT8", "20m FT4", "17m FT8", "17m FT4"];
+        let one = [w("07:00", &["20m", "17m"], "ft8 + ft4")];
+        assert_eq!(stops(&one, "12:00"), both);
+        let two = [
+            w("07:00", &["20m", "17m"], "FT8"),
+            w("07:00", &["20m", "17m"], "FT4"),
+        ];
+        assert_eq!(stops(&two, "12:00"), both);
+        // Different bands in each.
+        let mixed = [
+            w("07:00", &["20m", "15m"], "FT8"),
+            w("07:00", &["20m"], "FT4"),
+        ];
+        assert_eq!(stops(&mixed, "12:00"), ["20m FT8", "20m FT4", "15m FT8"]);
+        // A later start still takes over alone.
+        let later = [w("07:00", &["20m"], "FT8"), w("09:00", &["20m"], "FT4")];
+        assert_eq!(stops(&later, "08:00"), ["20m FT8"]);
+        assert_eq!(stops(&later, "12:00"), ["20m FT4"]);
+        let p = patrol_at(&two, 720).unwrap();
+        assert!(p.many_modes() && p.has("17M", "ft4") && p.has_mode("FT4") && !p.has("10m", "FT8"));
+        let s = AutomationSettings {
+            schedule: vec![
+                w("07:00", &["20m"], " ft8+CW+ft4 "),
+                w("08:00", &["20m"], "CW"),
+            ],
+            ..AutomationSettings::default()
+        }
+        .sanitized();
+        assert_eq!(s.schedule.len(), 1);
+        assert_eq!(s.schedule[0].mode, "FT8+FT4");
     }
 
     #[test]

@@ -5,6 +5,7 @@
 //! and stops after its chain limit; the autopilot never arms TX, stops on every stop, and turns TX
 //! off when presence is not confirmed.
 
+use super::autopilot::mode_name_for_test;
 use super::tests::dec_snr;
 use super::*;
 
@@ -1694,4 +1695,249 @@ fn a_grid_that_answered_and_another_grid_change_nothing() {
     let (mut e, s) = calling_a_grid_while_chasing();
     e.ingest_decodes_for_test(&[dec_snr("CQ K1XYZ FN42", 5)], s);
     assert_eq!(e.automation_dx().as_deref(), Some("N0ABC"), "another grid");
+}
+
+/// Live run 2026-11-24 (xlog.28): on 17 m FT4 for XU7O, up to five stations a period were heard
+/// calling it and working it, and the hunt ended as "not heard" after five minutes. The operator's
+/// rule is ten.
+#[test]
+fn a_hunt_stays_ten_minutes_while_stations_are_heard_calling_the_dxpedition() {
+    let hunt = || {
+        let mut e = two_band_pilot();
+        e.autopilot_feed(vec![dxped_spot("3Y0K", "40m", 7.056)]);
+        e.ingest_decodes_for_test(&[], 30);
+        assert_eq!(e.settings.band, "40m", "premise: hunting");
+        e
+    };
+    let calling = [dec_snr("3Y0K SP6CIK JO80", -7)];
+    let mut e = hunt();
+    e.automation_backdate_band(310);
+    e.ingest_decodes_for_test(&calling, 32);
+    assert_eq!(
+        e.settings.band, "40m",
+        "on the air: stays past five minutes"
+    );
+    e.autopilot_feed(vec![]);
+    e.ingest_decodes_for_test(&[], 34);
+    assert_eq!(e.settings.band, "40m", "and past its spot's age");
+    e.automation_backdate_band(300);
+    e.ingest_decodes_for_test(&calling, 36);
+    assert_eq!(e.settings.band, "20m", "over after ten");
+
+    // CONTROL: nobody heard calling it, five minutes.
+    let mut e = hunt();
+    e.automation_backdate_band(310);
+    e.ingest_decodes_for_test(&[dec_snr("W1AW SP6CIK JO80", -7)], 32);
+    assert_eq!(e.settings.band, "20m", "not on the air: over after five");
+}
+
+/// The operator's rule: a DXpedition keeps being called. After any number of hunts it is hunted
+/// again an hour later.
+#[test]
+fn a_dxpedition_is_hunted_again_after_any_number_of_hunts() {
+    let mut e = two_band_pilot();
+    for _ in 0..5 {
+        e.automation_fail_for_test("3Y0K", 3_700);
+    }
+    e.autopilot_feed(vec![dxped_spot("3Y0K", "40m", 7.056)]);
+    e.ingest_decodes_for_test(&[], 30);
+    assert_eq!(
+        e.settings.band, "20m",
+        "premise: five failures leave a station for the session"
+    );
+
+    let mut e = two_band_pilot();
+    for s in [30, 34, 38, 42, 46] {
+        e.autopilot_feed(vec![dxped_spot("3Y0K", "40m", 7.056)]);
+        e.ingest_decodes_for_test(&[], s);
+        assert_eq!(e.settings.band, "40m", "hunted at slot {s}");
+        e.autopilot_feed(vec![]);
+        e.ingest_decodes_for_test(&[], s + 2);
+        assert_eq!(e.settings.band, "20m", "premise: the hunt is over");
+        e.automation_backdate_attempts(3_700);
+        e.automation_backdate_chased(3_700);
+    }
+}
+
+/// A hunt whose DXpedition answered, then went quiet until the sequencer's call cap stalled the
+/// contact; the next slot.
+fn a_stalled_hunt() -> (Engine, u64) {
+    let mut e = two_band_pilot();
+    e.autopilot_feed(vec![dxped_spot("3Y0K", "40m", 7.056)]);
+    e.ingest_decodes_for_test(&[], 30);
+    e.ingest_decodes_for_test(&[dec_at("CQ 3Y0K JD15", -14, 406.0)], 32);
+    assert_eq!(e.automation_dx().as_deref(), Some("3Y0K"), "premise");
+    let mut s = over(&mut e, 33) + 1;
+    e.ingest_decodes_for_test(&[dec_at("OM0RX 3Y0K -10", -12, 406.0)], s);
+    s += 1;
+    let stalled = |e: &Engine| matches!(&e.mode, Mode::Qso { station, .. } if station.stalled());
+    for _ in 0..60 {
+        if stalled(&e) {
+            break;
+        }
+        let _ = e.poll_tx(s);
+        s += 1;
+        let _ = e.poll_tx(s);
+        e.ingest_decodes_for_test(&[], s);
+        s += 1;
+    }
+    assert!(stalled(&e), "premise: the call cap stalled it");
+    assert!(e.tx_enabled, "premise");
+    (e, s)
+}
+
+/// Live run 2026-11-24 (xlog.28): XU7O's contact stalled by its call cap and stayed armed; six
+/// minutes later, in the middle of the hunt, the TX watchdog disarmed transmit and the autopilot went
+/// off. A stalled contact is ended first; the watchdog itself is unchanged.
+#[test]
+fn a_stalled_contact_does_not_let_the_watchdog_stop_the_autopilot() {
+    let (mut e, mut s) = a_stalled_hunt();
+    e.ingest_decodes_for_test(&[], s);
+    e.tx_watchdog_start = Some(now_unix_secs() - 400);
+    e.ingest_decodes_for_test(&[], s + 1);
+    for _ in 0..4 {
+        let _ = e.poll_tx(s);
+        s += 1;
+    }
+    assert!(
+        e.tx_enabled && e.automation_dto().autopilot_on,
+        "kept for a late answer"
+    );
+    assert_eq!(e.automation_dx().as_deref(), Some("3Y0K"));
+    e.automation_backdate_stall(130);
+    e.ingest_decodes_for_test(&[], s);
+    assert_eq!(e.automation_dx(), None, "then ended");
+    e.tx_watchdog_start = Some(now_unix_secs() - 400);
+    for _ in 0..4 {
+        let _ = e.poll_tx(s);
+        s += 1;
+    }
+    e.ingest_decodes_for_test(&[], s);
+    assert!(e.tx_enabled && e.automation_dto().autopilot_on);
+    // Still hunting: called again when it is heard again.
+    e.ingest_decodes_for_test(&[dec_at("CQ 3Y0K JD15", -14, 406.0)], s + 2);
+    assert_eq!(e.automation_dx().as_deref(), Some("3Y0K"));
+}
+
+/// The watchdog still stops a stalled contact left armed when the autopilot's step stops running.
+#[test]
+fn the_watchdog_still_stops_a_stalled_contact_without_the_autopilots_step() {
+    let (mut e, mut s) = a_stalled_hunt();
+    e.tx_watchdog_start = Some(now_unix_secs() - 400);
+    for _ in 0..4 {
+        let _ = e.poll_tx(s);
+        s += 1;
+    }
+    assert!(!e.tx_enabled);
+}
+
+/// Same run: the transmit offset, held at 1375 Hz, stayed at the DXpedition's 1606 Hz for the calls
+/// that followed.
+#[test]
+fn the_held_transmit_offset_returns_after_a_dxpedition() {
+    let mut e = two_band_pilot();
+    e.hold_tx_freq = true;
+    e.set_tx_offset(1375.0);
+    e.autopilot_feed(vec![dxped_spot("3Y0K", "40m", 7.056)]);
+    e.ingest_decodes_for_test(&[], 30);
+    e.ingest_decodes_for_test(&[dec_at("CQ 3Y0K JD15", -14, 406.0)], 32);
+    assert!((e.tx_offset_hz - 1606.0).abs() < 0.5, "premise");
+    over(&mut e, 33);
+    e.automation_abandon_for_test();
+    e.autopilot_feed(vec![]);
+    e.automation_backdate_band(1_000);
+    e.ingest_decodes_for_test(&[], 36);
+    assert_eq!(e.settings.band, "20m", "premise: the hunt is over");
+    for s in [38, 40, 42] {
+        e.ingest_decodes_for_test(&[dec_snr("CQ N0ABC EM48", -3)], s);
+    }
+    assert_eq!(e.automation_dx().as_deref(), Some("N0ABC"), "premise");
+    assert!((e.tx_offset_hz - 1375.0).abs() < 0.5, "{}", e.tx_offset_hz);
+}
+
+/// Live run 2026-11-24 (xlog.28): new grids, one after another, kept the autopilot on 15 m for half
+/// an hour while the other bands waited. Ten minutes of nothing better than grids gives way too.
+#[test]
+fn a_band_with_only_new_grids_gives_way_after_the_ordinary_dwell() {
+    let grid_band = || {
+        let mut e = two_band_pilot();
+        e.settings.automation.tiers.grid = true;
+        e.ingest_decodes_for_test(&[dec_snr("CQ N0ABC EM48", -3)], 30);
+        e
+    };
+    let mut e = grid_band();
+    e.automation_backdate_band(590);
+    e.ingest_decodes_for_test(&[dec_snr("CQ N0ABC EM48", -3)], 32);
+    assert_eq!(
+        e.automation_dx().as_deref(),
+        Some("N0ABC"),
+        "before ten minutes"
+    );
+    let s = over(&mut e, 33) + 1;
+    e.ingest_decodes_for_test(&[], s);
+    e.automation_abandon_for_test();
+    e.automation_backdate_band(20);
+    e.ingest_decodes_for_test(&[dec_snr("CQ K1XYZ FN42", -3)], s + 2);
+    assert_eq!(e.settings.band, "17m", "{:?}", e.automation_dto().log);
+}
+
+/// A pilot patrolling 20 m and 17 m in FT8 and FT4.
+fn two_mode_pilot() -> Engine {
+    let mut e = two_band_pilot();
+    e.settings.automation.schedule[0].mode = "FT8+FT4".into();
+    e
+}
+
+/// Operator, 2026-11-24: "it can work both FT4 and FT8 in the same time switching between bands and
+/// modes". Every band has its turn in each mode.
+#[test]
+fn a_patrol_of_two_modes_goes_round_every_band_in_both() {
+    let mut e = two_mode_pilot();
+    let at = |e: &Engine| format!("{} {}", e.settings.band, mode_name_for_test(e));
+    let mut seen = vec![at(&e)];
+    let mut s = 30;
+    while seen.len() < 5 && s < 400 {
+        e.automation_backdate_band(10_000);
+        e.ingest_decodes_for_test(&[], s);
+        s += 2;
+        if *seen.last().unwrap() != at(&e) {
+            seen.push(at(&e));
+        }
+    }
+    assert_eq!(
+        seen,
+        ["20m FT8", "20m FT4", "17m FT8", "17m FT4", "20m FT8"]
+    );
+    assert!(e.tx_enabled && e.automation_dto().autopilot_on);
+}
+
+/// A needed spot in the other mode is chased, on another band and on the same one; in a mode the
+/// patrol does not run, it is not.
+#[test]
+fn a_spot_in_either_mode_of_the_patrol_is_chased() {
+    let spot = |band: &str, mode: &str| crate::automation::FeedEntry {
+        call: "5U4JSF".into(),
+        band: band.into(),
+        mode: Some(mode.into()),
+        new_slot: true,
+        ..Default::default()
+    };
+    for (band, mode) in [("17m", "FT4"), ("20m", "FT4"), ("17m", "FT8")] {
+        let mut e = two_mode_pilot();
+        e.autopilot_feed(vec![spot(band, mode)]);
+        e.ingest_decodes_for_test(&[], 30);
+        e.ingest_decodes_for_test(&[], 32);
+        assert_eq!(
+            (e.settings.band.as_str(), mode_name_for_test(&e)),
+            (band, mode),
+            "{:?}",
+            e.automation_dto().log
+        );
+        assert!(e.tx_enabled);
+    }
+    let mut e = two_band_pilot();
+    e.autopilot_feed(vec![spot("17m", "FT4")]);
+    e.ingest_decodes_for_test(&[], 30);
+    e.ingest_decodes_for_test(&[], 32);
+    assert_eq!(e.settings.band, "20m", "FT4 is not on this patrol");
 }

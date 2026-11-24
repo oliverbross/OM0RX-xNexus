@@ -37,9 +37,9 @@ use std::collections::{HashMap, HashSet, VecDeque};
 
 use super::{now_unix_secs, Engine, Mode};
 use crate::automation::{
-    self, answerable_cq, hunt_dial, in_passband, is_hunt_spot, is_rare, next_band,
-    next_window_start, spot_call_ok, spot_tier, window_at, Attempts, AutomationDto, Candidate,
-    FeedEntry, HourlyCount, PresenceClock, Tier,
+    self, answerable_cq, hunt_dial, in_passband, is_hunt_spot, is_rare, next_window_start,
+    patrol_at, spot_call_ok, spot_tier, Attempts, AutomationDto, Candidate, FeedEntry, HourlyCount,
+    PresenceClock, Stop, Tier,
 };
 use crate::dto::Tier as LinkTier;
 use crate::settings::SpecialOp;
@@ -50,6 +50,18 @@ use tempo_core::qso::State as QsoState;
 const CALLER_FRESH_SLOTS: u64 = 3;
 /// How long a spot chase may go without decoding its station before it is given up, seconds.
 const CHASE_UNHEARD_SECS: u64 = 300;
+/// How long a DXpedition hunt stays when the DXpedition itself is not decoded but stations calling
+/// it are, seconds (operator: a DXpedition is followed for at least ten minutes).
+const HUNT_ON_AIR_SECS: u64 = 600;
+/// How lately a station must have been heard calling it for the DXpedition to count as on the air,
+/// seconds.
+const HUNT_CALLED_SECS: u64 = 120;
+/// Failures counted against a hunted DXpedition at most: it is tried again each hour, never left
+/// for the session.
+const HUNT_MAX_FAILURES: u32 = 3;
+/// How long a contact stalled by the sequencer's call cap is kept under the autopilot, for a late
+/// answer, before it is ended, seconds.
+const STALL_KEEP_SECS: u64 = 120;
 /// How long a chased call is not chased again, seconds.
 const CHASE_COOLDOWN_SECS: u64 = 900;
 /// After a chase that never heard its station, how long a spot of a lower rule (a US state, a park,
@@ -145,6 +157,8 @@ struct Hunt {
     hound_from: Option<SpecialOp>,
     /// The DXpedition has been decoded here.
     heard: bool,
+    /// When a station was last decoded here calling the DXpedition, Unix seconds.
+    called_unix: Option<u64>,
 }
 
 /// The autopilot's running state.
@@ -169,11 +183,15 @@ struct Pilot {
     chased: HashMap<String, u64>,
     /// When the last chase that heard nothing was given up: the next one waits [`chase_rest_secs`].
     chase_failed_unix: u64,
+    /// When the contact on the sequencer was first seen stalled by its call cap, Unix seconds.
+    stalled_unix: Option<u64>,
+    /// The transmit offset before a DXpedition's call moved it, and the offset it was moved to, Hz.
+    tx_before: Option<(f32, f32)>,
     /// The scheduled band a chase left, so the rotation goes on from there and not from wherever
     /// the spot was.
-    rotation: Option<String>,
-    /// When each scheduled band last had its turn (a stay of at least the minimum dwell), by the
-    /// order the turns ended in. The band that has waited longest comes next.
+    rotation: Option<Stop>,
+    /// When each scheduled band in a mode last had its turn (a stay of at least the minimum dwell),
+    /// by the order the turns ended in. The one that has waited longest comes next.
     turns: HashMap<String, u64>,
     /// The number of the last turn in [`Self::turns`].
     last_turn: u64,
@@ -349,6 +367,26 @@ fn mode_name(t: LinkTier) -> Option<&'static str> {
     }
 }
 
+/// Test hook: the mode running.
+#[cfg(test)]
+pub(super) fn mode_name_for_test(e: &Engine) -> &'static str {
+    mode_name(e.app.tier()).unwrap_or("")
+}
+
+/// The key of a band's turns in a mode.
+fn turn_key(band: &str, mode: &str) -> String {
+    format!("{}|{}", band.to_lowercase(), mode.to_lowercase())
+}
+
+/// A stop in the log's words: the band, and the mode where the patrol has more than one.
+fn stop_name(stop: &Stop, patrol: &automation::Patrol) -> String {
+    if patrol.many_modes() {
+        format!("{} {}", stop.band, stop.mode)
+    } else {
+        stop.band.clone()
+    }
+}
+
 impl Engine {
     // ---------------------------------------------------------------- operator verbs
 
@@ -475,6 +513,28 @@ impl Engine {
     #[cfg(test)]
     pub(super) fn automation_go_for_test(&mut self, band: &str) {
         assert!(self.automation_switch(None, band, None));
+    }
+
+    /// Test hook: the contact stalled `secs` earlier than it did.
+    #[cfg(test)]
+    pub(super) fn automation_backdate_stall(&mut self, secs: u64) {
+        let at = &mut self.automation.pilot.stalled_unix;
+        *at = at.map(|t| t.saturating_sub(secs));
+    }
+
+    /// Test hook: the running call is dropped.
+    #[cfg(test)]
+    pub(super) fn automation_abandon_for_test(&mut self) {
+        self.automation_abandon_contact();
+        self.automation.pilot.target = None;
+    }
+
+    /// Test hook: move every chase `secs` into the past.
+    #[cfg(test)]
+    pub(super) fn automation_backdate_chased(&mut self, secs: u64) {
+        for at in self.automation.pilot.chased.values_mut() {
+            *at = at.saturating_sub(secs);
+        }
     }
 
     /// Test hook: move every failed attempt `secs` into the past.
@@ -949,6 +1009,15 @@ impl Engine {
         let call = c.call.clone();
         let rare = matches!(tier, Tier::Dxpedition | Tier::Atno) && c.freq_hz > 0.0;
         let mut c = c.clone();
+        // The transmit offset goes back where it was before a DXpedition's call moved it, unless the
+        // operator has moved it since.
+        if !rare {
+            if let Some((before, moved_to)) = self.automation.pilot.tx_before.take() {
+                if (self.tx_offset_hz - moved_to).abs() < 0.5 {
+                    self.set_tx_offset(before);
+                }
+            }
+        }
         // A DXpedition sits low, under 500 Hz, and is called from above it (operator,
         // 2026-11-22). One heard higher is brought there first: the dial moves up so its signal
         // lands at DXPED_PLACE_HZ, through the autopilot's own switch, so it happens only between
@@ -967,6 +1036,7 @@ impl Engine {
                 c.freq_hz -= shift_hz;
             }
         }
+        let held = self.tx_offset_hz;
         let res = self.call_station_ctx_arming(
             &call,
             None,
@@ -981,7 +1051,9 @@ impl Engine {
                 // frequency: at least 1200 Hz above it (operator, 2026-11-22).
                 if rare {
                     let tx = automation::dxped_split_hz(c.freq_hz, self.tx_offset_hz);
+                    let before = self.automation.pilot.tx_before.map_or(held, |(b, _)| b);
                     self.set_tx_offset(tx);
+                    self.automation.pilot.tx_before = Some((before, self.tx_offset_hz));
                     self.automation_note(&format!(
                         "{call} heard at {:.0} Hz: calling at {:.0} Hz",
                         c.freq_hz, self.tx_offset_hz
@@ -1101,6 +1173,8 @@ impl Engine {
         if busy && !self.cq_running {
             self.automation_adopt_contact(now, slot, cur_mode);
         }
+
+        self.automation_end_stalled(now);
 
         // The contact the autopilot keeps: finished, still running, or out of calls or time.
         if let Some(t) = self.automation.pilot.target.clone() {
@@ -1258,37 +1332,36 @@ impl Engine {
         }
 
         // The schedule: which mode and bands now.
-        let Some(window) = window_at(&s.schedule, utc_minute(now)).cloned() else {
+        let Some(patrol) = patrol_at(&s.schedule, utc_minute(now)) else {
             self.automation.pilot.status = "noSchedule";
             return;
         };
         let cur_band = self.settings.band.clone();
         let chasing = self.automation.pilot.chase.clone();
-        if !window.mode.eq_ignore_ascii_case(cur_mode) {
-            if let Some(t) = link_tier_of(&window.mode) {
-                let band = if window
-                    .bands
-                    .iter()
-                    .any(|b| b.eq_ignore_ascii_case(&cur_band))
-                {
-                    cur_band.clone()
-                } else {
-                    window.bands[0].clone()
-                };
-                if self.automation_switch(Some(t), &band, None) {
-                    self.automation_note(&format!("schedule: {} on {band}", window.mode));
+        if !patrol.has_mode(cur_mode) {
+            // Its own band in the first of the patrol's modes, else the patrol's first stop.
+            let stop = patrol
+                .stops()
+                .iter()
+                .find(|stop| stop.band.eq_ignore_ascii_case(&cur_band))
+                .unwrap_or(&patrol.stops()[0])
+                .clone();
+            if let Some(t) = link_tier_of(&stop.mode) {
+                if self.automation_switch(Some(t), &stop.band, None) {
+                    self.automation_note(&format!("schedule: {} on {}", stop.mode, stop.band));
                     return;
                 }
             }
         }
-        let in_window = window
-            .bands
-            .iter()
-            .any(|b| b.eq_ignore_ascii_case(&cur_band));
-        if !in_window && chasing.is_none() {
-            let band = window.bands[0].clone();
-            if self.automation_switch(None, &band, None) {
-                self.automation_note(&format!("schedule: moving to {band}"));
+        if !patrol.has(&cur_band, cur_mode) && chasing.is_none() {
+            let stop = patrol
+                .stops()
+                .iter()
+                .find(|stop| stop.mode.eq_ignore_ascii_case(cur_mode))
+                .unwrap_or(&patrol.stops()[0])
+                .clone();
+            if self.automation_go(&stop, cur_mode) {
+                self.automation_note(&format!("schedule: moving to {}", stop.band));
                 return;
             }
         }
@@ -1332,11 +1405,11 @@ impl Engine {
 
         // A better spot on another scheduled band beats what is heard here.
         let spot = if s.chase_spots {
-            self.automation_best_spot(&window, &cur_band, cur_mode, now)
+            self.automation_best_spot(&patrol, &cur_band, cur_mode, now)
         } else {
             None
         };
-        if let Some((spot_call, spot_band, spot_t)) = spot.clone() {
+        if let Some((spot_call, spot_stop, spot_t)) = spot.clone() {
             let beats = picked
                 .as_ref()
                 .is_none_or(|(_, t)| s.rank(spot_t) < s.rank(*t));
@@ -1349,40 +1422,47 @@ impl Engine {
             if beats && rested && chasing.is_none() && self.automation_band_hold().is_none() {
                 self.automation.pilot.chased.insert(spot_call.clone(), now);
                 if self.automation.pilot.rotation.is_none() {
-                    self.automation.pilot.rotation = Some(cur_band.clone());
+                    self.automation.pilot.rotation = Some(Stop {
+                        band: cur_band.clone(),
+                        mode: cur_mode.to_string(),
+                    });
                 }
                 self.automation.pilot.chase = Some(Chase {
                     call: spot_call.clone(),
-                    band: spot_band.clone(),
+                    band: spot_stop.band.clone(),
                     since_unix: now,
                     hunt: None,
                     done: false,
                 });
                 self.automation_note(&format!(
-                    "spot: {spot_call} ({spot_t:?}) on {spot_band}: listening there first"
+                    "spot: {spot_call} ({spot_t:?}) on {}: listening there first",
+                    stop_name(&spot_stop, &patrol)
                 ));
-                self.automation_switch(None, &spot_band, None);
+                self.automation_go(&spot_stop, cur_mode);
                 return;
             }
         }
 
-        // A band offering only ordinary new calls for its whole ordinary dwell gives way to the
+        // A band offering only ordinary calls (new calls, new grids) for its whole ordinary dwell gives way to the
         // next one, to look for needed stations there (between contacts only: the switch holds).
         let p = &self.automation.pilot;
         let ordinary_for = now.saturating_sub(p.last_needed_unix.max(p.band_since_unix));
-        let only_ordinary = picked.as_ref().is_none_or(|(_, t)| *t == Tier::NewCall);
+        let only_ordinary = picked
+            .as_ref()
+            .is_none_or(|(_, t)| automation::is_ordinary(*t));
         if only_ordinary
             && chasing.is_none()
             && now.saturating_sub(p.band_since_unix) >= u64::from(s.min_dwell_secs)
             && ordinary_for >= u64::from(s.ordinary_dwell_secs)
         {
-            if let Some(next) = self.automation_next_band(&window, &cur_band) {
-                if !next.eq_ignore_ascii_case(&cur_band) {
-                    if self.automation_switch(None, &next, None) {
+            if let Some(next) = self.automation_next_stop(&patrol, &cur_band, cur_mode) {
+                if !next.is(&cur_band, cur_mode) {
+                    if self.automation_go(&next, cur_mode) {
                         self.automation.pilot.rotation = None;
                         self.automation_note(&format!(
-                            "only ordinary calls on {cur_band} for {} min: moving to {next}",
-                            ordinary_for / 60
+                            "only ordinary calls on {cur_band} for {} min: moving to {}",
+                            ordinary_for / 60,
+                            stop_name(&next, &patrol)
                         ));
                         return;
                     }
@@ -1398,7 +1478,7 @@ impl Engine {
 
         if let Some((c, t)) = picked {
             self.automation.pilot.last_worthwhile_unix = now;
-            if t != Tier::NewCall {
+            if !automation::is_ordinary(t) {
                 self.automation.pilot.last_needed_unix = now;
             }
             self.automation_note(&format!(
@@ -1462,13 +1542,12 @@ impl Engine {
             && on_band >= u64::from(s.min_dwell_secs)
             && quiet >= u64::from(s.quiet_secs)
         {
-            if let Some(next) = self.automation_next_band(&window, &cur_band) {
-                if !next.eq_ignore_ascii_case(&cur_band)
-                    && self.automation_switch(None, &next, None)
-                {
+            if let Some(next) = self.automation_next_stop(&patrol, &cur_band, cur_mode) {
+                if !next.is(&cur_band, cur_mode) && self.automation_go(&next, cur_mode) {
                     self.automation.pilot.rotation = None;
                     self.automation_note(&format!(
-                        "nothing to call on {cur_band}: moving to {next}"
+                        "nothing to call on {cur_band}: moving to {}",
+                        stop_name(&next, &patrol)
                     ));
                     return;
                 }
@@ -1550,7 +1629,7 @@ impl Engine {
         s: &automation::AutomationSettings,
         now: u64,
     ) -> Option<(QueuedCaller, Tier)> {
-        if !matches!(t.tier, Tier::Grid | Tier::NewCall) {
+        if !automation::is_ordinary(t.tier) {
             return None;
         }
         let band = &self.settings.band;
@@ -1572,6 +1651,32 @@ impl Engine {
         })
     }
 
+    /// A contact the sequencer's call cap has stalled is sending nothing but still armed, and the TX
+    /// watchdog, rightly, disarms a transmitter left like that (live run 2026-11-24: XU7O's stalled
+    /// over switched the autopilot off in the middle of its hunt). Under the autopilot it is kept
+    /// [`STALL_KEEP_SECS`] for a late answer, and then ended, so nothing is left armed for the
+    /// watchdog to find. Bounded by the wall clock, so the watchdog is held off no longer than that.
+    fn automation_end_stalled(&mut self, now: u64) {
+        let stalled = !self.cq_running
+            && matches!(&self.mode, Mode::Qso { station, .. } if station.dxcall.is_some() && station.stalled());
+        if !stalled {
+            self.automation.pilot.stalled_unix = None;
+            return;
+        }
+        let since = *self.automation.pilot.stalled_unix.get_or_insert(now);
+        if now.saturating_sub(since) < STALL_KEEP_SECS {
+            self.automation_watchdog_restart();
+            return;
+        }
+        self.automation.pilot.stalled_unix = None;
+        let call = match &self.mode {
+            Mode::Qso { station, .. } => station.dxcall.clone().unwrap_or_default(),
+            _ => String::new(),
+        };
+        self.automation_note(&format!("{call} went quiet: call ended"));
+        self.automation_abandon_contact();
+    }
+
     /// Is a contact running (a station being called or worked, not yet finished)?
     fn automation_contact_in_progress(&self) -> bool {
         match &self.mode {
@@ -1590,40 +1695,39 @@ impl Engine {
         }
     }
 
-    /// The scheduled band that has waited longest for its turn, never the one we are on. Bands that
-    /// have waited alike (none of them visited yet) come in the schedule's order, from the band a
-    /// chase left, when one took us away, else from the current one.
-    fn automation_next_band(
+    /// The stop of the patrol (a band in a mode) that has waited longest for its turn, never the one
+    /// we are on. Stops that have waited alike (none of them visited yet) come in the schedule's
+    /// order, from the one a chase left, when one took us away, else from the current one.
+    fn automation_next_stop(
         &self,
-        window: &automation::AutopilotWindow,
+        patrol: &automation::Patrol,
         cur_band: &str,
-    ) -> Option<String> {
-        let from = self
-            .automation
-            .pilot
+        cur_mode: &str,
+    ) -> Option<Stop> {
+        let p = &self.automation.pilot;
+        let (band, mode) = p
             .rotation
-            .as_deref()
-            .unwrap_or(cur_band);
-        let turn = |band: &str| {
-            self.automation
-                .pilot
-                .turns
-                .get(&band.to_lowercase())
-                .copied()
-                .unwrap_or(0)
-        };
-        let mut order = Vec::with_capacity(window.bands.len());
-        let mut band = next_band(window, Some(from))?;
-        for _ in 0..window.bands.len() {
-            order.push(band);
-            band = next_band(window, Some(band))?;
-        }
-        order
+            .as_ref()
+            .map_or((cur_band, cur_mode), |s| (s.band.as_str(), s.mode.as_str()));
+        patrol
+            .after(band, mode)
             .into_iter()
-            .filter(|b| !b.eq_ignore_ascii_case(cur_band))
-            .min_by_key(|b| turn(b))
-            .map(String::from)
-            .or_else(|| Some(cur_band.to_string()))
+            .filter(|s| !s.is(cur_band, cur_mode))
+            .min_by_key(|s| {
+                p.turns
+                    .get(&turn_key(&s.band, &s.mode))
+                    .copied()
+                    .unwrap_or(0)
+            })
+            .cloned()
+    }
+
+    /// Go to a stop of the patrol: its band, and its mode when that is not the one running.
+    fn automation_go(&mut self, stop: &Stop, cur_mode: &str) -> bool {
+        let tier = (!stop.mode.eq_ignore_ascii_case(cur_mode))
+            .then(|| link_tier_of(&stop.mode))
+            .flatten();
+        self.automation_switch(tier, &stop.band, None)
     }
 
     /// Take the contact under way as the autopilot's target when it is not already: the operator
@@ -1818,49 +1922,61 @@ impl Engine {
             .collect()
     }
 
-    /// The best needed spot on another band of this window, in this mode, not chased lately and
-    /// not worked: `(call, band, tier)`.
+    /// The best needed spot at another stop of the patrol (another band, or this band in another of
+    /// its modes), not chased lately and not worked: `(call, stop, tier)`. Of two alike, the one in
+    /// the mode running.
     fn automation_best_spot(
         &self,
-        window: &automation::AutopilotWindow,
+        patrol: &automation::Patrol,
         cur_band: &str,
-        mode: &str,
+        cur_mode: &str,
         now: u64,
-    ) -> Option<(String, String, Tier)> {
+    ) -> Option<(String, Stop, Tier)> {
         let p = &self.automation.pilot;
         self.automation
             .feed
             .values()
             .filter(|(_, at)| now.saturating_sub(*at) <= FEED_FRESH_SECS)
             .map(|(e, _)| e)
-            .filter(|e| !e.band.eq_ignore_ascii_case(cur_band))
             .filter(|e| e.new_entity || self.automation_call_wanted(&e.call))
-            .filter(|e| window.bands.iter().any(|b| b.eq_ignore_ascii_case(&e.band)))
-            .filter(|e| {
-                e.mode
-                    .as_deref()
-                    .is_some_and(|m| m.eq_ignore_ascii_case(mode))
+            .filter_map(|e| {
+                let stop = Stop {
+                    band: e.band.clone(),
+                    mode: e.mode.as_deref()?.to_uppercase(),
+                };
+                (patrol.has(&stop.band, &stop.mode) && !stop.is(cur_band, cur_mode))
+                    .then_some((e, stop))
             })
-            .filter(|e| {
+            .filter(|(e, _)| {
                 p.chased
                     .get(&e.call.to_uppercase())
                     .is_none_or(|t| now.saturating_sub(*t) >= CHASE_COOLDOWN_SECS)
             })
-            .filter(|e| automation::may_retry(p.attempts.get(&e.call.to_uppercase()), now))
-            .filter(|e| {
-                !p.worked
-                    .contains(&format!("{}|{}|{}", e.call.to_uppercase(), e.band, mode))
+            .filter(|(e, _)| automation::may_retry(p.attempts.get(&e.call.to_uppercase()), now))
+            .filter(|(e, stop)| {
+                !p.worked.contains(&format!(
+                    "{}|{}|{}",
+                    e.call.to_uppercase(),
+                    e.band,
+                    stop.mode
+                ))
             })
-            .filter_map(|e| spot_tier(e).map(|t| (e, self.automation_spot_most_wanted(e, t))))
-            .filter(|(_, t)| automation::tier_allowed(*t, &self.settings.automation.tiers))
-            .filter(|(e, t)| {
+            .filter_map(|(e, stop)| {
+                spot_tier(e).map(|t| (e, stop, self.automation_spot_most_wanted(e, t)))
+            })
+            .filter(|(_, _, t)| automation::tier_allowed(*t, &self.settings.automation.tiers))
+            .filter(|(e, _, t)| {
                 *t != Tier::UsState || self.settings.automation.wants_state(e.state.as_deref())
             })
-            .min_by(|(a, ta), (b, tb)| {
+            .min_by(|(a, sa, ta), (b, sb, tb)| {
                 let s = &self.settings.automation;
-                s.rank(*ta).cmp(&s.rank(*tb)).then(a.call.cmp(&b.call))
+                let other = |stop: &Stop| !stop.mode.eq_ignore_ascii_case(cur_mode);
+                s.rank(*ta)
+                    .cmp(&s.rank(*tb))
+                    .then(other(sa).cmp(&other(sb)))
+                    .then(a.call.cmp(&b.call))
             })
-            .map(|(e, t)| (e.call.to_uppercase(), e.band.clone(), t))
+            .map(|(e, stop, t)| (e.call.to_uppercase(), stop, t))
     }
 
     /// A needed band slot of a Club Log top-50 entity is a Most Wanted spot: the operator's rule
@@ -1902,9 +2018,10 @@ impl Engine {
             return false;
         }
         self.automation.last_hold = None;
-        // The band we leave has had its turn, when it was given the minimum dwell.
-        let left = self.settings.band.to_lowercase();
-        if !left.eq_ignore_ascii_case(band) {
+        // The band we leave (in this mode) has had its turn, when it was given the minimum dwell.
+        let mode = mode_name(self.app.tier()).unwrap_or_default();
+        let left = turn_key(&self.settings.band, mode);
+        if left != turn_key(band, tier.and_then(mode_name).unwrap_or(mode)) {
             let dwell = self.settings.automation.clone().sanitized().min_dwell_secs;
             let p = &mut self.automation.pilot;
             if now_unix_secs().saturating_sub(p.band_since_unix) >= u64::from(dwell) {
@@ -2067,6 +2184,7 @@ impl Engine {
                 back_tier: self.app.tier(),
                 hound_from: None,
                 heard: false,
+                called_unix: None,
             };
             let call = e.call.to_uppercase();
             // Never hunt on a spot whose frequency is off the band its label names, or whose
@@ -2130,6 +2248,22 @@ impl Engine {
                 self.automation_note(&format!("{} runs Fox/Hound: Hound on", ch.call));
             }
         }
+        // Not heard here, but on the air: others are heard calling it or working it.
+        if decodes.iter().any(|d| {
+            Msg::parse(&d.message)
+                .addressee()
+                .is_some_and(|to| same_call(to, &ch.call))
+        }) {
+            hunt.called_unix = Some(now);
+        }
+        let on_air = hunt
+            .called_unix
+            .is_some_and(|t| now.saturating_sub(t) <= HUNT_CALLED_SECS);
+        let unheard_secs = if on_air {
+            HUNT_ON_AIR_SECS
+        } else {
+            CHASE_UNHEARD_SECS
+        };
         if let Some(c) = self.automation.pilot.chase.as_mut() {
             c.hunt = Some(hunt.clone());
         }
@@ -2148,9 +2282,9 @@ impl Engine {
                 "{} not worked in {} s",
                 ch.call, s.rare_budget_secs
             ))
-        } else if !hunt.heard && elapsed >= CHASE_UNHEARD_SECS {
+        } else if !hunt.heard && elapsed >= unheard_secs {
             Some(format!("{} not heard", ch.call))
-        } else if !hunt.heard && !spotted {
+        } else if !hunt.heard && !spotted && !on_air {
             Some(format!("{} no longer spotted", ch.call))
         } else if !s.hunt_dxpeditions {
             Some("hunting switched off".to_string())
@@ -2219,11 +2353,25 @@ impl Engine {
         // Counted once, when the hunt really ends (not on every held slot).
         if !ch.done {
             self.note_failed(&ch.call);
+            // Tried again each hour, never left for the session (operator: a DXpedition keeps being
+            // called).
+            if let Some(a) = self
+                .automation
+                .pilot
+                .attempts
+                .get_mut(&ch.call.to_uppercase())
+            {
+                a.failures = a.failures.min(HUNT_MAX_FAILURES);
+            }
         }
         // Never heard there: the band is most likely closed to it (a 15 m spot at night), so it
-        // waits twice the usual cool-down before it is hunted again.
+        // waits twice the usual cool-down before it is hunted again; the usual one when stations
+        // here were heard calling it.
         if !hunt.heard && !ch.done {
-            let until = now_unix_secs() + CHASE_COOLDOWN_SECS;
+            let mut until = now_unix_secs();
+            if hunt.called_unix.is_none() {
+                until += CHASE_COOLDOWN_SECS;
+            }
             self.automation
                 .pilot
                 .chased
