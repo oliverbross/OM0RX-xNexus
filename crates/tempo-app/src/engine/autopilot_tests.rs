@@ -1419,3 +1419,110 @@ fn a_dxpedition_below_1000_hz_is_called_without_hound() {
         }
     }
 }
+
+/// A needed station (a spotted band slot, and by its line a new reference) heard on 17 m, that left
+/// four calls unanswered; the slot after it was given up in.
+fn an_unanswered_needed_station() -> (Engine, u64) {
+    let mut e = two_band_pilot();
+    e.autopilot_feed(vec![crate::automation::FeedEntry {
+        call: "5U4JSF".into(),
+        band: "17m".into(),
+        mode: Some("FT8".into()),
+        freq_mhz: Some(18.101),
+        new_slot: true,
+        new_reference: true,
+        ..Default::default()
+    }]);
+    e.ingest_decodes_for_test(&[], 30);
+    e.ingest_decodes_for_test(&[], 32);
+    assert_eq!(e.settings.band, "17m", "premise: the spot is chased");
+    let mut s = 34;
+    for _ in 0..3 {
+        e.ingest_decodes_for_test(&[dec_snr("CQ 5U4JSF JK73", -15)], s);
+        s += 2;
+        if e.automation_dx().is_some() {
+            break;
+        }
+    }
+    assert_eq!(e.automation_dx().as_deref(), Some("5U4JSF"), "premise");
+    for _ in 0..4 {
+        s = over(&mut e, s) + 1;
+        e.ingest_decodes_for_test(&[dec_snr("CQ 5U4JSF JK73", -15)], s);
+    }
+    s += 2;
+    e.ingest_decodes_for_test(&[], s);
+    assert_eq!(e.automation_dx(), None, "premise: given up");
+    (e, s + 1)
+}
+
+/// Live run 2026-11-23 (xlog.26): 8Q7XX, a needed 80 m slot, left four calls unanswered and went on
+/// calling CQ for four minutes, with nobody else to call; the autopilot only listened until the
+/// band was quiet, and left. A needed station still calling CQ is called again instead.
+#[test]
+fn a_needed_station_still_calling_cq_is_called_again_when_nobody_else_is_wanted() {
+    let (mut e, s) = an_unanswered_needed_station();
+    let cq = [dec_snr("CQ 5U4JSF JK73", -15)];
+    e.ingest_decodes_for_test(&cq, s);
+    assert_eq!(e.automation_dx(), None, "not at once");
+    e.automation_backdate_attempts(90);
+    e.ingest_decodes_for_test(&cq, s + 2);
+    assert_eq!(e.automation_dx().as_deref(), Some("5U4JSF"));
+}
+
+/// Anybody else wanted is called first: four calls, then the next station.
+#[test]
+fn another_wanted_station_comes_before_calling_one_again() {
+    let (mut e, s) = an_unanswered_needed_station();
+    e.settings.automation.tiers.grid = true;
+    e.automation_backdate_attempts(90);
+    e.ingest_decodes_for_test(
+        &[dec_snr("CQ 5U4JSF JK73", -5), dec_snr("CQ N0ABC EM48", -18)],
+        s,
+    );
+    assert_eq!(e.automation_dx().as_deref(), Some("N0ABC"));
+}
+
+/// Calling it again does not hold the band past its quiet time, and an ordinary station is not
+/// called again at all.
+#[test]
+fn calling_again_does_not_hold_the_band_and_is_not_for_ordinary_calls() {
+    let (mut e, mut s) = an_unanswered_needed_station();
+    e.automation_backdate_attempts(90);
+    e.automation_backdate_band(200);
+    e.ingest_decodes_for_test(&[dec_snr("CQ 5U4JSF JK73", -15)], s);
+    assert_eq!(e.automation_dx().as_deref(), Some("5U4JSF"), "premise");
+    s += 1;
+    for _ in 0..4 {
+        s = over(&mut e, s) + 1;
+        e.ingest_decodes_for_test(&[dec_snr("CQ 5U4JSF JK73", -15)], s);
+    }
+    e.automation_backdate_band(150);
+    e.automation_backdate_attempts(90);
+    e.ingest_decodes_for_test(&[], s + 2);
+    e.ingest_decodes_for_test(&[dec_snr("CQ 5U4JSF JK73", -15)], s + 4);
+    assert_eq!(
+        e.settings.band, "20m",
+        "left once it has been quiet for five minutes"
+    );
+
+    let (mut e, s) = an_unanswered_needed_station();
+    e.automation_backdate_attempts(90);
+    e.automation_fail_for_test("N0ABC", 90);
+    e.ingest_decodes_for_test(&[dec_snr("CQ N0ABC EM48", -3)], s);
+    assert_eq!(e.automation_dx(), None);
+}
+
+/// Same run: the hunt of a station heard and called four times ended as "not heard".
+#[test]
+fn a_chase_that_called_its_station_does_not_end_as_not_heard() {
+    let (mut e, s) = an_unanswered_needed_station();
+    e.automation_backdate_band(310);
+    e.ingest_decodes_for_test(&[], s);
+    let log = e.automation_dto().log;
+    assert!(
+        log.iter()
+            .any(|l| l.contains("5U4JSF did not answer on 17m: back to the schedule")),
+        "{log:?}"
+    );
+    assert!(!log.iter().any(|l| l.contains("not heard")), "{log:?}");
+}

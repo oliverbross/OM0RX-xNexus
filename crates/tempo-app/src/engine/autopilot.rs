@@ -57,6 +57,9 @@ const CHASE_COOLDOWN_SECS: u64 = 900;
 /// xlog.23: five US-state chases back to back from 22:39, 40 s on a band between two, no contact in
 /// 22 minutes). New entities, Most Wanted, DXpeditions and DXCC slots are chased at once regardless.
 const CHASE_REST_SECS: u64 = 600;
+/// How soon a needed station that left our calls unanswered, and still calls CQ, is called again
+/// when there is nobody else to call on the band, seconds.
+const CALL_AGAIN_SECS: u64 = 60;
 /// How long a fed entry stays usable, seconds.
 const FEED_FRESH_SECS: u64 = 600;
 /// Decisions kept for the panel's log.
@@ -105,6 +108,9 @@ struct Target {
     calls: u32,
     /// Its time budget ran out: no more calls, only the last one's answer is waited for.
     out_of_time: bool,
+    /// Called again because nobody else was wanted: until it answers, it neither keeps the band
+    /// from being quiet nor counts as another failure.
+    again: bool,
 }
 
 /// A needed station spotted on another band, being chased there.
@@ -450,6 +456,29 @@ impl Engine {
         p.chase_failed_unix = p.chase_failed_unix.saturating_sub(secs);
         if let Some(ch) = p.chase.as_mut() {
             ch.since_unix = ch.since_unix.saturating_sub(secs);
+        }
+    }
+
+    /// Test hook: the autopilot's own band change.
+    #[cfg(test)]
+    pub(super) fn automation_go_for_test(&mut self, band: &str) {
+        assert!(self.automation_switch(None, band, None));
+    }
+
+    /// Test hook: move every failed attempt `secs` into the past.
+    #[cfg(test)]
+    pub(super) fn automation_backdate_attempts(&mut self, secs: u64) {
+        for a in self.automation.pilot.attempts.values_mut() {
+            a.last_unix = a.last_unix.saturating_sub(secs);
+        }
+    }
+
+    /// Test hook: `call` left our calls unanswered `secs` ago.
+    #[cfg(test)]
+    pub(super) fn automation_fail_for_test(&mut self, call: &str, secs: u64) {
+        self.note_failed(call);
+        if let Some(a) = self.automation.pilot.attempts.get_mut(call) {
+            a.last_unix = a.last_unix.saturating_sub(secs);
         }
     }
 
@@ -962,6 +991,7 @@ impl Engine {
                         band,
                         calls: 0,
                         out_of_time: false,
+                        again: false,
                     });
                     p.hourly.note(now);
                     p.status = "calling";
@@ -1011,6 +1041,16 @@ impl Engine {
             .or_default();
         a.failures += 1;
         a.last_unix = now;
+    }
+
+    /// A station called again ([`CALL_AGAIN_SECS`]) did not answer either: its wait starts again,
+    /// and it is not one more failure towards being left for the session.
+    fn note_failed_again(&mut self, call: &str) {
+        let now = now_unix_secs();
+        match self.automation.pilot.attempts.get_mut(&call.to_uppercase()) {
+            Some(a) => a.last_unix = now,
+            None => self.note_failed(call),
+        }
     }
 
     // ---------------------------------------------------------------- the autopilot
@@ -1078,7 +1118,11 @@ impl Engine {
                     spent && answer_heard_out
                 };
                 if give_up {
-                    self.note_failed(&t.call);
+                    if t.again {
+                        self.note_failed_again(&t.call);
+                    } else {
+                        self.note_failed(&t.call);
+                    }
                     self.automation_note(&if rare || calls == 0 {
                         format!("{} did not answer in {budget} s: moving on", t.call)
                     } else if advanced {
@@ -1104,7 +1148,9 @@ impl Engine {
                         }
                     }
                     self.automation.pilot.status = if advanced { "inQso" } else { "calling" };
-                    self.automation.pilot.last_worthwhile_unix = now;
+                    if advanced || !t.again {
+                        self.automation.pilot.last_worthwhile_unix = now;
+                    }
                     // Its own time budget bounds this contact, so the watchdog clock restarts
                     // on each step that keeps it (see `automation_watchdog_restart`).
                     self.automation_watchdog_restart();
@@ -1354,25 +1400,41 @@ impl Engine {
             return;
         }
 
-        // A chase that has not heard its station in time is given up.
+        // A chase that has not heard its station in time, or not worked it, is given up.
+        let mut still_chasing = false;
         if let Some(ch) = &chasing {
             if now.saturating_sub(ch.since_unix) >= CHASE_UNHEARD_SECS {
                 let call = ch.call.clone();
+                let called = self
+                    .automation
+                    .pilot
+                    .attempts
+                    .get(&call.to_uppercase())
+                    .is_some_and(|a| a.last_unix >= ch.since_unix);
                 self.automation.pilot.chase = None;
                 // Never heard: not chased again for half an hour, not the plain cooldown (live run
                 // 2026-11-22: W5BUY on 12 m, chased at 13:05 and again at 13:22, heard neither time).
+                let until = if called {
+                    now
+                } else {
+                    now + CHASE_COOLDOWN_SECS
+                };
                 self.automation
                     .pilot
                     .chased
-                    .insert(call.to_uppercase(), now + CHASE_COOLDOWN_SECS);
+                    .insert(call.to_uppercase(), until);
                 self.automation.pilot.chase_failed_unix = now;
                 self.automation_note(&format!(
-                    "{call} not heard on {}: back to the schedule",
+                    "{call} {} on {}: back to the schedule",
+                    if called {
+                        "did not answer"
+                    } else {
+                        "not heard"
+                    },
                     ch.band
                 ));
             } else {
-                self.automation.pilot.status = "listening";
-                return;
+                still_chasing = true;
             }
         }
 
@@ -1380,7 +1442,10 @@ impl Engine {
         let p = &self.automation.pilot;
         let on_band = now.saturating_sub(p.band_since_unix);
         let quiet = now.saturating_sub(p.last_worthwhile_unix.max(p.band_since_unix));
-        if on_band >= u64::from(s.min_dwell_secs) && quiet >= u64::from(s.quiet_secs) {
+        if !still_chasing
+            && on_band >= u64::from(s.min_dwell_secs)
+            && quiet >= u64::from(s.quiet_secs)
+        {
             if let Some(next) = self.automation_next_band(&window, &cur_band) {
                 if !next.eq_ignore_ascii_case(&cur_band)
                     && self.automation_switch(None, &next, None)
@@ -1392,6 +1457,45 @@ impl Engine {
                     return;
                 }
             }
+        }
+        // Nobody else is wanted here, and a needed station that left our calls unanswered still
+        // calls CQ: called again rather than listened to (live run 2026-11-23: 8Q7XX, a needed 80 m
+        // slot, called CQ beside an idle autopilot for four minutes). The band's quiet time is not
+        // put off by it, so the schedule still moves on.
+        let none = HashMap::new();
+        let again = automation::pick(&candidates, &s, &none, now, |c| {
+            let rested = self
+                .automation
+                .pilot
+                .attempts
+                .get(&c.call.to_uppercase())
+                .is_some_and(|a| now >= a.last_unix.saturating_add(CALL_AGAIN_SECS));
+            let needed = automation::best_allowed_tier(c, &s)
+                .is_some_and(|t| !matches!(t, Tier::Grid | Tier::NewCall | Tier::CallingMe));
+            skip(c) || !rested || !needed
+        })
+        .map(|(c, t)| (c.clone(), t));
+        if let Some((c, t)) = again {
+            self.automation_note(&format!(
+                "calling {} again ({t:?}, {} dB) on {cur_band}",
+                c.call, c.snr
+            ));
+            let q = QueuedCaller {
+                call: c.call.clone(),
+                message: c.message.clone(),
+                snr: c.snr,
+                freq_hz: c.freq_hz,
+                slot: c.slot,
+            };
+            self.start_auto_contact(&q, t);
+            if let Some(target) = self.automation.pilot.target.as_mut() {
+                target.again = same_call(&target.call, &c.call);
+            }
+            return;
+        }
+        if still_chasing {
+            self.automation.pilot.status = "listening";
+            return;
         }
         self.automation.pilot.status = if self.automation_band_hold().is_some() {
             "holding"
@@ -1470,6 +1574,7 @@ impl Engine {
             band,
             calls,
             out_of_time: false,
+            again: false,
         });
     }
 
