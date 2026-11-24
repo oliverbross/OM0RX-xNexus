@@ -5396,7 +5396,7 @@ dependencies = [
 
 [[package]]
 name = "tempo"
-version = "1.25.0-xlog.26"
+version = "1.25.0-xlog.27"
 dependencies = [
  "futures-util",
  "gdk",

@@ -54,11 +54,11 @@ installed xlog.25 keeps its logbook and settings.
 - **Install:** 14:00 UTC, `/S`, exit 0, with no Nexus running; `settings.json` unchanged.
 - **First launch:** 2026-11-23 23:00:57 UTC, with the operator's approval to go on the air.
 
-## Live run (2026-11-23 23:02 to 2026-11-24 02:02 UTC, still running)
+## Live run (2026-11-23 23:02 to 2026-11-24 02:21 UTC)
 
 Night schedule, FLEX-8400 through SmartSDR CAT, amplifier in standby, transmit offset held at 1375 Hz.
 
-- **Reliability:** three hours, no stop of the autopilot, no transmit disarm, no watchdog stop, no
+- **Reliability:** 3 h 19 min, closed cleanly by the operator's order at 02:21:24; no stop of the autopilot, no transmit disarm, no watchdog stop, no
   PTT alarm, CAT connected throughout, longest over 13.7 s.
 - **Contacts:** 21 (60 m 13, 40 m 5, 80 m 2, 160 m 1). Needed band slots ER3ZW, ER1CW (60 m) and 3B8FA
   (40 m); spotted US state K8MM worked on the second hunt. G0KLD, TA4SSK and N3FWE called while
