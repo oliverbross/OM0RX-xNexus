@@ -45,12 +45,12 @@ Not changed: the transmit offset stays where Hold Tx puts it.
 - **Install:** 04:37 UTC, `/S`, exit 0, with no Nexus running; `settings.json` unchanged.
 - **First launch:** 2026-11-24 04:45:59 UTC, with the operator's approval to go on the air.
 
-## Live run (2026-11-24 04:46 to 06:08 UTC, still running)
+## Live run (2026-11-24 04:46 to 06:17 UTC)
 
 Night schedule, FLEX-8400 through SmartSDR CAT, transmit offset held at 1375 Hz. The amplifier's state
 was not seen.
 
-- **Reliability:** 82 min; no stop of the autopilot, no watchdog stop, no PTT alarm, CAT connected
+- **Reliability:** 90 min, closed cleanly by the operator's order at 06:16:56; no stop of the autopilot, no watchdog stop, no PTT alarm, CAT connected
   throughout, 71 overs keyed and unkeyed, longest 13.7 s. One decode period dropped (05:59:30, at the
   return from FT4 to FT8, while tests ran on three cores).
 - **Contacts:** 8 (60 m 6, 80 m 1, 40 m 1), among them the needed slot EW6DO (60 m, on its second hunt)
