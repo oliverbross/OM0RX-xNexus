@@ -50,4 +50,31 @@ FT8 + FT4.
   the one in `finalize_transfer` that crashed among them, go to `__wrap_setlocale`.
 - **Built exe:** `392EC0B9…B20C`. **Installed exe:** `311C06AA…F94F`, version 1.25.0-xlog.29.
 - **Install:** 14:17 UTC, `/S`, exit 0, with no Nexus running; `settings.json` unchanged.
-- **Not launched** when this was written: going on the air needs the operator's approval.
+- **First launch:** 2026-11-24 21:07:55 UTC, with the operator's approval to go on the air.
+
+## Live run (2026-11-24 21:17 to 22:17 UTC; the run goes on)
+
+Night schedule (FT8 160/80/60/40/30 m), FLEX-8400 through SmartSDR CAT, xLog running from 21:33.
+
+- **No RF from 21:10 to 21:14.** The DAX program passed no audio to the radio although Nexus played into
+  the DAX TX device at full level (Windows peak meter 0.90, device active and not muted). The radio was
+  keyed for the calls without output; the operator noticed it. Restarting DAX, with Nexus closed,
+  fixed it (SmartSDR and CAT were restarted in the same minute); the cause in DAX is not known. Nexus
+  has no meter readings over this CAT connection, so it cannot see it. Counted from 21:17:29.
+- **Contacts:** 7 (40 m 5, 80 m 2): YB7YGR, SV7LWI, R0TA and YC8BUL called for a new grid, one late answer
+  (BH9FPK, taken up after the four calls) and two callers answered (BA3QIQ; JA1EYN, during the contact
+  with YC8BUL). No needed slot was worked: Z62NS, 8Q7XX, KP4AA and JT1BZ (twice) did not answer;
+  XX9TXN was hunted three times and not heard.
+- **Transmit:** 72 overs keyed and unkeyed, longest 13.7 s. No TX watchdog trip, no autopilot switch-off,
+  no crash, no dropped decode period logged.
+- **`353ccc88e` seen:** 40 m to 30 m at 21:33:11 and 80 m to 160 m at 22:00:48, ten minutes after the last
+  call that was not only for a grid. A grid gave way to a needed station (BA7IWL to Z62NS, JH4ALY to
+  8Q7XX).
+- **Contacts made while xLog was closed** do not reach it (they go out once, by UDP). Compared: 207 contacts
+  since 20 November, four missing in xLog (SO9DXX, BH9FPK, BA3QIQ, and SV5BYP of 20 November, complete in
+  ALL.TXT). Sent again as WSJT-X LoggedADIF; no duplicates, synced to Wavelog.
+- **A false decode** "OM0RX JT1BZ RR73" (22:10:00, no report had been exchanged) was ignored.
+- **Fixed offset:** DK2WH called JT1BZ on 1374 Hz, ours is 1375 Hz, and was answered.
+
+Not seen yet: the FT8 + FT4 patrol, the stalled-contact end (`5ee7f0c26`), a DXpedition, and a run as long
+as the one that crashed xlog.28 (five hours).
