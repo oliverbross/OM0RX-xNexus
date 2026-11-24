@@ -26,3 +26,20 @@ Not changed: a low-confidence decode (marked `^`) is never acted on, XE2X's 160 
 | Failing-first | shown for both changes |
 | `cargo clippy -p tempo-app` `-D warnings` | pass |
 | Not run | tempo-audio and src-tauri (no change there but the version), the UI suites (no UI change), browser probe, CI (GitHub Actions billing is blocked) |
+
+## Package and installation (2026-11-24)
+
+- **Source:** `e16246c43`, canonical `main`, clean, equal to `origin/main`.
+- **Guard:** the xlog.27 wrapper and profile (`optimized-no-lto-cgu16-7GiB-physical14-commit12p5-reserve6`)
+  with only the expected version changed. It waited from 06:18 UTC for commit memory (11.76 GiB free)
+  until the operator closed SmartSDR, CAT and DAX and had xLog closed. Admission 17.0 GiB physical /
+  13.1 GiB commit; 06:25–07:21 UTC; peak 5.44 GiB; lowest free 12.7 GiB physical / 7.9 GiB commit;
+  cleanup confirmed. The Home Assistant VM was not saved.
+- **Evidence:** `.build/xnexus-xlog28-package-7g/evidence/20261124T0625187092032Z-a46944555eab44678da534ce63231028`.
+- **Receipt:** `target/xnexus-provenance/1.25.0-xlog.28.json` (source `e16246c43`, upstream base
+  `21f743404` v1.25.0-beta.2, toolchain 1.93.1-x86_64-pc-windows-gnu, unsigned).
+- **Installer:** `OM0RX-xNexus_1.25.0-xlog.28_x64-setup.exe`, 356,576,984 bytes, SHA-256
+  `3E3F45FDE65010C25BA4C005C2A5678E1A56CF0A808227FF7C2135FFB7ABDD0C` (matches the receipt).
+- **Built exe:** `C5021264…4C57`. **Installed exe:** `81E7A045…FDF5`, version 1.25.0-xlog.28.
+- **Install:** 07:21 UTC, `/S`, exit 0, with no Nexus running; `settings.json` unchanged.
+- **Not launched** when this was written: going on the air needs the operator's approval.
