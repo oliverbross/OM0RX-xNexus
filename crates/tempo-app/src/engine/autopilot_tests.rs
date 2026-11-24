@@ -1419,3 +1419,204 @@ fn a_dxpedition_below_1000_hz_is_called_without_hound() {
         }
     }
 }
+
+/// A needed station (a spotted band slot, and by its line a new reference) heard on 17 m, that left
+/// four calls unanswered; the slot after it was given up in.
+fn an_unanswered_needed_station() -> (Engine, u64) {
+    let mut e = two_band_pilot();
+    e.autopilot_feed(vec![crate::automation::FeedEntry {
+        call: "5U4JSF".into(),
+        band: "17m".into(),
+        mode: Some("FT8".into()),
+        freq_mhz: Some(18.101),
+        new_slot: true,
+        new_reference: true,
+        ..Default::default()
+    }]);
+    e.ingest_decodes_for_test(&[], 30);
+    e.ingest_decodes_for_test(&[], 32);
+    assert_eq!(e.settings.band, "17m", "premise: the spot is chased");
+    let mut s = 34;
+    for _ in 0..3 {
+        e.ingest_decodes_for_test(&[dec_snr("CQ 5U4JSF JK73", -15)], s);
+        s += 2;
+        if e.automation_dx().is_some() {
+            break;
+        }
+    }
+    assert_eq!(e.automation_dx().as_deref(), Some("5U4JSF"), "premise");
+    for _ in 0..4 {
+        s = over(&mut e, s) + 1;
+        e.ingest_decodes_for_test(&[dec_snr("CQ 5U4JSF JK73", -15)], s);
+    }
+    s += 2;
+    e.ingest_decodes_for_test(&[], s);
+    assert_eq!(e.automation_dx(), None, "premise: given up");
+    (e, s + 1)
+}
+
+/// Live run 2026-11-23 (xlog.26): 8Q7XX, a needed 80 m slot, left four calls unanswered and went on
+/// calling CQ for four minutes, with nobody else to call; the autopilot only listened until the
+/// band was quiet, and left. A needed station still calling CQ is called again instead.
+#[test]
+fn a_needed_station_still_calling_cq_is_called_again_when_nobody_else_is_wanted() {
+    let (mut e, s) = an_unanswered_needed_station();
+    let cq = [dec_snr("CQ 5U4JSF JK73", -15)];
+    e.ingest_decodes_for_test(&cq, s);
+    assert_eq!(e.automation_dx(), None, "not at once");
+    e.automation_backdate_attempts(90);
+    e.ingest_decodes_for_test(&cq, s + 2);
+    assert_eq!(e.automation_dx().as_deref(), Some("5U4JSF"));
+}
+
+/// Anybody else wanted is called first: four calls, then the next station.
+#[test]
+fn another_wanted_station_comes_before_calling_one_again() {
+    let (mut e, s) = an_unanswered_needed_station();
+    e.settings.automation.tiers.grid = true;
+    e.automation_backdate_attempts(90);
+    e.ingest_decodes_for_test(
+        &[dec_snr("CQ 5U4JSF JK73", -5), dec_snr("CQ N0ABC EM48", -18)],
+        s,
+    );
+    assert_eq!(e.automation_dx().as_deref(), Some("N0ABC"));
+}
+
+/// Calling it again does not hold the band past its quiet time, and an ordinary station is not
+/// called again at all.
+#[test]
+fn calling_again_does_not_hold_the_band_and_is_not_for_ordinary_calls() {
+    let (mut e, mut s) = an_unanswered_needed_station();
+    e.automation_backdate_attempts(90);
+    e.automation_backdate_band(200);
+    e.ingest_decodes_for_test(&[dec_snr("CQ 5U4JSF JK73", -15)], s);
+    assert_eq!(e.automation_dx().as_deref(), Some("5U4JSF"), "premise");
+    s += 1;
+    for _ in 0..4 {
+        s = over(&mut e, s) + 1;
+        e.ingest_decodes_for_test(&[dec_snr("CQ 5U4JSF JK73", -15)], s);
+    }
+    e.automation_backdate_band(150);
+    e.automation_backdate_attempts(90);
+    e.ingest_decodes_for_test(&[], s + 2);
+    e.ingest_decodes_for_test(&[dec_snr("CQ 5U4JSF JK73", -15)], s + 4);
+    assert_eq!(
+        e.settings.band, "20m",
+        "left once it has been quiet for five minutes"
+    );
+
+    let (mut e, s) = an_unanswered_needed_station();
+    e.automation_backdate_attempts(90);
+    e.automation_fail_for_test("N0ABC", 90);
+    e.ingest_decodes_for_test(&[dec_snr("CQ N0ABC EM48", -3)], s);
+    assert_eq!(e.automation_dx(), None);
+}
+
+/// Same run: the hunt of a station heard and called four times ended as "not heard".
+#[test]
+fn a_chase_that_called_its_station_does_not_end_as_not_heard() {
+    let (mut e, s) = an_unanswered_needed_station();
+    e.automation_backdate_band(310);
+    e.ingest_decodes_for_test(&[], s);
+    let log = e.automation_dto().log;
+    assert!(
+        log.iter()
+            .any(|l| l.contains("5U4JSF did not answer on 17m: back to the schedule")),
+        "{log:?}"
+    );
+    assert!(!log.iter().any(|l| l.contains("not heard")), "{log:?}");
+}
+
+/// Live run 2026-11-23 (xlog.26): D2ACE answered just after it was given up, sent us its report
+/// three times without copying ours, and was dropped after four R-reports as "did not answer". A
+/// late answer is an answer: the contact keeps the sequencer's own limit.
+#[test]
+fn a_late_answer_is_not_dropped_after_four_calls() {
+    let mut e = answering_pilot();
+    pick(&mut e, "DO8JB");
+    let mut s = 10;
+    for _ in 0..4 {
+        s = over(&mut e, s + 2);
+        e.ingest_decodes_for_test(&[], s + 1);
+    }
+    e.ingest_decodes_for_test(&[], s + 2);
+    assert_eq!(e.automation_dx(), None, "premise: given up");
+    e.ingest_decodes_for_test(&[dec_snr("OM0RX DO8JB -11", -9)], s + 3);
+    assert_eq!(e.automation_dx().as_deref(), Some("DO8JB"), "premise");
+    s += 1;
+    for n in 0..6 {
+        s = over(&mut e, s + 2);
+        e.ingest_decodes_for_test(&[dec_snr("OM0RX DO8JB -11", -9)], s + 1);
+        assert_eq!(e.automation_dx().as_deref(), Some("DO8JB"), "over {n}");
+    }
+    assert_eq!(e.automation_dto().calls_made, None, "not a count of calls");
+}
+
+/// Live run 2026-11-23 (xlog.26): in 65 minutes 40 m had three long turns, taken there by chases,
+/// and 30 m none: the rotation still stood on 60 m, so 40 m came next once more. The scheduled band
+/// that has waited longest comes next, whatever took the radio to the others.
+#[test]
+fn the_autopilot_moves_to_the_band_that_has_waited_longest() {
+    let mut e = two_band_pilot();
+    e.settings.automation.schedule[0].bands =
+        vec!["20m".into(), "17m".into(), "15m".into(), "12m".into()];
+    let mut s = 30;
+    while e.settings.band == "20m" && s < 60 {
+        e.automation_backdate_band(10_000);
+        e.ingest_decodes_for_test(&[], s);
+        s += 2;
+    }
+    assert_eq!(e.settings.band, "17m", "premise");
+    e.autopilot_feed(vec![crate::automation::FeedEntry {
+        new_slot: true,
+        new_state: false,
+        ..state_spot("5U4JSF", "20m", 14.074)
+    }]);
+    while e.settings.band == "17m" && s < 100 {
+        e.ingest_decodes_for_test(&[], s);
+        s += 2;
+    }
+    assert_eq!(e.settings.band, "20m", "premise: chased from 17 m");
+    // Another chase takes it to 15 m, which has a full turn, and one to 20 m again.
+    e.automation_backdate_band(200);
+    e.automation_go_for_test("15m");
+    e.automation_backdate_band(200);
+    e.automation_go_for_test("20m");
+    while e.settings.band == "20m" && s < 200 {
+        e.automation_backdate_band(10_000);
+        e.ingest_decodes_for_test(&[], s);
+        s += 2;
+    }
+    assert_eq!(e.settings.band, "12m", "15 m has just had its turn");
+}
+
+/// A band a chase left at once has not had its turn.
+#[test]
+fn a_band_left_at_once_for_a_spot_is_still_due() {
+    let mut e = two_band_pilot();
+    e.settings.automation.schedule[0].bands = vec!["20m".into(), "17m".into(), "15m".into()];
+    let mut s = 30;
+    while e.settings.band == "20m" && s < 60 {
+        e.automation_backdate_band(10_000);
+        e.ingest_decodes_for_test(&[], s);
+        s += 2;
+    }
+    assert_eq!(e.settings.band, "17m", "premise");
+    // 17 m is left for a 15 m spot within its first slots.
+    e.autopilot_feed(vec![crate::automation::FeedEntry {
+        new_slot: true,
+        new_state: false,
+        ..state_spot("5U4JSF", "15m", 21.074)
+    }]);
+    while e.settings.band == "17m" && s < 100 {
+        e.ingest_decodes_for_test(&[], s);
+        s += 2;
+    }
+    assert_eq!(e.settings.band, "15m", "premise: chased");
+    while e.settings.band == "15m" && s < 160 {
+        e.automation_backdate_band(10_000);
+        e.ingest_decodes_for_test(&[], s);
+        s += 2;
+    }
+    assert_eq!(e.settings.band, "17m", "20 m had its turn, 17 m did not");
+}
