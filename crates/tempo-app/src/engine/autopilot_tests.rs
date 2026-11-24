@@ -1526,3 +1526,28 @@ fn a_chase_that_called_its_station_does_not_end_as_not_heard() {
     );
     assert!(!log.iter().any(|l| l.contains("not heard")), "{log:?}");
 }
+
+/// Live run 2026-11-23 (xlog.26): D2ACE answered just after it was given up, sent us its report
+/// three times without copying ours, and was dropped after four R-reports as "did not answer". A
+/// late answer is an answer: the contact keeps the sequencer's own limit.
+#[test]
+fn a_late_answer_is_not_dropped_after_four_calls() {
+    let mut e = answering_pilot();
+    pick(&mut e, "DO8JB");
+    let mut s = 10;
+    for _ in 0..4 {
+        s = over(&mut e, s + 2);
+        e.ingest_decodes_for_test(&[], s + 1);
+    }
+    e.ingest_decodes_for_test(&[], s + 2);
+    assert_eq!(e.automation_dx(), None, "premise: given up");
+    e.ingest_decodes_for_test(&[dec_snr("OM0RX DO8JB -11", -9)], s + 3);
+    assert_eq!(e.automation_dx().as_deref(), Some("DO8JB"), "premise");
+    s += 1;
+    for n in 0..6 {
+        s = over(&mut e, s + 2);
+        e.ingest_decodes_for_test(&[dec_snr("OM0RX DO8JB -11", -9)], s + 1);
+        assert_eq!(e.automation_dx().as_deref(), Some("DO8JB"), "over {n}");
+    }
+    assert_eq!(e.automation_dto().calls_made, None, "not a count of calls");
+}

@@ -84,6 +84,13 @@ pub struct QueuedCaller {
     pub slot: u64,
 }
 
+/// Has the station we are working answered us? One whose report we are confirming has, even when
+/// its answer is what started the contact (live run 2026-11-23: D2ACE's report came just after it
+/// was given up, and it was dropped after four R-reports as not answering).
+fn has_answered(station: &tempo_core::qso::Station) -> bool {
+    station.advanced_on_air || station.state == QsoState::AwaitRr73
+}
+
 /// How long a spot of this rule waits after a chase that heard nothing, seconds, so the band
 /// schedule gets its turn. A rare one (ATNO, Most Wanted, DXpedition) never waits. A DXCC slot
 /// waits five minutes, as long as the chase that failed: on 2026-11-23 they ran back to back for
@@ -248,7 +255,7 @@ impl Automation {
     /// then sends it nothing more. Never for a rare target, nor once the station has answered,
     /// unless it has since gone on to others.
     pub(super) fn calls_spent(&self, station: &tempo_core::qso::Station, max: u32) -> bool {
-        let answered = station.advanced_on_air;
+        let answered = has_answered(station);
         self.pilot.on
             && (!answered
                 || station
@@ -500,7 +507,7 @@ impl Engine {
         let mut hourly = p.hourly.clone();
         let calls = match (&self.mode, &p.target) {
             (Mode::Qso { station, .. }, Some(t))
-                if p.on && !is_rare(t.tier) && !station.advanced_on_air =>
+                if p.on && !is_rare(t.tier) && !has_answered(station) =>
             {
                 Some((station.tx_count, s.target_max_calls.max(1)))
             }
@@ -1095,7 +1102,7 @@ impl Engine {
             if busy {
                 let (advanced, calls, spent) = match &self.mode {
                     Mode::Qso { station, .. } => (
-                        station.advanced_on_air,
+                        has_answered(station),
                         station.tx_count,
                         self.automation.calls_spent(station, s.target_max_calls),
                     ),
