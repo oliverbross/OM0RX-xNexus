@@ -20,6 +20,14 @@ describe('autopilot feed', () => {
     ])
     expect(e).toMatchObject({ call: '3Y0K', dxpedition: true, newSlot: true, freqMhz: 7.056, mode: 'FT8' })
   })
+
+  it('counts a new mode alone as no slot, except for a DXpedition', () => {
+    const slot = (tags: NeedAlert['tags']) =>
+      autopilotFeedFromNeeds([alert({ call: 'OM8AKP', tags, exactMode: 'FT4' })])[0].newSlot
+    expect(slot(['NewMode'])).toBe(false)
+    expect(slot(['NewBand'])).toBe(true)
+    expect(slot(['Dxped', 'NewMode'])).toBe(true)
+  })
 })
 
 describe('wanted states', () => {

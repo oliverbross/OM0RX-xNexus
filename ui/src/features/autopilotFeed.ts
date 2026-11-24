@@ -17,7 +17,9 @@ export function autopilotFeedFromNeeds(alerts: readonly NeedAlert[]): AutopilotF
       dxpedition: tags.has('Dxped'),
       newReference: tags.has('NewPark') || tags.has('NewIota'),
       newEntity: tags.has('NewEntity'),
-      newSlot: tags.has('NewBand') || tags.has('NewMode'),
+      // A new mode alone is not a new band slot: the calling rules count FT4 with FT8, so a station
+      // hunted for it was never called. A DXpedition is still hunted for one.
+      newSlot: tags.has('NewBand') || (tags.has('NewMode') && tags.has('Dxped')),
       newState: tags.has('NewState'),
       state: a.state ?? null,
     }
