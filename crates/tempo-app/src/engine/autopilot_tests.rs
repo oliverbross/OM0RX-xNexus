@@ -1551,3 +1551,72 @@ fn a_late_answer_is_not_dropped_after_four_calls() {
     }
     assert_eq!(e.automation_dto().calls_made, None, "not a count of calls");
 }
+
+/// Live run 2026-11-23 (xlog.26): in 65 minutes 40 m had three long turns, taken there by chases,
+/// and 30 m none: the rotation still stood on 60 m, so 40 m came next once more. The scheduled band
+/// that has waited longest comes next, whatever took the radio to the others.
+#[test]
+fn the_autopilot_moves_to_the_band_that_has_waited_longest() {
+    let mut e = two_band_pilot();
+    e.settings.automation.schedule[0].bands =
+        vec!["20m".into(), "17m".into(), "15m".into(), "12m".into()];
+    let mut s = 30;
+    while e.settings.band == "20m" && s < 60 {
+        e.automation_backdate_band(10_000);
+        e.ingest_decodes_for_test(&[], s);
+        s += 2;
+    }
+    assert_eq!(e.settings.band, "17m", "premise");
+    e.autopilot_feed(vec![crate::automation::FeedEntry {
+        new_slot: true,
+        new_state: false,
+        ..state_spot("5U4JSF", "20m", 14.074)
+    }]);
+    while e.settings.band == "17m" && s < 100 {
+        e.ingest_decodes_for_test(&[], s);
+        s += 2;
+    }
+    assert_eq!(e.settings.band, "20m", "premise: chased from 17 m");
+    // Another chase takes it to 15 m, which has a full turn, and one to 20 m again.
+    e.automation_backdate_band(200);
+    e.automation_go_for_test("15m");
+    e.automation_backdate_band(200);
+    e.automation_go_for_test("20m");
+    while e.settings.band == "20m" && s < 200 {
+        e.automation_backdate_band(10_000);
+        e.ingest_decodes_for_test(&[], s);
+        s += 2;
+    }
+    assert_eq!(e.settings.band, "12m", "15 m has just had its turn");
+}
+
+/// A band a chase left at once has not had its turn.
+#[test]
+fn a_band_left_at_once_for_a_spot_is_still_due() {
+    let mut e = two_band_pilot();
+    e.settings.automation.schedule[0].bands = vec!["20m".into(), "17m".into(), "15m".into()];
+    let mut s = 30;
+    while e.settings.band == "20m" && s < 60 {
+        e.automation_backdate_band(10_000);
+        e.ingest_decodes_for_test(&[], s);
+        s += 2;
+    }
+    assert_eq!(e.settings.band, "17m", "premise");
+    // 17 m is left for a 15 m spot within its first slots.
+    e.autopilot_feed(vec![crate::automation::FeedEntry {
+        new_slot: true,
+        new_state: false,
+        ..state_spot("5U4JSF", "15m", 21.074)
+    }]);
+    while e.settings.band == "17m" && s < 100 {
+        e.ingest_decodes_for_test(&[], s);
+        s += 2;
+    }
+    assert_eq!(e.settings.band, "15m", "premise: chased");
+    while e.settings.band == "15m" && s < 160 {
+        e.automation_backdate_band(10_000);
+        e.ingest_decodes_for_test(&[], s);
+        s += 2;
+    }
+    assert_eq!(e.settings.band, "17m", "20 m had its turn, 17 m did not");
+}

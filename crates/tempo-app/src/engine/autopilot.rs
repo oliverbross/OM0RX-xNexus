@@ -172,6 +172,11 @@ struct Pilot {
     /// The scheduled band a chase left, so the rotation goes on from there and not from wherever
     /// the spot was.
     rotation: Option<String>,
+    /// When each scheduled band last had its turn (a stay of at least the minimum dwell), by the
+    /// order the turns ended in. The band that has waited longest comes next.
+    turns: HashMap<String, u64>,
+    /// The number of the last turn in [`Self::turns`].
+    last_turn: u64,
     status: &'static str,
     reason: String,
     log: VecDeque<String>,
@@ -1529,9 +1534,9 @@ impl Engine {
         }
     }
 
-    /// The scheduled band after the one the rotation is on: the band a chase left, when one took us
-    /// away, else the current one. Never the band we are on already (a chase went there): the one
-    /// after it.
+    /// The scheduled band that has waited longest for its turn, never the one we are on. Bands that
+    /// have waited alike (none of them visited yet) come in the schedule's order, from the band a
+    /// chase left, when one took us away, else from the current one.
     fn automation_next_band(
         &self,
         window: &automation::AutopilotWindow,
@@ -1543,11 +1548,26 @@ impl Engine {
             .rotation
             .as_deref()
             .unwrap_or(cur_band);
-        let next = next_band(window, Some(from))?;
-        if next.eq_ignore_ascii_case(cur_band) {
-            return next_band(window, Some(next)).map(String::from);
+        let turn = |band: &str| {
+            self.automation
+                .pilot
+                .turns
+                .get(&band.to_lowercase())
+                .copied()
+                .unwrap_or(0)
+        };
+        let mut order = Vec::with_capacity(window.bands.len());
+        let mut band = next_band(window, Some(from))?;
+        for _ in 0..window.bands.len() {
+            order.push(band);
+            band = next_band(window, Some(band))?;
         }
-        Some(next.to_string())
+        order
+            .into_iter()
+            .filter(|b| !b.eq_ignore_ascii_case(cur_band))
+            .min_by_key(|b| turn(b))
+            .map(String::from)
+            .or_else(|| Some(cur_band.to_string()))
     }
 
     /// Take the contact under way as the autopilot's target when it is not already: the operator
@@ -1821,6 +1841,16 @@ impl Engine {
             return false;
         }
         self.automation.last_hold = None;
+        // The band we leave has had its turn, when it was given the minimum dwell.
+        let left = self.settings.band.to_lowercase();
+        if !left.eq_ignore_ascii_case(band) {
+            let dwell = self.settings.automation.clone().sanitized().min_dwell_secs;
+            let p = &mut self.automation.pilot;
+            if now_unix_secs().saturating_sub(p.band_since_unix) >= u64::from(dwell) {
+                p.last_turn += 1;
+                p.turns.insert(left, p.last_turn);
+            }
+        }
         let was_tx = self.tx_enabled;
         let watchdog = self.tx_watchdog_start;
         let radio_before = self.settings.active_radio;
