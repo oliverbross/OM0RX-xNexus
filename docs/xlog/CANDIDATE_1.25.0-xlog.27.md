@@ -27,3 +27,20 @@ Not changed: the transmit offset stays where Hold Tx puts it.
 | Failing-first | shown for calling again, for the late answer and for both rotation tests; the "not heard" test was not run against the unfixed code in its final form |
 | `cargo clippy -p tempo-app` `-D warnings` | pass |
 | Not run | the three commits one by one, tempo-audio and src-tauri (no change there but the version), the UI suites (no UI change), browser probe, CI (GitHub Actions billing is blocked) |
+
+## Package and installation (2026-11-24)
+
+- **Source:** `5821abf5a`, canonical `main`, clean, equal to `origin/main`.
+- **Guard:** the xlog.26 wrapper and profile (`optimized-no-lto-cgu16-7GiB-physical14-commit12p5-reserve6`)
+  with only the expected version changed. It waited from 02:22 UTC for commit memory (11.66 GiB free of
+  the 12.5 required) until the operator freed some. Admission 17.3 GiB physical / 13.2 GiB commit;
+  03:37–04:36 UTC; peak 5.44 GiB; lowest free 12.7 GiB physical / 7.9 GiB commit; cleanup confirmed.
+  The Home Assistant VM ran throughout: it was not saved.
+- **Evidence:** `.build/xnexus-xlog27-package-7g/evidence/20261124T0337025532525Z-a64de3a7cb4c441a95a5bd3ca3ceb3d6`.
+- **Receipt:** `target/xnexus-provenance/1.25.0-xlog.27.json` (source `5821abf5a`, upstream base
+  `21f743404` v1.25.0-beta.2, toolchain 1.93.1-x86_64-pc-windows-gnu, unsigned).
+- **Installer:** `OM0RX-xNexus_1.25.0-xlog.27_x64-setup.exe`, 356,588,685 bytes, SHA-256
+  `3402F2AC06389A11D9ECC9F54A31DE41E705EE03860ADAE39A70BC4A6B491E6C` (matches the receipt).
+- **Built exe:** `B75496B2…575D`. **Installed exe:** `E83C57D3…DB9E`, version 1.25.0-xlog.27.
+- **Install:** 04:37 UTC, `/S`, exit 0, with no Nexus running; `settings.json` unchanged.
+- **Not launched** when this was written: going on the air needs the operator's approval.
