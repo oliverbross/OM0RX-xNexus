@@ -185,6 +185,8 @@ struct Pilot {
     chase_failed_unix: u64,
     /// When the contact on the sequencer was first seen stalled by its call cap, Unix seconds.
     stalled_unix: Option<u64>,
+    /// The transmit offset before a DXpedition's call moved it, and the offset it was moved to, Hz.
+    tx_before: Option<(f32, f32)>,
     /// The scheduled band a chase left, so the rotation goes on from there and not from wherever
     /// the spot was.
     rotation: Option<String>,
@@ -498,6 +500,13 @@ impl Engine {
     pub(super) fn automation_backdate_stall(&mut self, secs: u64) {
         let at = &mut self.automation.pilot.stalled_unix;
         *at = at.map(|t| t.saturating_sub(secs));
+    }
+
+    /// Test hook: the running call is dropped.
+    #[cfg(test)]
+    pub(super) fn automation_abandon_for_test(&mut self) {
+        self.automation_abandon_contact();
+        self.automation.pilot.target = None;
     }
 
     /// Test hook: move every chase `secs` into the past.
@@ -980,6 +989,15 @@ impl Engine {
         let call = c.call.clone();
         let rare = matches!(tier, Tier::Dxpedition | Tier::Atno) && c.freq_hz > 0.0;
         let mut c = c.clone();
+        // The transmit offset goes back where it was before a DXpedition's call moved it, unless the
+        // operator has moved it since.
+        if !rare {
+            if let Some((before, moved_to)) = self.automation.pilot.tx_before.take() {
+                if (self.tx_offset_hz - moved_to).abs() < 0.5 {
+                    self.set_tx_offset(before);
+                }
+            }
+        }
         // A DXpedition sits low, under 500 Hz, and is called from above it (operator,
         // 2026-11-22). One heard higher is brought there first: the dial moves up so its signal
         // lands at DXPED_PLACE_HZ, through the autopilot's own switch, so it happens only between
@@ -998,6 +1016,7 @@ impl Engine {
                 c.freq_hz -= shift_hz;
             }
         }
+        let held = self.tx_offset_hz;
         let res = self.call_station_ctx_arming(
             &call,
             None,
@@ -1012,7 +1031,9 @@ impl Engine {
                 // frequency: at least 1200 Hz above it (operator, 2026-11-22).
                 if rare {
                     let tx = automation::dxped_split_hz(c.freq_hz, self.tx_offset_hz);
+                    let before = self.automation.pilot.tx_before.map_or(held, |(b, _)| b);
                     self.set_tx_offset(tx);
+                    self.automation.pilot.tx_before = Some((before, self.tx_offset_hz));
                     self.automation_note(&format!(
                         "{call} heard at {:.0} Hz: calling at {:.0} Hz",
                         c.freq_hz, self.tx_offset_hz

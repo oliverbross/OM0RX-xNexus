@@ -1829,3 +1829,27 @@ fn the_watchdog_still_stops_a_stalled_contact_without_the_autopilots_step() {
     }
     assert!(!e.tx_enabled);
 }
+
+/// Same run: the transmit offset, held at 1375 Hz, stayed at the DXpedition's 1606 Hz for the calls
+/// that followed.
+#[test]
+fn the_held_transmit_offset_returns_after_a_dxpedition() {
+    let mut e = two_band_pilot();
+    e.hold_tx_freq = true;
+    e.set_tx_offset(1375.0);
+    e.autopilot_feed(vec![dxped_spot("3Y0K", "40m", 7.056)]);
+    e.ingest_decodes_for_test(&[], 30);
+    e.ingest_decodes_for_test(&[dec_at("CQ 3Y0K JD15", -14, 406.0)], 32);
+    assert!((e.tx_offset_hz - 1606.0).abs() < 0.5, "premise");
+    over(&mut e, 33);
+    e.automation_abandon_for_test();
+    e.autopilot_feed(vec![]);
+    e.automation_backdate_band(1_000);
+    e.ingest_decodes_for_test(&[], 36);
+    assert_eq!(e.settings.band, "20m", "premise: the hunt is over");
+    for s in [38, 40, 42] {
+        e.ingest_decodes_for_test(&[dec_snr("CQ N0ABC EM48", -3)], s);
+    }
+    assert_eq!(e.automation_dx().as_deref(), Some("N0ABC"), "premise");
+    assert!((e.tx_offset_hz - 1375.0).abs() < 0.5, "{}", e.tx_offset_hz);
+}
