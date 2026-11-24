@@ -5,6 +5,7 @@
 //! and stops after its chain limit; the autopilot never arms TX, stops on every stop, and turns TX
 //! off when presence is not confirmed.
 
+use super::autopilot::mode_name_for_test;
 use super::tests::dec_snr;
 use super::*;
 
@@ -1878,4 +1879,65 @@ fn a_band_with_only_new_grids_gives_way_after_the_ordinary_dwell() {
     e.automation_backdate_band(20);
     e.ingest_decodes_for_test(&[dec_snr("CQ K1XYZ FN42", -3)], s + 2);
     assert_eq!(e.settings.band, "17m", "{:?}", e.automation_dto().log);
+}
+
+/// A pilot patrolling 20 m and 17 m in FT8 and FT4.
+fn two_mode_pilot() -> Engine {
+    let mut e = two_band_pilot();
+    e.settings.automation.schedule[0].mode = "FT8+FT4".into();
+    e
+}
+
+/// Operator, 2026-11-24: "it can work both FT4 and FT8 in the same time switching between bands and
+/// modes". Every band has its turn in each mode.
+#[test]
+fn a_patrol_of_two_modes_goes_round_every_band_in_both() {
+    let mut e = two_mode_pilot();
+    let at = |e: &Engine| format!("{} {}", e.settings.band, mode_name_for_test(e));
+    let mut seen = vec![at(&e)];
+    let mut s = 30;
+    while seen.len() < 5 && s < 400 {
+        e.automation_backdate_band(10_000);
+        e.ingest_decodes_for_test(&[], s);
+        s += 2;
+        if *seen.last().unwrap() != at(&e) {
+            seen.push(at(&e));
+        }
+    }
+    assert_eq!(
+        seen,
+        ["20m FT8", "20m FT4", "17m FT8", "17m FT4", "20m FT8"]
+    );
+    assert!(e.tx_enabled && e.automation_dto().autopilot_on);
+}
+
+/// A needed spot in the other mode is chased, on another band and on the same one; in a mode the
+/// patrol does not run, it is not.
+#[test]
+fn a_spot_in_either_mode_of_the_patrol_is_chased() {
+    let spot = |band: &str, mode: &str| crate::automation::FeedEntry {
+        call: "5U4JSF".into(),
+        band: band.into(),
+        mode: Some(mode.into()),
+        new_slot: true,
+        ..Default::default()
+    };
+    for (band, mode) in [("17m", "FT4"), ("20m", "FT4"), ("17m", "FT8")] {
+        let mut e = two_mode_pilot();
+        e.autopilot_feed(vec![spot(band, mode)]);
+        e.ingest_decodes_for_test(&[], 30);
+        e.ingest_decodes_for_test(&[], 32);
+        assert_eq!(
+            (e.settings.band.as_str(), mode_name_for_test(&e)),
+            (band, mode),
+            "{:?}",
+            e.automation_dto().log
+        );
+        assert!(e.tx_enabled);
+    }
+    let mut e = two_band_pilot();
+    e.autopilot_feed(vec![spot("17m", "FT4")]);
+    e.ingest_decodes_for_test(&[], 30);
+    e.ingest_decodes_for_test(&[], 32);
+    assert_eq!(e.settings.band, "20m", "FT4 is not on this patrol");
 }
