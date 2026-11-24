@@ -283,6 +283,9 @@ pub struct AutomationSettings {
     /// The continents not called ([`CONTINENTS`] codes); empty = every continent. An ATNO is
     /// called wherever it is, and a station calling the operator is always answered.
     pub skip_continents: Vec<String>,
+    /// Call each station on a clear transmit frequency near the operator's own ([`clear_tx_hz`];
+    /// operator, 2026-11-24). Off: always on the operator's own.
+    pub clear_tx_offset: bool,
 }
 
 /// The continents a station can be skipped by: cty.dat's codes.
@@ -334,6 +337,7 @@ impl Default for AutomationSettings {
             prefer_outside_eu: true,
             target_max_calls: 4,
             skip_continents: Vec::new(),
+            clear_tx_offset: true,
         }
     }
 }
@@ -936,6 +940,41 @@ pub fn dxped_split_hz(dx_hz: f32, tx_hz: f32) -> f32 {
     }
 }
 
+/// The transmit offsets the autopilot moves to for a clear frequency, Hz: inside the receive filter
+/// of any radio.
+pub const CLEAR_LOW_HZ: f32 = 400.0;
+pub const CLEAR_TOP_HZ: f32 = 2600.0;
+/// How many periods back a signal still counts as being there: the autopilot hears nothing in its
+/// own period while it calls, so the last few calls' worth.
+pub const CLEAR_LOOKBACK_SLOTS: u64 = 12;
+
+/// A transmit offset clear of the signals at `used` (their lowest tones, Hz), each `width_hz` wide:
+/// `want` itself when nothing overlaps it, else the nearest clear one between `low` and `top`. With
+/// no clear one, the one whose nearest signal is farthest away (the nearest to `want` of equals).
+pub fn clear_tx_hz(want: f32, used: &[f32], width_hz: f32, low: f32, top: f32) -> f32 {
+    let gap = |hz: f32| {
+        used.iter()
+            .map(|u| (hz - u).abs())
+            .fold(f32::INFINITY, f32::min)
+    };
+    if gap(want) >= width_hz || top < low {
+        return want;
+    }
+    let steps = ((top - low) / 5.0) as usize;
+    let mut spots: Vec<f32> = (0..=steps).map(|i| low + i as f32 * 5.0).collect();
+    spots.sort_by(|a, b| (a - want).abs().total_cmp(&(b - want).abs()));
+    if let Some(hz) = spots.iter().find(|hz| gap(**hz) >= width_hz) {
+        return *hz;
+    }
+    let mut best = want;
+    for hz in spots {
+        if gap(hz) > gap(best) {
+            best = hz;
+        }
+    }
+    best
+}
+
 /// The dial to hunt a spot from. A spot inside the standard channel's passband (the channel dial
 /// up to 3 kHz above it) keeps the standard dial; any other — a DXpedition on its own frequency —
 /// gets the spot rounded down to the kHz, which puts its signal low in the passband whether the
@@ -1206,6 +1245,28 @@ mod tests {
         // Too high to fit 1200 above: the top of the passband, still above, never below.
         assert_eq!(dxped_split_hz(2000.0, 2000.0), DXPED_SPLIT_TOP_HZ);
         assert_eq!(dxped_split_hz(2000.0, 500.0), DXPED_SPLIT_TOP_HZ);
+    }
+
+    #[test]
+    fn a_clear_transmit_offset_is_the_nearest_one_no_signal_overlaps() {
+        let clear = |want, used: &[f32]| clear_tx_hz(want, used, 50.0, 400.0, 2600.0);
+        assert_eq!(clear(1375.0, &[]), 1375.0);
+        assert_eq!(
+            clear(1375.0, &[1325.0, 1425.0]),
+            1375.0,
+            "just clear of both"
+        );
+        // DK2WH called JT1BZ on 1374 Hz (live run 2026-11-24): the nearest clear one.
+        assert_eq!(clear(1375.0, &[1374.0]), 1425.0);
+        assert_eq!(clear(1375.0, &[1374.0, 1430.0]), 1320.0);
+        // Never outside the range, however near.
+        assert_eq!(clear(420.0, &[430.0]), 480.0);
+        // A full band: the widest gap.
+        let full: Vec<f32> = (0..60)
+            .map(|i| 380.0 + 40.0 * i as f32)
+            .filter(|hz| *hz != 1780.0)
+            .collect();
+        assert_eq!(clear_tx_hz(1375.0, &full, 55.0, 400.0, 2600.0), 1780.0);
     }
 
     #[test]

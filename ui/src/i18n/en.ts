@@ -12870,6 +12870,9 @@ export const EN = {
   'settings.autopilot.legend': 'Autopilot and Answer callers',
   'settings.automation.intro':
     'Answer callers and the supervised autopilot. Both are off until you switch them on. They never turn transmit on by themselves, and every stop switches them off.',
+  'settings.automation.pilot.clearTx': 'Call each station on a clear transmit frequency',
+  'settings.automation.pilot.clearTx.hint':
+    'The clear one nearest to your own, by the signals heard lately in your period; yours comes back afterwards. A DXpedition is still called from at least 1200 Hz above.',
   'settings.automation.pilot.outsideEu': 'Within each rule, call stations outside Europe first',
   'settings.automation.pilot.outsideEu.hint':
     'By the station’s DXCC continent. A European ATNO is still called first: it has its own, stronger rule.',

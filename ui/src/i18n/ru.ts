@@ -10826,6 +10826,8 @@ export const RU: PartialCatalog = {
   "settings.automation.rules.head": "Приоритеты",
   "settings.automation.pilot.ordinaryDwell": "Переходить дальше после такого времени только с обычными новыми позывными (секунды)",
   "settings.automation.timing.head": "Время",
+  "settings.automation.pilot.clearTx.hint": "Ближайшая к вашей из свободных, судя по сигналам, слышанным недавно в вашем периоде; затем возвращается ваша. DX-экспедицию по-прежнему зовут не менее чем на 1200 Гц выше.",
+  "settings.automation.pilot.clearTx": "Звать каждую станцию на свободной частоте передачи",
   "settings.automation.pilot.outsideEu.hint": "По континенту DXCC станции. Европейский ATNO всё равно зовётся первым: у него своё, более сильное правило.",
   "settings.automation.pilot.outsideEu": "В каждом правиле сначала звать станции за пределами Европы",
   "settings.autopilot.legend": "Автопилот и ответ на вызовы",

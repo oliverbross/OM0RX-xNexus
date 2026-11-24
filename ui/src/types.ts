@@ -7524,6 +7524,8 @@ export interface AutomationSettings {
   targetMaxCalls: number
   /** Continents not called (cty.dat codes: EU AS AF NA SA OC AN); empty = every continent. */
   skipContinents: string[]
+  /** Call each station on a clear transmit frequency near the operator's own. */
+  clearTxOffset: boolean
 }
 
 export type AutopilotTier =

@@ -10817,6 +10817,8 @@ export const ZH: PartialCatalog = {
   "settings.automation.rules.head": "优先级",
   "settings.automation.pilot.ordinaryDwell": "只有普通新呼号持续这么久后换频段(秒)",
   "settings.automation.timing.head": "时间",
+  "settings.automation.pilot.clearTx.hint": "根据你的时段内最近听到的信号,使用最接近你自己频率的空闲频率,之后回到你的频率。DXpedition 仍在其上方至少 1200 Hz 呼叫。",
+  "settings.automation.pilot.clearTx": "在空闲的发射频率上呼叫每个电台",
   "settings.automation.pilot.outsideEu.hint": "按电台的 DXCC 大洲判断。欧洲的 ATNO 仍会最先呼叫:它有自己更强的规则。",
   "settings.automation.pilot.outsideEu": "在每条规则内优先呼叫欧洲以外的电台",
   "settings.autopilot.legend": "自动驾驶与应答呼叫者",

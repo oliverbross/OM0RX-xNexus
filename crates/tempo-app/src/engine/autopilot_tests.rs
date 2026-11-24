@@ -1855,6 +1855,67 @@ fn the_held_transmit_offset_returns_after_a_dxpedition() {
     assert!((e.tx_offset_hz - 1375.0).abs() < 0.5, "{}", e.tx_offset_hz);
 }
 
+/// A decode folded and kept in Band Activity, as the live path keeps it.
+fn hear(e: &mut Engine, d: modes::Decode, slot: u64) {
+    e.ingest_decodes_for_test(std::slice::from_ref(&d), slot);
+    e.last_wire_decodes = vec![d];
+    e.note_band_activity(slot);
+}
+
+/// Live run 2026-11-24 (xlog.29): DK2WH called JT1BZ on 1374 Hz while we called it on our held
+/// 1375 Hz, and was answered. A station is called on a frequency clear of the signals of our own
+/// period, near the operator's, which comes back for the next call and when the autopilot stops.
+#[test]
+fn a_station_is_called_on_a_clear_transmit_frequency() {
+    let on = |clear: bool| {
+        let mut e = two_band_pilot();
+        e.settings.automation.clear_tx_offset = clear;
+        e.hold_tx_freq = true;
+        e.set_tx_offset(1375.0);
+        // Our period's audio is slot 30's (folded at 31); slot 31's is the station's own.
+        hear(&mut e, dec_at("JT1BZ DK2WH JN49", -3, 1374.0), 31);
+        hear(&mut e, dec_at("K1AAA W9XYZ R-10", -3, 1430.0), 32);
+        hear(&mut e, dec_at("CQ N0ABC EM48", -3, 700.0), 34);
+        hear(&mut e, dec_at("CQ N0ABC EM48", -3, 700.0), 36);
+        assert_eq!(e.automation_dx().as_deref(), Some("N0ABC"), "premise");
+        e
+    };
+    let mut e = on(true);
+    let moved = e.tx_offset_hz - 1374.0;
+    assert!((55.0..=60.0).contains(&moved.abs()), "{}", e.tx_offset_hz);
+    e.set_autopilot(false).unwrap();
+    assert!((e.tx_offset_hz - 1375.0).abs() < 0.5, "back when it stops");
+
+    // The other period's signals are no reason to move, and neither is the switch off.
+    let mut e = on(false);
+    assert!((e.tx_offset_hz - 1375.0).abs() < 0.5, "off");
+    e.set_autopilot(false).unwrap();
+
+    // Moved by the operator during the call: left where the operator put it.
+    let mut e = on(true);
+    e.set_tx_offset(900.0);
+    e.set_autopilot(false).unwrap();
+    assert!((e.tx_offset_hz - 900.0).abs() < 0.5);
+}
+
+/// A DXpedition's is clear too, and never below 1200 Hz above it.
+#[test]
+fn a_dxpedition_is_called_on_a_clear_frequency_above_it() {
+    let mut e = two_band_pilot();
+    e.hold_tx_freq = true;
+    e.set_tx_offset(1375.0);
+    e.autopilot_feed(vec![dxped_spot("3Y0K", "40m", 7.056)]);
+    e.ingest_decodes_for_test(&[], 30);
+    hear(&mut e, dec_at("3Y0K DL1ABC JO31", -14, 1610.0), 31);
+    hear(&mut e, dec_at("CQ 3Y0K JD15", -14, 406.0), 32);
+    assert_eq!(e.automation_dx().as_deref(), Some("3Y0K"), "premise");
+    assert!(
+        (1665.0..=1671.0).contains(&e.tx_offset_hz),
+        "{}",
+        e.tx_offset_hz
+    );
+}
+
 /// Live run 2026-11-24 (xlog.28): new grids, one after another, kept the autopilot on 15 m for half
 /// an hour while the other bands waited. Ten minutes of nothing better than grids gives way too.
 #[test]

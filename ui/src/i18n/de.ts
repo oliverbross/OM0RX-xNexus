@@ -10853,6 +10853,8 @@ export const DE: PartialCatalog = {
   "settings.automation.rules.head": "Prioritäten",
   "settings.automation.pilot.ordinaryDwell": "Weiterziehen nach so langer Zeit mit nur gewöhnlichen neuen Rufzeichen (Sekunden)",
   "settings.automation.timing.head": "Zeiten",
+  "settings.automation.pilot.clearTx.hint": "Die nächste freie zu deiner eigenen, unter den zuletzt in deiner Periode gehörten Signalen; danach geht es auf deine zurück. Eine DXpedition wird weiterhin mindestens 1200 Hz darüber gerufen.",
+  "settings.automation.pilot.clearTx": "Jede Station auf einer freien Sendefrequenz rufen",
   "settings.automation.pilot.outsideEu.hint": "Nach dem DXCC-Kontinent der Station. Ein europäisches ATNO wird trotzdem zuerst gerufen: Es hat seine eigene, stärkere Regel.",
   "settings.automation.pilot.outsideEu": "Innerhalb jeder Regel zuerst Stationen außerhalb Europas rufen",
   "settings.autopilot.legend": "Autopilot und Anrufer beantworten",

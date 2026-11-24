@@ -145,6 +145,8 @@ describe('SettingsAutomation', () => {
     )
     fireEvent.click(screen.getByTestId('automation-outside-eu'))
     expect(change).toHaveBeenLastCalledWith(expect.objectContaining({ preferOutsideEu: false }))
+    fireEvent.click(screen.getByTestId('automation-clear-tx'))
+    expect(change).toHaveBeenLastCalledWith(expect.objectContaining({ clearTxOffset: false }))
   })
 
   it('switches a continent off and on, and sets the call limit', () => {

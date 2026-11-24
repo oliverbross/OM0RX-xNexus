@@ -65,6 +65,7 @@ export const DEFAULT_AUTOMATION: AutomationSettings = {
   preferOutsideEu: true,
   targetMaxCalls: 4,
   skipContinents: [],
+  clearTxOffset: true,
 }
 
 /** The continents offered, in the order shown (cty.dat codes; automation.rs `CONTINENTS`). */
@@ -426,6 +427,13 @@ export function SettingsAutomation({
           on={a.preferOutsideEu}
           onChange={(preferOutsideEu) => set({ preferOutsideEu })}
           testId="automation-outside-eu"
+        />
+        <Switch
+          label={t('settings.automation.pilot.clearTx')}
+          hint={t('settings.automation.pilot.clearTx.hint')}
+          on={a.clearTxOffset}
+          onChange={(clearTxOffset) => set({ clearTxOffset })}
+          testId="automation-clear-tx"
         />
         <Continents
           skip={a.skipContinents}

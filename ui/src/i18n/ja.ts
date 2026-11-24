@@ -10846,6 +10846,8 @@ export const JA: PartialCatalog = {
   "settings.automation.rules.head": "優先順位",
   "settings.automation.pilot.ordinaryDwell": "通常の新コールだけの状態がこの時間続いたら移動(秒)",
   "settings.automation.timing.head": "タイミング",
+  "settings.automation.pilot.clearTx.hint": "自分の送信シーケンスで最近聞こえた信号を避け、自分の周波数に最も近い空きを使い、その後は元に戻ります。DXペディションは引き続き1200 Hz以上上で呼びます。",
+  "settings.automation.pilot.clearTx": "空いている送信周波数で各局を呼ぶ",
   "settings.automation.pilot.outsideEu.hint": "局のDXCC大陸で判断します。ヨーロッパのATNOは引き続き最初に呼ばれます(より強い専用ルールがあります)。",
   "settings.automation.pilot.outsideEu": "各ルール内でヨーロッパ外の局を先に呼ぶ",
   "settings.autopilot.legend": "オートパイロットと呼び出しへの応答",

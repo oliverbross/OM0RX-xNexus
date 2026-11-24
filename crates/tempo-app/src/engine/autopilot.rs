@@ -403,6 +403,7 @@ impl Engine {
                 self.automation.pilot.chase = None;
                 self.automation.pilot.status = "off";
                 self.automation.pilot.reason = "switched off".into();
+                self.automation_tx_back();
                 note(
                     &mut self.automation.pilot.log,
                     "switched off by the operator",
@@ -1009,15 +1010,19 @@ impl Engine {
         let call = c.call.clone();
         let rare = matches!(tier, Tier::Dxpedition | Tier::Atno) && c.freq_hz > 0.0;
         let mut c = c.clone();
-        // The transmit offset goes back where it was before a DXpedition's call moved it, unless the
-        // operator has moved it since.
-        if !rare {
-            if let Some((before, moved_to)) = self.automation.pilot.tx_before.take() {
-                if (self.tx_offset_hz - moved_to).abs() < 0.5 {
-                    self.set_tx_offset(before);
-                }
-            }
+        let clear = self.automation.pilot.on && self.settings.automation.clear_tx_offset;
+        // The transmit offset goes back where it was before the autopilot moved it, unless the
+        // operator has moved it since. A station calling us is answered where we are: it may be
+        // answering a call made there.
+        let stays = rare || (clear && tier == Tier::CallingMe);
+        if !stays {
+            self.automation_tx_back();
         }
+        let mut used = if clear && c.freq_hz > 0.0 && tier != Tier::CallingMe {
+            self.automation_used_offsets(c.slot)
+        } else {
+            Vec::new()
+        };
         // A DXpedition sits low, under 500 Hz, and is called from above it (operator,
         // 2026-11-22). One heard higher is brought there first: the dial moves up so its signal
         // lands at DXPED_PLACE_HZ, through the autopilot's own switch, so it happens only between
@@ -1034,6 +1039,9 @@ impl Engine {
                     c.freq_hz - shift_hz
                 ));
                 c.freq_hz -= shift_hz;
+                for hz in &mut used {
+                    *hz -= shift_hz;
+                }
             }
         }
         let held = self.tx_offset_hz;
@@ -1050,7 +1058,10 @@ impl Engine {
                 // A DXpedition (or an ATNO, as rare and as crowded) is never called on its own
                 // frequency: at least 1200 Hz above it (operator, 2026-11-22).
                 if rare {
-                    let tx = automation::dxped_split_hz(c.freq_hz, self.tx_offset_hz);
+                    let want = automation::dxped_split_hz(c.freq_hz, self.tx_offset_hz);
+                    let low = automation::dxped_split_hz(c.freq_hz, 0.0);
+                    let top = automation::DXPED_SPLIT_TOP_HZ;
+                    let tx = automation::clear_tx_hz(want, &used, self.tx_width_hz(), low, top);
                     let before = self.automation.pilot.tx_before.map_or(held, |(b, _)| b);
                     self.set_tx_offset(tx);
                     self.automation.pilot.tx_before = Some((before, self.tx_offset_hz));
@@ -1058,6 +1069,28 @@ impl Engine {
                         "{call} heard at {:.0} Hz: calling at {:.0} Hz",
                         c.freq_hz, self.tx_offset_hz
                     ));
+                } else if !used.is_empty() {
+                    // Any other is called on a frequency nobody was heard using in our period
+                    // (operator, 2026-11-24), the nearest to the operator's own.
+                    let want = self.tx_offset_hz;
+                    let tx = automation::clear_tx_hz(
+                        want,
+                        &used,
+                        self.tx_width_hz(),
+                        automation::CLEAR_LOW_HZ,
+                        automation::CLEAR_TOP_HZ,
+                    );
+                    if (tx - want).abs() >= 0.5 {
+                        self.set_tx_offset(tx);
+                        // Without Hold Tx there is nothing to go back to.
+                        if self.hold_tx_freq {
+                            self.automation.pilot.tx_before = Some((want, self.tx_offset_hz));
+                        }
+                        self.automation_note(&format!(
+                            "{call}: {want:.0} Hz is in use, calling at {:.0} Hz",
+                            self.tx_offset_hz
+                        ));
+                    }
                 }
                 self.automation.held_disable = false;
                 self.automation
@@ -1082,6 +1115,39 @@ impl Engine {
                 }
             }
             Err(e) => self.automation_note(&format!("could not call {call}: {e}")),
+        }
+    }
+
+    /// Put the transmit offset back where it was before the autopilot moved it, unless the operator
+    /// has moved it since.
+    fn automation_tx_back(&mut self) {
+        if let Some((before, moved_to)) = self.automation.pilot.tx_before.take() {
+            if (self.tx_offset_hz - moved_to).abs() < 0.5 {
+                self.set_tx_offset(before);
+            }
+        }
+    }
+
+    /// The audio offsets signals were heard at lately in the period we would answer a station
+    /// decoded at `slot` in: that slot's own period, as a decode carries its audio's slot + 1. From
+    /// Band Activity, which reaches back over a round of calls on a full band.
+    fn automation_used_offsets(&self, slot: u64) -> Vec<f32> {
+        let secs = self.active_slot_secs();
+        self.band_activity()
+            .filter_map(|(start, d)| {
+                // A period's start is kept in whole seconds (FT4's periods are 7.5 s long).
+                let heard = ((start as f64 + 0.5) / secs) as u64;
+                (heard % 2 == slot % 2 && heard + automation::CLEAR_LOOKBACK_SLOTS >= slot)
+                    .then_some(d.freq)
+            })
+            .collect()
+    }
+
+    /// How far apart two signals' lowest tones must be not to overlap, Hz, with a little to spare.
+    fn tx_width_hz(&self) -> f32 {
+        match self.app.tier() {
+            LinkTier::Ft4 => 90.0,
+            _ => 55.0,
         }
     }
 
