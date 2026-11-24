@@ -1695,3 +1695,65 @@ fn a_grid_that_answered_and_another_grid_change_nothing() {
     e.ingest_decodes_for_test(&[dec_snr("CQ K1XYZ FN42", 5)], s);
     assert_eq!(e.automation_dx().as_deref(), Some("N0ABC"), "another grid");
 }
+
+/// Live run 2026-11-24 (xlog.28): on 17 m FT4 for XU7O, up to five stations a period were heard
+/// calling it and working it, and the hunt ended as "not heard" after five minutes. The operator's
+/// rule is ten.
+#[test]
+fn a_hunt_stays_ten_minutes_while_stations_are_heard_calling_the_dxpedition() {
+    let hunt = || {
+        let mut e = two_band_pilot();
+        e.autopilot_feed(vec![dxped_spot("3Y0K", "40m", 7.056)]);
+        e.ingest_decodes_for_test(&[], 30);
+        assert_eq!(e.settings.band, "40m", "premise: hunting");
+        e
+    };
+    let calling = [dec_snr("3Y0K SP6CIK JO80", -7)];
+    let mut e = hunt();
+    e.automation_backdate_band(310);
+    e.ingest_decodes_for_test(&calling, 32);
+    assert_eq!(
+        e.settings.band, "40m",
+        "on the air: stays past five minutes"
+    );
+    e.autopilot_feed(vec![]);
+    e.ingest_decodes_for_test(&[], 34);
+    assert_eq!(e.settings.band, "40m", "and past its spot's age");
+    e.automation_backdate_band(300);
+    e.ingest_decodes_for_test(&calling, 36);
+    assert_eq!(e.settings.band, "20m", "over after ten");
+
+    // CONTROL: nobody heard calling it, five minutes.
+    let mut e = hunt();
+    e.automation_backdate_band(310);
+    e.ingest_decodes_for_test(&[dec_snr("W1AW SP6CIK JO80", -7)], 32);
+    assert_eq!(e.settings.band, "20m", "not on the air: over after five");
+}
+
+/// The operator's rule: a DXpedition keeps being called. After any number of hunts it is hunted
+/// again an hour later.
+#[test]
+fn a_dxpedition_is_hunted_again_after_any_number_of_hunts() {
+    let mut e = two_band_pilot();
+    for _ in 0..5 {
+        e.automation_fail_for_test("3Y0K", 3_700);
+    }
+    e.autopilot_feed(vec![dxped_spot("3Y0K", "40m", 7.056)]);
+    e.ingest_decodes_for_test(&[], 30);
+    assert_eq!(
+        e.settings.band, "20m",
+        "premise: five failures leave a station for the session"
+    );
+
+    let mut e = two_band_pilot();
+    for s in [30, 34, 38, 42, 46] {
+        e.autopilot_feed(vec![dxped_spot("3Y0K", "40m", 7.056)]);
+        e.ingest_decodes_for_test(&[], s);
+        assert_eq!(e.settings.band, "40m", "hunted at slot {s}");
+        e.autopilot_feed(vec![]);
+        e.ingest_decodes_for_test(&[], s + 2);
+        assert_eq!(e.settings.band, "20m", "premise: the hunt is over");
+        e.automation_backdate_attempts(3_700);
+        e.automation_backdate_chased(3_700);
+    }
+}

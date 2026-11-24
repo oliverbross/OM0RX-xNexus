@@ -50,6 +50,15 @@ use tempo_core::qso::State as QsoState;
 const CALLER_FRESH_SLOTS: u64 = 3;
 /// How long a spot chase may go without decoding its station before it is given up, seconds.
 const CHASE_UNHEARD_SECS: u64 = 300;
+/// How long a DXpedition hunt stays when the DXpedition itself is not decoded but stations calling
+/// it are, seconds (operator: a DXpedition is followed for at least ten minutes).
+const HUNT_ON_AIR_SECS: u64 = 600;
+/// How lately a station must have been heard calling it for the DXpedition to count as on the air,
+/// seconds.
+const HUNT_CALLED_SECS: u64 = 120;
+/// Failures counted against a hunted DXpedition at most: it is tried again each hour, never left
+/// for the session.
+const HUNT_MAX_FAILURES: u32 = 3;
 /// How long a chased call is not chased again, seconds.
 const CHASE_COOLDOWN_SECS: u64 = 900;
 /// After a chase that never heard its station, how long a spot of a lower rule (a US state, a park,
@@ -145,6 +154,8 @@ struct Hunt {
     hound_from: Option<SpecialOp>,
     /// The DXpedition has been decoded here.
     heard: bool,
+    /// When a station was last decoded here calling the DXpedition, Unix seconds.
+    called_unix: Option<u64>,
 }
 
 /// The autopilot's running state.
@@ -475,6 +486,14 @@ impl Engine {
     #[cfg(test)]
     pub(super) fn automation_go_for_test(&mut self, band: &str) {
         assert!(self.automation_switch(None, band, None));
+    }
+
+    /// Test hook: move every chase `secs` into the past.
+    #[cfg(test)]
+    pub(super) fn automation_backdate_chased(&mut self, secs: u64) {
+        for at in self.automation.pilot.chased.values_mut() {
+            *at = at.saturating_sub(secs);
+        }
     }
 
     /// Test hook: move every failed attempt `secs` into the past.
@@ -2067,6 +2086,7 @@ impl Engine {
                 back_tier: self.app.tier(),
                 hound_from: None,
                 heard: false,
+                called_unix: None,
             };
             let call = e.call.to_uppercase();
             // Never hunt on a spot whose frequency is off the band its label names, or whose
@@ -2130,6 +2150,22 @@ impl Engine {
                 self.automation_note(&format!("{} runs Fox/Hound: Hound on", ch.call));
             }
         }
+        // Not heard here, but on the air: others are heard calling it or working it.
+        if decodes.iter().any(|d| {
+            Msg::parse(&d.message)
+                .addressee()
+                .is_some_and(|to| same_call(to, &ch.call))
+        }) {
+            hunt.called_unix = Some(now);
+        }
+        let on_air = hunt
+            .called_unix
+            .is_some_and(|t| now.saturating_sub(t) <= HUNT_CALLED_SECS);
+        let unheard_secs = if on_air {
+            HUNT_ON_AIR_SECS
+        } else {
+            CHASE_UNHEARD_SECS
+        };
         if let Some(c) = self.automation.pilot.chase.as_mut() {
             c.hunt = Some(hunt.clone());
         }
@@ -2148,9 +2184,9 @@ impl Engine {
                 "{} not worked in {} s",
                 ch.call, s.rare_budget_secs
             ))
-        } else if !hunt.heard && elapsed >= CHASE_UNHEARD_SECS {
+        } else if !hunt.heard && elapsed >= unheard_secs {
             Some(format!("{} not heard", ch.call))
-        } else if !hunt.heard && !spotted {
+        } else if !hunt.heard && !spotted && !on_air {
             Some(format!("{} no longer spotted", ch.call))
         } else if !s.hunt_dxpeditions {
             Some("hunting switched off".to_string())
@@ -2219,11 +2255,25 @@ impl Engine {
         // Counted once, when the hunt really ends (not on every held slot).
         if !ch.done {
             self.note_failed(&ch.call);
+            // Tried again each hour, never left for the session (operator: a DXpedition keeps being
+            // called).
+            if let Some(a) = self
+                .automation
+                .pilot
+                .attempts
+                .get_mut(&ch.call.to_uppercase())
+            {
+                a.failures = a.failures.min(HUNT_MAX_FAILURES);
+            }
         }
         // Never heard there: the band is most likely closed to it (a 15 m spot at night), so it
-        // waits twice the usual cool-down before it is hunted again.
+        // waits twice the usual cool-down before it is hunted again; the usual one when stations
+        // here were heard calling it.
         if !hunt.heard && !ch.done {
-            let until = now_unix_secs() + CHASE_COOLDOWN_SECS;
+            let mut until = now_unix_secs();
+            if hunt.called_unix.is_none() {
+                until += CHASE_COOLDOWN_SECS;
+            }
             self.automation
                 .pilot
                 .chased
