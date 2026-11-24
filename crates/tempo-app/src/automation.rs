@@ -873,7 +873,8 @@ pub struct FeedEntry {
 /// Wider than WSJT-X's standard call on purpose, since a dropped real one could be the ATNO: one
 /// part of the call must be a prefix of one to three characters with a letter in it (`3DA`, `3X`),
 /// one to four digits (`TM100VERDUN`), and one to six letters. `KH6XX/W0` and `F/OM0RX/P` pass on
-/// the part that does.
+/// the part that does; what stands beside it is a prefix or a suffix, at most four characters
+/// ("5T4LS/85PD6", an "ATNO" chased 2026-11-24).
 pub fn spot_call_ok(call: &str) -> bool {
     let call = call.trim().to_ascii_uppercase();
     let alnum = |p: &str| !p.is_empty() && p.bytes().all(|b| b.is_ascii_alphanumeric());
@@ -888,7 +889,8 @@ pub fn spot_call_ok(call: &str) -> bool {
             && (1..=3).contains(&prefix.len())
             && prefix.bytes().any(|b| b.is_ascii_alphabetic())
     };
-    call.len() <= 14 && call.split('/').all(alnum) && call.split('/').any(full)
+    let part = |p: &str| alnum(p) && (full(p) || p.len() <= 4);
+    call.len() <= 14 && call.split('/').all(part) && call.split('/').any(full)
 }
 
 /// The tier a spot would put its station in, for chasing it to another band; `None` = not worth
@@ -1724,6 +1726,7 @@ mod tests {
             "",
             "E34XQXUYE9H",
             "89EARO/J8Z5",
+            "5T4LS/85PD6",
             "KH6XX.W0",
             "<...>",
             "CQ",
