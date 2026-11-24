@@ -1153,6 +1153,24 @@ impl Engine {
                         self.start_auto_contact(&c, Tier::CallingMe);
                         return;
                     }
+                } else if let Some((c, tier)) = (!advanced)
+                    .then(|| self.automation_needed_instead(&t, decodes, slot, cur_mode, &s, now))
+                    .flatten()
+                {
+                    // A needed station is free here and the grid or new call being called has not
+                    // answered (live run 2026-11-24: XE2X, needed on 160 m, called CQ while a new
+                    // grid was called for two minutes).
+                    self.note_failed(&t.call);
+                    self.automation_note(&format!(
+                        "{} did not answer: calling {} instead ({tier:?}, {} dB)",
+                        t.call, c.call, c.snr
+                    ));
+                    self.automation_abandon_contact();
+                    self.automation.pilot.target = None;
+                    self.automation.pilot.last_worthwhile_unix = now;
+                    self.automation.pilot.last_needed_unix = now;
+                    self.start_auto_contact(&c, tier);
+                    return;
                 } else {
                     if late && !rare {
                         if let Some(t) = self.automation.pilot.target.as_mut() {
@@ -1277,21 +1295,7 @@ impl Engine {
 
         // Rank what was heard this slot.
         let candidates = self.automation_candidates(decodes, slot, &cur_band, cur_mode);
-        let mycall = self.settings.mycall.clone();
-        let blocked = self.settings.blocked_calls.clone();
-        let worked = self.automation.pilot.worked.clone();
-        let done = self.automation.done.clone();
-        let hound = self.settings.special_op != SpecialOp::None;
-        let skip = |c: &Candidate| {
-            same_call(&c.call, &mycall)
-                || blocked.iter().any(|b| same_call(b, &c.call))
-                || worked.contains(&format!("{}|{}|{}", c.call.to_uppercase(), cur_band, cur_mode))
-                // A contact just made: its repeats and 73s are not a new call.
-                || done.contains_key(&c.call.to_uppercase())
-                // A DXpedition running Fox/Hound calls below 1000 Hz: Hound is the operator's
-                // per-DXpedition choice, so the autopilot leaves a Fox alone.
-                || (c.dxpedition && c.freq_hz < 1000.0 && !hound)
-        };
+        let skip = |c: &Candidate| self.automation_skip(c, &cur_band, cur_mode);
         let attempts = &self.automation.pilot.attempts;
         let picked = automation::pick(&candidates, &s, attempts, now, |c| skip(c))
             .map(|(c, t)| (c.clone(), t));
@@ -1483,7 +1487,7 @@ impl Engine {
                 .get(&c.call.to_uppercase())
                 .is_some_and(|a| now >= a.last_unix.saturating_add(CALL_AGAIN_SECS));
             let needed = automation::best_allowed_tier(c, &s).is_some_and(automation::is_needed);
-            skip(c) || !rested || !needed
+            self.automation_skip(c, &cur_band, cur_mode) || !rested || !needed
         })
         .map(|(c, t)| (c.clone(), t));
         if let Some((c, t)) = again {
@@ -1513,6 +1517,59 @@ impl Engine {
         } else {
             "listening"
         };
+    }
+
+    /// Is this station never called here, whatever its tier?
+    fn automation_skip(&self, c: &Candidate, band: &str, mode: &str) -> bool {
+        let hound = self.settings.special_op != SpecialOp::None;
+        same_call(&c.call, &self.settings.mycall)
+            || self
+                .settings
+                .blocked_calls
+                .iter()
+                .any(|b| same_call(b, &c.call))
+            || self.automation.pilot.worked.contains(&format!(
+                "{}|{band}|{mode}",
+                c.call.to_uppercase()
+            ))
+            // A contact just made: its repeats and 73s are not a new call.
+            || self.automation.done.contains_key(&c.call.to_uppercase())
+            // A DXpedition running Fox/Hound calls below 1000 Hz: Hound is the operator's
+            // per-DXpedition choice, so the autopilot leaves a Fox alone.
+            || (c.dxpedition && c.freq_hz < 1000.0 && !hound)
+    }
+
+    /// A needed station free to be called while `t`, only a grid or an ordinary new call, has not
+    /// answered: it is called instead. None while a station that calls us is being answered.
+    fn automation_needed_instead(
+        &self,
+        t: &Target,
+        decodes: &[modes::Decode],
+        slot: u64,
+        mode: &str,
+        s: &automation::AutomationSettings,
+        now: u64,
+    ) -> Option<(QueuedCaller, Tier)> {
+        if !matches!(t.tier, Tier::Grid | Tier::NewCall) {
+            return None;
+        }
+        let band = &self.settings.band;
+        let list = self.automation_candidates(decodes, slot, band, mode);
+        let attempts = &self.automation.pilot.attempts;
+        automation::pick(&list, s, attempts, now, |c| {
+            c.to_me || same_call(&c.call, &t.call) || self.automation_skip(c, band, mode)
+        })
+        .filter(|(_, tier)| automation::is_needed(*tier))
+        .map(|(c, tier)| {
+            let q = QueuedCaller {
+                call: c.call.clone(),
+                message: c.message.clone(),
+                snr: c.snr,
+                freq_hz: c.freq_hz,
+                slot: c.slot,
+            };
+            (q, tier)
+        })
     }
 
     /// Is a contact running (a station being called or worked, not yet finished)?
