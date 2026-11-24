@@ -52,4 +52,29 @@ installed xlog.25 keeps its logbook and settings.
   `BEE6426AA06A16EA0CA22C8D133B733B43B89BE06A19F5225ABC9C5927989A51`.
 - **Built exe:** `A166701D…8482`. **Installed exe:** `83B99DC5…4D58`, version 1.25.0-xlog.26.
 - **Install:** 14:00 UTC, `/S`, exit 0, with no Nexus running; `settings.json` unchanged.
-- **Not launched yet:** nothing of xlog.26 has been seen on the air.
+- **First launch:** 2026-11-23 23:00:57 UTC, with the operator's approval to go on the air.
+
+## Live run (2026-11-23 23:02 to 2026-11-24 02:02 UTC, still running)
+
+Night schedule, FLEX-8400 through SmartSDR CAT, amplifier in standby, transmit offset held at 1375 Hz.
+
+- **Reliability:** three hours, no stop of the autopilot, no transmit disarm, no watchdog stop, no
+  PTT alarm, CAT connected throughout, longest over 13.7 s.
+- **Contacts:** 21 (60 m 13, 40 m 5, 80 m 2, 160 m 1). Needed band slots ER3ZW, ER1CW (60 m) and 3B8FA
+  (40 m); spotted US state K8MM worked on the second hunt. G0KLD, TA4SSK and N3FWE called while
+  another station had not answered, and were worked.
+- **Decode periods dropped:** 11, between 23:33 and 00:11, while test builds ran on the same machine.
+  None after the builds were confined to three cores.
+- **Not seen:** a DXpedition, an ATNO, a lost CAT link, FT4.
+
+Defects found, fixed on `xnexus/autopilot-reliability`, not in this candidate:
+
+- **8Q7XX (80 m, needed) left four calls unanswered and called CQ beside an idle autopilot**, whose
+  hunt ended as "not heard" (23:20–23:25). `598ae431a`.
+- **D2ACE answered late, sent its report three times, and was dropped after four R-reports** (23:30–23:32).
+  `1d223d965`.
+- **30 m came up once, for 75 s, and 160 m had 40 s in the first 74 minutes**: after chases 40 m counted
+  as due again. `05cf0d4fd`. A chase still leaves a scheduled band at once.
+
+Observed, not changed: on 40 m, 50 of 53 periods had a signal overlapping the held 1375 Hz offset, and
+most calls there went unanswered.
