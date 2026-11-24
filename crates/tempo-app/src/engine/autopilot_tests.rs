@@ -1757,3 +1757,75 @@ fn a_dxpedition_is_hunted_again_after_any_number_of_hunts() {
         e.automation_backdate_chased(3_700);
     }
 }
+
+/// A hunt whose DXpedition answered, then went quiet until the sequencer's call cap stalled the
+/// contact; the next slot.
+fn a_stalled_hunt() -> (Engine, u64) {
+    let mut e = two_band_pilot();
+    e.autopilot_feed(vec![dxped_spot("3Y0K", "40m", 7.056)]);
+    e.ingest_decodes_for_test(&[], 30);
+    e.ingest_decodes_for_test(&[dec_at("CQ 3Y0K JD15", -14, 406.0)], 32);
+    assert_eq!(e.automation_dx().as_deref(), Some("3Y0K"), "premise");
+    let mut s = over(&mut e, 33) + 1;
+    e.ingest_decodes_for_test(&[dec_at("OM0RX 3Y0K -10", -12, 406.0)], s);
+    s += 1;
+    let stalled = |e: &Engine| matches!(&e.mode, Mode::Qso { station, .. } if station.stalled());
+    for _ in 0..60 {
+        if stalled(&e) {
+            break;
+        }
+        let _ = e.poll_tx(s);
+        s += 1;
+        let _ = e.poll_tx(s);
+        e.ingest_decodes_for_test(&[], s);
+        s += 1;
+    }
+    assert!(stalled(&e), "premise: the call cap stalled it");
+    assert!(e.tx_enabled, "premise");
+    (e, s)
+}
+
+/// Live run 2026-11-24 (xlog.28): XU7O's contact stalled by its call cap and stayed armed; six
+/// minutes later, in the middle of the hunt, the TX watchdog disarmed transmit and the autopilot went
+/// off. A stalled contact is ended first; the watchdog itself is unchanged.
+#[test]
+fn a_stalled_contact_does_not_let_the_watchdog_stop_the_autopilot() {
+    let (mut e, mut s) = a_stalled_hunt();
+    e.ingest_decodes_for_test(&[], s);
+    e.tx_watchdog_start = Some(now_unix_secs() - 400);
+    e.ingest_decodes_for_test(&[], s + 1);
+    for _ in 0..4 {
+        let _ = e.poll_tx(s);
+        s += 1;
+    }
+    assert!(
+        e.tx_enabled && e.automation_dto().autopilot_on,
+        "kept for a late answer"
+    );
+    assert_eq!(e.automation_dx().as_deref(), Some("3Y0K"));
+    e.automation_backdate_stall(130);
+    e.ingest_decodes_for_test(&[], s);
+    assert_eq!(e.automation_dx(), None, "then ended");
+    e.tx_watchdog_start = Some(now_unix_secs() - 400);
+    for _ in 0..4 {
+        let _ = e.poll_tx(s);
+        s += 1;
+    }
+    e.ingest_decodes_for_test(&[], s);
+    assert!(e.tx_enabled && e.automation_dto().autopilot_on);
+    // Still hunting: called again when it is heard again.
+    e.ingest_decodes_for_test(&[dec_at("CQ 3Y0K JD15", -14, 406.0)], s + 2);
+    assert_eq!(e.automation_dx().as_deref(), Some("3Y0K"));
+}
+
+/// The watchdog still stops a stalled contact left armed when the autopilot's step stops running.
+#[test]
+fn the_watchdog_still_stops_a_stalled_contact_without_the_autopilots_step() {
+    let (mut e, mut s) = a_stalled_hunt();
+    e.tx_watchdog_start = Some(now_unix_secs() - 400);
+    for _ in 0..4 {
+        let _ = e.poll_tx(s);
+        s += 1;
+    }
+    assert!(!e.tx_enabled);
+}

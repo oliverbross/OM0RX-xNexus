@@ -59,6 +59,9 @@ const HUNT_CALLED_SECS: u64 = 120;
 /// Failures counted against a hunted DXpedition at most: it is tried again each hour, never left
 /// for the session.
 const HUNT_MAX_FAILURES: u32 = 3;
+/// How long a contact stalled by the sequencer's call cap is kept under the autopilot, for a late
+/// answer, before it is ended, seconds.
+const STALL_KEEP_SECS: u64 = 120;
 /// How long a chased call is not chased again, seconds.
 const CHASE_COOLDOWN_SECS: u64 = 900;
 /// After a chase that never heard its station, how long a spot of a lower rule (a US state, a park,
@@ -180,6 +183,8 @@ struct Pilot {
     chased: HashMap<String, u64>,
     /// When the last chase that heard nothing was given up: the next one waits [`chase_rest_secs`].
     chase_failed_unix: u64,
+    /// When the contact on the sequencer was first seen stalled by its call cap, Unix seconds.
+    stalled_unix: Option<u64>,
     /// The scheduled band a chase left, so the rotation goes on from there and not from wherever
     /// the spot was.
     rotation: Option<String>,
@@ -486,6 +491,13 @@ impl Engine {
     #[cfg(test)]
     pub(super) fn automation_go_for_test(&mut self, band: &str) {
         assert!(self.automation_switch(None, band, None));
+    }
+
+    /// Test hook: the contact stalled `secs` earlier than it did.
+    #[cfg(test)]
+    pub(super) fn automation_backdate_stall(&mut self, secs: u64) {
+        let at = &mut self.automation.pilot.stalled_unix;
+        *at = at.map(|t| t.saturating_sub(secs));
     }
 
     /// Test hook: move every chase `secs` into the past.
@@ -1121,6 +1133,8 @@ impl Engine {
             self.automation_adopt_contact(now, slot, cur_mode);
         }
 
+        self.automation_end_stalled(now);
+
         // The contact the autopilot keeps: finished, still running, or out of calls or time.
         if let Some(t) = self.automation.pilot.target.clone() {
             if busy {
@@ -1589,6 +1603,32 @@ impl Engine {
             };
             (q, tier)
         })
+    }
+
+    /// A contact the sequencer's call cap has stalled is sending nothing but still armed, and the TX
+    /// watchdog, rightly, disarms a transmitter left like that (live run 2026-11-24: XU7O's stalled
+    /// over switched the autopilot off in the middle of its hunt). Under the autopilot it is kept
+    /// [`STALL_KEEP_SECS`] for a late answer, and then ended, so nothing is left armed for the
+    /// watchdog to find. Bounded by the wall clock, so the watchdog is held off no longer than that.
+    fn automation_end_stalled(&mut self, now: u64) {
+        let stalled = !self.cq_running
+            && matches!(&self.mode, Mode::Qso { station, .. } if station.dxcall.is_some() && station.stalled());
+        if !stalled {
+            self.automation.pilot.stalled_unix = None;
+            return;
+        }
+        let since = *self.automation.pilot.stalled_unix.get_or_insert(now);
+        if now.saturating_sub(since) < STALL_KEEP_SECS {
+            self.automation_watchdog_restart();
+            return;
+        }
+        self.automation.pilot.stalled_unix = None;
+        let call = match &self.mode {
+            Mode::Qso { station, .. } => station.dxcall.clone().unwrap_or_default(),
+            _ => String::new(),
+        };
+        self.automation_note(&format!("{call} went quiet: call ended"));
+        self.automation_abandon_contact();
     }
 
     /// Is a contact running (a station being called or worked, not yet finished)?
