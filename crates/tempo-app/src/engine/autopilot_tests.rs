@@ -1620,3 +1620,22 @@ fn a_band_left_at_once_for_a_spot_is_still_due() {
     }
     assert_eq!(e.settings.band, "17m", "20 m had its turn, 17 m did not");
 }
+
+/// Live run 2026-11-24 (xlog.27): XE2X, a needed 80 m slot, left eight calls unanswered, then ended
+/// two contacts (73, RR73) in three minutes, called by the next station each time, beside an
+/// idle autopilot that waited for a CQ. It is called when it ends a contact, not in mid-contact.
+#[test]
+fn a_needed_station_is_called_again_when_it_ends_a_contact() {
+    let (mut e, s) = an_unanswered_needed_station();
+    e.automation_backdate_attempts(90);
+    e.ingest_decodes_for_test(&[dec_snr("F4IEX 5U4JSF -15", -12)], s);
+    assert_eq!(e.automation_dx(), None, "in contact with somebody");
+    e.ingest_decodes_for_test(&[dec_snr("F4IEX 5U4JSF RR73", -12)], s + 2);
+    assert_eq!(e.automation_dx().as_deref(), Some("5U4JSF"));
+    over(&mut e, s + 3);
+
+    let (mut e, s) = an_unanswered_needed_station();
+    e.automation_backdate_attempts(90);
+    e.ingest_decodes_for_test(&[dec_snr("F4IEX 5U4JSF 73", -12)], s);
+    assert_eq!(e.automation_dx().as_deref(), Some("5U4JSF"), "its 73 too");
+}

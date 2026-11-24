@@ -1471,7 +1471,7 @@ impl Engine {
             }
         }
         // Nobody else is wanted here, and a needed station that left our calls unanswered still
-        // calls CQ: called again rather than listened to (live run 2026-11-23: 8Q7XX, a needed 80 m
+        // calls CQ (or ends a contact): called again rather than listened to (live run 2026-11-23: 8Q7XX, a needed 80 m
         // slot, called CQ beside an idle autopilot for four minutes). The band's quiet time is not
         // put off by it, so the schedule still moves on.
         let none = HashMap::new();
@@ -1482,8 +1482,7 @@ impl Engine {
                 .attempts
                 .get(&c.call.to_uppercase())
                 .is_some_and(|a| now >= a.last_unix.saturating_add(CALL_AGAIN_SECS));
-            let needed = automation::best_allowed_tier(c, &s)
-                .is_some_and(|t| !matches!(t, Tier::Grid | Tier::NewCall | Tier::CallingMe));
+            let needed = automation::best_allowed_tier(c, &s).is_some_and(automation::is_needed);
             skip(c) || !rested || !needed
         })
         .map(|(c, t)| (c.clone(), t));
@@ -1728,6 +1727,11 @@ impl Engine {
                     call_status: row.call_status.clone(),
                     dxcc_status: row.dxcc_status.clone(),
                     is_cq,
+                    ending: !row.directed_to_me
+                        && matches!(
+                            Msg::parse(&d.message),
+                            Msg::Bye73 { .. } | Msg::Rr73 { .. } | Msg::Rrr { .. }
+                        ),
                     to_me: row.directed_to_me
                         && self.settings.automation.answer_callers
                         && !matches!(
