@@ -42,4 +42,28 @@ Not changed: a low-confidence decode (marked `^`) is never acted on, XE2X's 160 
   `3E3F45FDE65010C25BA4C005C2A5678E1A56CF0A808227FF7C2135FFB7ABDD0C` (matches the receipt).
 - **Built exe:** `C5021264…4C57`. **Installed exe:** `81E7A045…FDF5`, version 1.25.0-xlog.28.
 - **Install:** 07:21 UTC, `/S`, exit 0, with no Nexus running; `settings.json` unchanged.
-- **Not launched** when this was written: going on the air needs the operator's approval.
+- **First launch:** 2026-11-24 07:23:56 UTC, with the operator's approval to go on the air.
+
+## Live run (2026-11-24 07:24 to 13:15 UTC)
+
+Day schedule (FT8 20/17/15/12/10 m; the operator ran an FT4 window from 10:47 to 11:30), FLEX-8400
+through SmartSDR CAT. xLog showed the amplifier in Standby.
+
+- **Contacts:** 28 (15 m 8, 20 m 8 of them 2 in FT4, 12 m 6, 17 m 6), among them the needed slot TR8CA
+  (12 m) and the needed references G5USH (20 m) and G0SBN (15 m). RC0JD, CX7ACH and G5USH answered late
+  and were taken up; HB9ITZ/P and 4U1ITU were called as they ended a contact (`b146e4846`).
+- **Transmit:** 214 overs keyed and unkeyed, longest 13.7 s. One decode period dropped (12:44:15).
+- **The program crashed at 12:32:46** (0xC0000409, ucrtbase.dll, an invalid argument to `setlocale`
+  called by libgfortran after the internal WRITE of `chkcrc14a` in the JTDX-style FT8 decoder). Dump
+  kept in `.build/crash-20261124` of the xLog checkout. Restarted at 12:33:39; CAT answered after
+  SmartSDR CAT was restarted; autopilot on again at 12:37:20. `cb815e653`.
+- **The TX watchdog disarmed transmit at 08:10:22** and the autopilot went off: the contact with XU7O,
+  stalled by the sequencer's call cap, was left armed. On again at 08:11:21. `5ee7f0c26`.
+- **DXpedition XU7O:** on 17 m FT4 left after five minutes as not heard while up to five stations a
+  period called it (`c87dfcc8d`). On 12 m FT4 (08:01) heard in ten seconds at 406 Hz and called at
+  1606 Hz; its report came, and its RR73 as a low-confidence decode, which nothing automatic acts on,
+  so the contact was not logged. The held 1375 Hz offset then stayed at 1606 Hz (`541e5a762`).
+- **15 m held the autopilot for half an hour** with new grids only (`353ccc88e`). **FT4 spots were
+  hunted for a new mode alone** and then counted as confirmed (OM8AKP, ES2TT, ES6DO: `e2b25fdb5`).
+
+All fixed on `xnexus/autopilot-reliability`, not in this candidate.
