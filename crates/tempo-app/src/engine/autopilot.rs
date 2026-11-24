@@ -1420,11 +1420,13 @@ impl Engine {
             }
         }
 
-        // A band offering only ordinary new calls for its whole ordinary dwell gives way to the
+        // A band offering only ordinary calls (new calls, new grids) for its whole ordinary dwell gives way to the
         // next one, to look for needed stations there (between contacts only: the switch holds).
         let p = &self.automation.pilot;
         let ordinary_for = now.saturating_sub(p.last_needed_unix.max(p.band_since_unix));
-        let only_ordinary = picked.as_ref().is_none_or(|(_, t)| *t == Tier::NewCall);
+        let only_ordinary = picked
+            .as_ref()
+            .is_none_or(|(_, t)| automation::is_ordinary(*t));
         if only_ordinary
             && chasing.is_none()
             && now.saturating_sub(p.band_since_unix) >= u64::from(s.min_dwell_secs)
@@ -1452,7 +1454,7 @@ impl Engine {
 
         if let Some((c, t)) = picked {
             self.automation.pilot.last_worthwhile_unix = now;
-            if t != Tier::NewCall {
+            if !automation::is_ordinary(t) {
                 self.automation.pilot.last_needed_unix = now;
             }
             self.automation_note(&format!(
@@ -1604,7 +1606,7 @@ impl Engine {
         s: &automation::AutomationSettings,
         now: u64,
     ) -> Option<(QueuedCaller, Tier)> {
-        if !matches!(t.tier, Tier::Grid | Tier::NewCall) {
+        if !automation::is_ordinary(t.tier) {
             return None;
         }
         let band = &self.settings.band;

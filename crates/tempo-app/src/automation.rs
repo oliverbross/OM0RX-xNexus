@@ -622,6 +622,11 @@ pub fn is_needed(t: Tier) -> bool {
     !matches!(t, Tier::Grid | Tier::NewCall | Tier::CallingMe)
 }
 
+/// An ordinary call, which holds neither the band nor a contact: a new call, or only a new grid.
+pub fn is_ordinary(t: Tier) -> bool {
+    matches!(t, Tier::Grid | Tier::NewCall)
+}
+
 /// A rare target gets the long time budget, and is called from 1200 Hz above.
 pub fn is_rare(t: Tier) -> bool {
     matches!(t, Tier::Atno | Tier::Dxpedition | Tier::MostWanted)

@@ -1853,3 +1853,29 @@ fn the_held_transmit_offset_returns_after_a_dxpedition() {
     assert_eq!(e.automation_dx().as_deref(), Some("N0ABC"), "premise");
     assert!((e.tx_offset_hz - 1375.0).abs() < 0.5, "{}", e.tx_offset_hz);
 }
+
+/// Live run 2026-11-24 (xlog.28): new grids, one after another, kept the autopilot on 15 m for half
+/// an hour while the other bands waited. Ten minutes of nothing better than grids gives way too.
+#[test]
+fn a_band_with_only_new_grids_gives_way_after_the_ordinary_dwell() {
+    let grid_band = || {
+        let mut e = two_band_pilot();
+        e.settings.automation.tiers.grid = true;
+        e.ingest_decodes_for_test(&[dec_snr("CQ N0ABC EM48", -3)], 30);
+        e
+    };
+    let mut e = grid_band();
+    e.automation_backdate_band(590);
+    e.ingest_decodes_for_test(&[dec_snr("CQ N0ABC EM48", -3)], 32);
+    assert_eq!(
+        e.automation_dx().as_deref(),
+        Some("N0ABC"),
+        "before ten minutes"
+    );
+    let s = over(&mut e, 33) + 1;
+    e.ingest_decodes_for_test(&[], s);
+    e.automation_abandon_for_test();
+    e.automation_backdate_band(20);
+    e.ingest_decodes_for_test(&[dec_snr("CQ K1XYZ FN42", -3)], s + 2);
+    assert_eq!(e.settings.band, "17m", "{:?}", e.automation_dto().log);
+}
