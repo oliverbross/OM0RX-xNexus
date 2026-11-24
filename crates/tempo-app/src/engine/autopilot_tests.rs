@@ -1620,3 +1620,78 @@ fn a_band_left_at_once_for_a_spot_is_still_due() {
     }
     assert_eq!(e.settings.band, "17m", "20 m had its turn, 17 m did not");
 }
+
+/// Live run 2026-11-24 (xlog.27): XE2X, a needed 80 m slot, left eight calls unanswered, then ended
+/// two contacts (73, RR73) in three minutes, called by the next station each time, beside an
+/// idle autopilot that waited for a CQ. It is called when it ends a contact, not in mid-contact.
+#[test]
+fn a_needed_station_is_called_again_when_it_ends_a_contact() {
+    let (mut e, s) = an_unanswered_needed_station();
+    e.automation_backdate_attempts(90);
+    e.ingest_decodes_for_test(&[dec_snr("F4IEX 5U4JSF -15", -12)], s);
+    assert_eq!(e.automation_dx(), None, "in contact with somebody");
+    e.ingest_decodes_for_test(&[dec_snr("F4IEX 5U4JSF RR73", -12)], s + 2);
+    assert_eq!(e.automation_dx().as_deref(), Some("5U4JSF"));
+    over(&mut e, s + 3);
+
+    let (mut e, s) = an_unanswered_needed_station();
+    e.automation_backdate_attempts(90);
+    e.ingest_decodes_for_test(&[dec_snr("F4IEX 5U4JSF 73", -12)], s);
+    assert_eq!(e.automation_dx().as_deref(), Some("5U4JSF"), "its 73 too");
+}
+
+/// A pilot on 17 m for 5U4JSF (needed), calling N0ABC, only a new grid, meanwhile; the slot after
+/// its first call.
+fn calling_a_grid_while_chasing() -> (Engine, u64) {
+    let mut e = two_band_pilot();
+    e.settings.automation.tiers.grid = true;
+    e.autopilot_feed(vec![crate::automation::FeedEntry {
+        call: "5U4JSF".into(),
+        band: "17m".into(),
+        mode: Some("FT8".into()),
+        freq_mhz: Some(18.101),
+        new_slot: true,
+        new_reference: true,
+        ..Default::default()
+    }]);
+    e.ingest_decodes_for_test(&[], 30);
+    e.ingest_decodes_for_test(&[], 32);
+    assert_eq!(e.settings.band, "17m", "premise: the spot is chased");
+    let mut s = 34;
+    while e.automation_dx().is_none() && s < 60 {
+        e.ingest_decodes_for_test(&[dec_snr("CQ N0ABC EM48", -3)], s);
+        s += 2;
+    }
+    assert_eq!(e.automation_dx().as_deref(), Some("N0ABC"), "premise");
+    let next = over(&mut e, s - 1) + 1;
+    (e, next)
+}
+
+/// Live run 2026-11-24 (xlog.27): on 160 m for XE2X, the autopilot called MW7TTA, a new grid, for
+/// two minutes while XE2X called CQ, and XE2X was not called.
+#[test]
+fn an_unanswered_grid_gives_way_to_a_needed_station() {
+    let (mut e, s) = calling_a_grid_while_chasing();
+    e.ingest_decodes_for_test(&[dec_snr("CQ 5U4JSF JK73", -20)], s);
+    assert_eq!(e.automation_dx().as_deref(), Some("5U4JSF"));
+    over(&mut e, s + 1);
+}
+
+/// A station that has answered is worked to the end, and another grid takes nothing over.
+#[test]
+fn a_grid_that_answered_and_another_grid_change_nothing() {
+    let (mut e, s) = calling_a_grid_while_chasing();
+    let me = e.settings.mycall.clone();
+    e.ingest_decodes_for_test(
+        &[
+            dec_snr(&format!("{me} N0ABC -07"), -3),
+            dec_snr("CQ 5U4JSF JK73", -20),
+        ],
+        s,
+    );
+    assert_eq!(e.automation_dx().as_deref(), Some("N0ABC"), "answered");
+
+    let (mut e, s) = calling_a_grid_while_chasing();
+    e.ingest_decodes_for_test(&[dec_snr("CQ K1XYZ FN42", 5)], s);
+    assert_eq!(e.automation_dx().as_deref(), Some("N0ABC"), "another grid");
+}

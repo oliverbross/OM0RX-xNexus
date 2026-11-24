@@ -455,6 +455,9 @@ pub struct Candidate {
     pub dxcc_status: Option<String>,
     /// A plain or acceptable directed CQ.
     pub is_cq: bool,
+    /// Ending a contact with somebody else (`RR73`, `RRR` or `73`): free for the next call. Only
+    /// a needed station is called on that ([`is_needed`]); anybody else is called on a CQ.
+    pub ending: bool,
     /// Addressed to the operator.
     pub to_me: bool,
     /// On the DXpedition list.
@@ -613,6 +616,12 @@ pub fn tier_allowed(t: Tier, tiers: &AutopilotTiers) -> bool {
     }
 }
 
+/// A tier worth calling a station for that calls no CQ, and worth calling it again: anything but a
+/// grid, an ordinary new call and a caller to us.
+pub fn is_needed(t: Tier) -> bool {
+    !matches!(t, Tier::Grid | Tier::NewCall | Tier::CallingMe)
+}
+
 /// A rare target gets the long time budget, and is called from 1200 Hz above.
 pub fn is_rare(t: Tier) -> bool {
     matches!(t, Tier::Atno | Tier::Dxpedition | Tier::MostWanted)
@@ -670,9 +679,11 @@ pub fn pick<'a>(
     let far = |c: &Candidate| is_far(c, s.prefer_outside_eu);
     candidates
         .iter()
-        .filter(|c| c.to_me || c.is_cq)
+        .filter(|c| c.to_me || c.is_cq || c.ending)
         .filter(|c| !skip(c))
         .filter_map(|c| best_allowed_tier(c, s).map(|t| (c, t)))
+        // One that only ended its contact: called when it is needed.
+        .filter(|(c, t)| c.to_me || c.is_cq || is_needed(*t))
         // A station on a skipped continent: only when it calls us, or is an ATNO.
         .filter(|(c, t)| {
             *t == Tier::CallingMe
@@ -912,6 +923,7 @@ mod tests {
             call_status: cs.map(String::from),
             dxcc_status: ds.map(String::from),
             is_cq: true,
+            ending: false,
             to_me: false,
             dxpedition: false,
             new_reference: false,
@@ -1286,6 +1298,28 @@ mod tests {
         not_cq.is_cq = false;
         let list = vec![cand("NEW1", Some("New Call"), Some("Confirmed"), 0), not_cq];
         assert!(pick(&list, &with(&tiers), &HashMap::new(), 0, |_| false).is_none());
+    }
+
+    /// Live run 2026-11-24 (xlog.27): XE2X, a needed 80 m slot, was called from one contact to the
+    /// next and sent no CQ. A needed station ending a contact is free; an ordinary one, or one with
+    /// only a new grid, still waits for its CQ.
+    #[test]
+    fn a_needed_station_ending_a_contact_is_called_and_an_ordinary_one_is_not() {
+        let s = AutomationSettings::default();
+        let ending = |call: &str, ds: &str| Candidate {
+            is_cq: false,
+            ending: true,
+            ..cand(call, Some("New Call"), Some(ds), -15)
+        };
+        let xe2x = ending("XE2X", "C/New Band");
+        let plain = ending("DL1A", "Confirmed");
+        let mut grid = ending("DL2A", "Confirmed");
+        grid.new_grid = true;
+        assert!(pick_call(&[plain.clone(), grid], &s).is_none());
+        assert_eq!(
+            pick_call(&[plain, xe2x], &s).unwrap(),
+            ("XE2X".into(), Tier::DxccNewSlot)
+        );
     }
 
     #[test]
