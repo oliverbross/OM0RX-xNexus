@@ -33,3 +33,21 @@ FT8 + FT4.
 | `setlocale` wrap | test programs: 7,880 garbage texts in 20 s without, none with; the Rust file built and run with the release toolchain; not yet in Nexus itself |
 | UI `tsc -b`; i18n, autopilot and feed suites | pass; 773/773 |
 | Not run | the commits one by one, tempo-audio, src-tauri tests and clippy, the whole UI suite, browser probe, CI (GitHub Actions billing is blocked) |
+
+## Package and installation (2026-11-24)
+
+- **Source:** `a6c881614`, canonical `main`, clean, equal to `origin/main`.
+- **Guard:** the xlog.28 wrapper and profile (`optimized-no-lto-cgu16-7GiB-physical14-commit12p5-reserve6`)
+  with only the expected version changed. SmartSDR, CAT, DAX and xLog were closed normally first.
+  Admission 17.5 GiB physical / 13.5 GiB commit; 13:18-14:16 UTC; peak 5.44 GiB; lowest free 12.7 GiB
+  physical / 7.8 GiB commit; cleanup confirmed. The Home Assistant VM was not saved.
+- **Evidence:** `.build/xnexus-xlog29-package-7g/evidence/20261124T1318020863523Z-b4998ca9f18e497a8ee2ee9b8ba7fc86`.
+- **Receipt:** `target/xnexus-provenance/1.25.0-xlog.29.json` (source `a6c881614`, upstream base
+  `21f743404` v1.25.0-beta.2, toolchain 1.93.1-x86_64-pc-windows-gnu, unsigned).
+- **Installer:** `OM0RX-xNexus_1.25.0-xlog.29_x64-setup.exe`, 356,580,652 bytes, SHA-256
+  `37A29A754D7F651D26F3286CB4AE1CB72B9E56AB2F4A3DF67E2696C9A9876094` (matches the receipt).
+- **The `setlocale` wrap is in the built exe** (`objdump`): the three calls in the Fortran runtime's range,
+  the one in `finalize_transfer` that crashed among them, go to `__wrap_setlocale`.
+- **Built exe:** `392EC0B9…B20C`. **Installed exe:** `311C06AA…F94F`, version 1.25.0-xlog.29.
+- **Install:** 14:17 UTC, `/S`, exit 0, with no Nexus running; `settings.json` unchanged.
+- **Not launched** when this was written: going on the air needs the operator's approval.
