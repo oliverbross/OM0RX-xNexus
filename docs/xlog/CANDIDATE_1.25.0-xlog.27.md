@@ -43,4 +43,31 @@ Not changed: the transmit offset stays where Hold Tx puts it.
   `3402F2AC06389A11D9ECC9F54A31DE41E705EE03860ADAE39A70BC4A6B491E6C` (matches the receipt).
 - **Built exe:** `B75496B2…575D`. **Installed exe:** `E83C57D3…DB9E`, version 1.25.0-xlog.27.
 - **Install:** 04:37 UTC, `/S`, exit 0, with no Nexus running; `settings.json` unchanged.
-- **Not launched** when this was written: going on the air needs the operator's approval.
+- **First launch:** 2026-11-24 04:45:59 UTC, with the operator's approval to go on the air.
+
+## Live run (2026-11-24 04:46 to 06:08 UTC, still running)
+
+Night schedule, FLEX-8400 through SmartSDR CAT, transmit offset held at 1375 Hz. The amplifier's state
+was not seen.
+
+- **Reliability:** 82 min; no stop of the autopilot, no watchdog stop, no PTT alarm, CAT connected
+  throughout, 71 overs keyed and unkeyed, longest 13.7 s. One decode period dropped (05:59:30, at the
+  return from FT4 to FT8, while tests ran on three cores).
+- **Contacts:** 8 (60 m 6, 80 m 1, 40 m 1), among them the needed slot EW6DO (60 m, on its second hunt)
+  and the needed reference G5USH (40 m). SO9DXX, M5AEH and OM3ZAS called and were worked.
+- **xlog.27's changes seen on the air:** XE2X called again after a minute; its hunt ended as "did not
+  answer", not "not heard"; every night band had a turn in the first hour, 30 m included. A late answer
+  kept past four overs was not seen.
+- **DXpedition XU7O** (17 m FT4, 05:17 and 05:54): hunted twice, not heard, back to the schedule after
+  five minutes each time. **Not seen:** a DXpedition heard, an ATNO, a lost CAT link.
+
+Defects found, fixed on `xnexus/autopilot-reliability`, not in this candidate:
+
+- **XE2X (80 m, needed) ended contacts with 73 and RR73 and sent no CQ**, and was not called
+  (04:53–04:55). `b146e4846`.
+- **XE2X (160 m, needed) called CQ while MW7TTA, a new grid, was called for two minutes** (05:37–05:39).
+  `7e330a19a`.
+
+Observed, not changed: XE2X's three CQs on 160 m were low-confidence decodes (marked `^`, not error
+checked), which nothing automatic acts on, though the cluster had spotted it there; the hunt ended as
+"not heard".
