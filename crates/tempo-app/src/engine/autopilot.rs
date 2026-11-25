@@ -37,9 +37,9 @@ use std::collections::{HashMap, HashSet, VecDeque};
 
 use super::{now_unix_secs, Engine, Mode};
 use crate::automation::{
-    self, answerable_cq, hunt_dial, in_passband, is_hunt_spot, is_rare, next_window_start,
-    patrol_at, spot_call_ok, spot_tier, Attempts, AutomationDto, Candidate, FeedEntry, HourlyCount,
-    PresenceClock, Stop, Tier,
+    self, answerable_cq, hunt_dial, in_passband, is_hunt_spot, is_needed, is_rare,
+    next_window_start, patrol_at, spot_call_ok, spot_tier, Attempts, AutomationDto, Candidate,
+    FeedEntry, HourlyCount, PresenceClock, Stop, Tier,
 };
 use crate::dto::Tier as LinkTier;
 use crate::settings::SpecialOp;
@@ -615,6 +615,17 @@ impl Engine {
         }
     }
 
+    /// Test hook: the tier the target was picked in.
+    #[cfg(test)]
+    pub(super) fn automation_set_tier_for_test(&mut self, tier: Tier) {
+        self.automation
+            .pilot
+            .target
+            .as_mut()
+            .expect("a target")
+            .tier = tier;
+    }
+
     /// Test hook: the autopilot's own band change.
     #[cfg(test)]
     pub(super) fn automation_go_for_test(&mut self, band: &str) {
@@ -1046,11 +1057,29 @@ impl Engine {
         // apply either.
         let pilot_on = self.automation.pilot.on;
         let addressed_us = self.automation.to_me.keys().any(|c| same_call(c, &dx));
+        // A country never confirmed has its calls first, and the caller is answered after them
+        // (operator, 2026-11-25: "new or unconfirmed country has priority, band slot not").
+        let country_first = pilot_on
+            && !(addressed_us && moved_on)
+            // The last call's answer comes in the next slot.
+            && (tx_count < s.target_max_calls.max(1) || slot < self.automation.last_over_slot + 2)
+            && self
+                .automation
+                .pilot
+                .target
+                .as_ref()
+                .is_some_and(|t| same_call(&t.call, &dx) && t.tier == Tier::DxccUnconfirmed);
         let at_once =
             pilot_on && (!addressed_us || moved_on) && slot > self.automation.last_over_slot;
         let chain_ok = pilot_on || self.automation.chain < s.answer_chain_limit.max(1);
         let waited = s.answer_takeover_slots > 0 && tx_count >= s.answer_takeover_slots;
-        if !fed_rare && !target_rare && unanswered && (at_once || waited) && chain_ok {
+        if !fed_rare
+            && !target_rare
+            && !country_first
+            && unanswered
+            && (at_once || waited)
+            && chain_ok
+        {
             let from = if waited {
                 0
             } else {
@@ -1058,7 +1087,24 @@ impl Engine {
             };
             if let Some(c) = self.best_caller(from) {
                 self.automation.chain += 1;
-                self.note_failed(&dx);
+                // A needed station that has not had its calls is called again after the caller, and
+                // its chase goes on (live run 2026-11-25: 4U1UN, called once, was given up for
+                // G5ACE/P).
+                let unfinished = pilot_on
+                    && tx_count < s.target_max_calls.max(1)
+                    && self
+                        .automation
+                        .pilot
+                        .target
+                        .as_ref()
+                        .is_some_and(|t| same_call(&t.call, &dx) && is_needed(t.tier));
+                if !unfinished {
+                    self.note_failed(&dx);
+                } else if let Some(ch) = self.automation.pilot.chase.as_mut() {
+                    if same_call(&ch.call, &dx) {
+                        ch.since_unix = now_unix_secs();
+                    }
+                }
                 self.automation_note(&format!(
                     "{dx} did not answer: answering {} instead",
                     c.call
@@ -1448,8 +1494,9 @@ impl Engine {
                     // A needed station is free here and the grid or new call being called has not
                     // answered (live run 2026-11-24: XE2X, needed on 160 m, called CQ while a new
                     // grid was called for two minutes). One picked and not called yet has left
-                    // nothing unanswered (RA9ACA, 2026-11-25).
-                    if calls > 0 {
+                    // nothing unanswered (RA9ACA, 2026-11-25). A needed one that gave way to a better
+                    // one has not had its calls: it is called again after it.
+                    if calls > 0 && !is_needed(t.tier) {
                         self.note_failed(&t.call);
                     }
                     self.automation_note(&format!(
@@ -1884,7 +1931,9 @@ impl Engine {
     }
 
     /// A needed station free to be called while `t`, only a grid or an ordinary new call, has not
-    /// answered: it is called instead. None while a station that calls us is being answered.
+    /// answered: it is called instead. So is one ranked above `t`, itself needed (live run 2026-11-25:
+    /// 4U1UN, needed on 20 m and heard, waited out four calls to G5ACE/P, an activation). Never from
+    /// a rare target, and none while a station that calls us is being answered.
     fn automation_needed_instead(
         &self,
         t: &Target,
@@ -1894,7 +1943,8 @@ impl Engine {
         s: &automation::AutomationSettings,
         now: u64,
     ) -> Option<(QueuedCaller, Tier)> {
-        if !automation::is_ordinary(t.tier) {
+        let ordinary = automation::is_ordinary(t.tier);
+        if is_rare(t.tier) || t.tier == Tier::CallingMe {
             return None;
         }
         let band = &self.settings.band;
@@ -1903,7 +1953,9 @@ impl Engine {
         automation::pick(&list, s, attempts, now, |c| {
             c.to_me || same_call(&c.call, &t.call) || self.automation_skip(c, band, mode)
         })
-        .filter(|(_, tier)| automation::is_needed(*tier))
+        .filter(|(_, tier)| {
+            automation::is_needed(*tier) && (ordinary || s.rank(*tier) < s.rank(t.tier))
+        })
         .map(|(c, tier)| {
             let q = QueuedCaller {
                 call: c.call.clone(),
