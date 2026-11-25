@@ -42,4 +42,4 @@ station on a clear transmit frequency") is on until switched off, and an older v
   `03D2EB5DFDF78FB6D494B8EF9EF47DD2B5E0E21BBA640BF7194A5A91A4AA9EE0` (matches the receipt).
 - **Built exe:** `9BEC3ED4…F1AC`. **Installed exe:** `3E2ED48D…AEC2`, version 1.25.0-xlog.30.
 - **Install:** 01:43 UTC, `/S`, exit 0, with no Nexus running; `settings.json` unchanged.
-- **Not launched** when this was written: going on the air needs the operator's approval.
+- **Never launched:** replaced by xlog.31 (the operator chose to build that first).
