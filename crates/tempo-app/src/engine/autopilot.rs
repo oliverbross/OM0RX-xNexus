@@ -714,6 +714,10 @@ impl Engine {
 
     /// After every decode fold: Answer callers, then the autopilot.
     pub(super) fn automation_after_decodes(&mut self, decodes: &[modes::Decode], slot: u64) {
+        // Transmit armed during a hold was armed by the operator (a station clicked): theirs again.
+        if self.tx_enabled {
+            self.automation.station_hold = None;
+        }
         // A watchdog trip, or the operator's TX Off, ends the autopilot: it never re-arms. Held for a
         // station fault it waits (any stop drops the hold).
         if self.automation.pilot.on && !self.tx_enabled && self.automation.station_hold.is_none() {

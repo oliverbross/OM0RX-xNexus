@@ -2195,11 +2195,31 @@ fn a_station_fault_pauses_the_autopilot_until_the_station_is_ready() {
     e.halt_tx();
     assert!(!e.station_fault_held() && !e.station_fault_resume());
     assert!(!e.tx_enabled && !e.automation_dto().autopilot_on);
-    // TX Off, then On, by the operator: the station is theirs.
     let mut e = held();
-    e.set_tx_enabled_by_operator(true);
+    e.halt_tx();
+    e.set_tx_enabled(true);
+    e.set_autopilot(true).unwrap();
+    e.set_tx_enabled(false);
+    assert!(!e.station_fault_held(), "a stop leaves no hold behind");
+    // TX Off by the operator: nothing puts it back.
+    let mut e = held();
+    e.set_tx_enabled_by_operator(false);
     assert!(!e.station_fault_held() && !e.station_fault_resume());
-    assert!(e.tx_enabled, "as the operator set it");
+    assert!(!e.tx_enabled);
+    // TX On by the operator, or a station clicked: the station is theirs, and the autopilot goes on.
+    for clicked in [false, true] {
+        let mut e = held();
+        if clicked {
+            e.set_tx_enabled(true);
+        } else {
+            e.set_tx_enabled_by_operator(true);
+        }
+        assert!(!e.station_fault_held());
+        e.ingest_decodes_for_test(&[dec_snr("CQ W1AW FN31", -3)], 40);
+        let dto = e.automation_dto();
+        assert!(e.tx_enabled && dto.autopilot_on, "as the operator set it");
+        assert_ne!(dto.status, "stationFault");
+    }
     // With the autopilot off the guard does nothing.
     let mut e = engine();
     e.set_tx_enabled(true);

@@ -60,7 +60,7 @@ impl StationView {
                 Value::Number(n) => n.to_string(),
                 _ => return None,
             };
-            (!f.is_empty() && f.trim_matches('0') != "").then_some(f)
+            (!f.trim_matches('0').is_empty()).then_some(f)
         };
         let station = v.get("station");
         let path = |keys: &[&str]| keys.iter().try_fold(station?, |v, k| v.get(k));
