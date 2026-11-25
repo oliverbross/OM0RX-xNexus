@@ -45,4 +45,21 @@ read: the new setting starts at ten minutes. An older version ignores the new on
   `3B4D96493E280E82EDC3A5B71438A37ADC53B59F0AFFE705BE36827EDD1AFAA5` (matches the receipt).
 - **Built exe:** `83D3255E…71E7`. **Installed exe:** `3FDA1F2E…1595`, version 1.25.0-xlog.31.
 - **Install:** 03:49 UTC, `/S`, exit 0, with no Nexus running; `settings.json` unchanged.
-- **Not launched** when this was written: going on the air needs the operator's approval.
+- **First launch:** 2026-11-25 04:20:13 UTC, with the operator's approval to go on the air.
+
+## Live run (2026-11-25 04:21 to 06:20 UTC, stopped for the xlog.32 build)
+
+Night schedule (FT8 160/80/60/40/30 m), FLEX-8400 through SmartSDR CAT, xLog open before Nexus, RF checked
+on the first over; the operator at the radio.
+
+- **Contacts:** 8 (80 m 5, 60 m 2, 160 m 1), all in xLog, among them the needed slots EP2AES and EW6BZ
+  (60 m) and the needed state K4HWS. 111 overs keyed and unkeyed, longest 13.7 s. No crash, TX watchdog trip
+  or autopilot switch-off.
+- **Clear transmit frequency:** picked 14 times (KY4WI answered at 825 Hz, KN1OBI and DO1ID where we were);
+  1375 Hz kept where it was clear, and back to it when the autopilot stopped.
+- **DXpedition spots:** 3B8/E70A (17 m) hunted three times, VK9XY (15 m, FT8 on 21.090 and 21.095, FT4 on 21.140)
+  three times, none decoded on 15 m. An unanswered call (NE9U) gave way. Ten minutes held.
+- **3B8/E70A was called outside its receiver** (`72433730b`): at 2489 Hz on the 18.100 channel, put at 399 Hz by our
+  retune and called 1200 Hz above that, 3.7 kHz above its dial; -2 to -7 dB here, calling CQ, no answer in
+  twice ten minutes. Afterwards taken for a Fox (Hound on and off again).
+- **RA9ACA** counted as "did not answer" though never called (`72433730b`).
