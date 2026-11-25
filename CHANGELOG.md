@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Autopilot (OM0RX-xNexus): the antenna can turn before the station is heard.** While the autopilot listens for a spotted DXpedition or needed station, the WSJT-X UDP status names it as the DX call, so a logger that turns the antenna to it (OM0RX-xLog) does so at once. The DX call never carries a hash's brackets.
 
 ### Fixed
+- **Autopilot (OM0RX-xNexus): a contact made as Hound no longer turns transmit and the autopilot off.**
 - **Autopilot (OM0RX-xNexus): a DXpedition is tuned under 500 Hz and called from 1000 to 2500 Hz,** at least 500 Hz above it and under 2700 Hz on its own dial. Only one so high that this does not fit is called from below.
 - **Autopilot (OM0RX-xNexus): no call is started and dropped again while a spotted DXpedition waits.** BG3TFT was picked and dropped for VK9XY at every decode while the move was held for a partner that might still be sending.
 - **Autopilot (OM0RX-xNexus): switched on, it goes to the band's channel first.** A hunt broken off by hand left the dial on 18.102, and the next patrol would have listened there. Switching off still leaves the radio as it is.

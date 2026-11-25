@@ -36258,7 +36258,13 @@ contact yourself."
                     && station.state == QsoState::Done
                     && self.settings.disable_tx_after_73
                 {
-                    self.pending_tx_disable = true;
+                    // OM0RX-xNexus: as after any 73, Answer callers or the autopilot hold TX for the
+                    // next contact (live run 2026-11-25: the autopilot went off after VK9XY).
+                    if self.automation.keeps_tx_after_73 {
+                        self.automation.held_disable = true;
+                    } else {
+                        self.pending_tx_disable = true;
+                    }
                 }
                 // Hound rule: when the Fox answers with our report (we just
                 // queued the R+report), move TX onto the FOX's frequency —

@@ -784,6 +784,31 @@ fn a_fox_switches_the_hunt_to_hound_and_stop_tx_puts_it_back() {
     assert!(!e.automation_dto().autopilot_on);
 }
 
+/// Live run 2026-11-25: VK9XY worked as Hound ended transmit, and the autopilot with it.
+#[test]
+fn a_hound_contact_ended_leaves_transmit_and_the_autopilot_on() {
+    let mut e = two_band_pilot();
+    e.settings.disable_tx_after_73 = true;
+    e.autopilot_feed(vec![dxped_spot("3Y0K", "40m", 7.056)]);
+    e.ingest_decodes_for_test(&[], 30);
+    e.ingest_decodes_for_test(&[dec_at("CQ 3Y0K JD15", -14, 600.0)], 32);
+    assert_eq!(e.settings.special_op, crate::settings::SpecialOp::Hound);
+    key_once(&mut e, 33);
+    e.ingest_decodes_for_test(&[dec_at("OM0RX 3Y0K -10", -14, 600.0)], 34);
+    let over = key_once(&mut e, 35);
+    assert!(
+        over.contains(" R-"),
+        "premise: our report goes back: {over}"
+    );
+    e.ingest_decodes_for_test(&[dec_at("OM0RX 3Y0K RR73", -14, 600.0)], 36);
+    assert!(
+        matches!(&e.mode, Mode::Qso { station, .. } if station.state == QsoState::Done),
+        "premise: the contact is made"
+    );
+    assert!(!e.take_pending_tx_disable(), "transmit stays on");
+    assert!(e.tx_enabled && e.automation_dto().autopilot_on);
+}
+
 #[test]
 fn a_hunt_returns_where_it_came_from_when_the_spot_goes() {
     let mut e = two_band_pilot();
