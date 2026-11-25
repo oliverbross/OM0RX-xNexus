@@ -37,9 +37,9 @@ use std::collections::{HashMap, HashSet, VecDeque};
 
 use super::{now_unix_secs, Engine, Mode};
 use crate::automation::{
-    self, answerable_cq, hunt_dial, in_passband, is_hunt_spot, is_rare, next_window_start,
-    patrol_at, spot_call_ok, spot_tier, Attempts, AutomationDto, Candidate, FeedEntry, HourlyCount,
-    PresenceClock, Stop, Tier,
+    self, answerable_cq, hunt_dial, in_passband, is_hunt_spot, is_needed, is_rare,
+    next_window_start, patrol_at, spot_call_ok, spot_tier, Attempts, AutomationDto, Candidate,
+    FeedEntry, HourlyCount, PresenceClock, Stop, Tier,
 };
 use crate::dto::Tier as LinkTier;
 use crate::settings::SpecialOp;
@@ -48,6 +48,12 @@ use tempo_core::qso::State as QsoState;
 
 /// How many slots a caller to the operator stays answerable after it was last heard.
 const CALLER_FRESH_SLOTS: u64 = 3;
+/// How long a report we sent may still be answered, slots.
+const REPORTED_FORGET_SLOTS: u64 = 120;
+/// A band on which nothing at all is decoded for this long is left, seconds.
+const SILENT_BAND_SECS: u64 = 120;
+/// Then its turns, and the state and activation spots on it, wait this long, seconds.
+const SILENT_REST_SECS: u64 = 1800;
 /// How long a spot chase may go without decoding its station before it is given up, seconds.
 const CHASE_UNHEARD_SECS: u64 = 300;
 /// How lately a station must have been heard calling it for the DXpedition to count as on the air,
@@ -182,6 +188,10 @@ struct Pilot {
     last_worthwhile_unix: u64,
     /// The last moment something better than an ordinary new call was called here.
     last_needed_unix: u64,
+    /// When anything was last decoded, or the band was come to, Unix seconds.
+    last_decode_unix: u64,
+    /// By band and mode ([`turn_key`]): when nothing at all was decoded there, Unix seconds.
+    silent: HashMap<String, u64>,
     slots_on_band: u32,
     /// The slot the listen counter last counted (it counts slots, not decode folds — REVIEW N-06).
     last_listen_slot: Option<u64>,
@@ -242,6 +252,8 @@ pub struct Automation {
     last_slot: u64,
     /// The slot our last over of a contact went out in.
     pub(super) last_over_slot: u64,
+    /// The stations a report was sent to, and the slot of the last one.
+    reported: HashMap<String, u64>,
     /// The last "holding the band" reason written to the log, so a hold is noted once.
     last_hold: Option<String>,
     /// Stations whose contact is made, with the slot it was last seen made: their calls to us are
@@ -282,6 +294,25 @@ impl std::fmt::Debug for EntityInfoResolver {
 impl Automation {
     /// Was `call` last heard calling CQ or somebody else, not us? Live run 2026-11-23: SQ2MMX
     /// answered us once, then worked three others, and was sent our R-report eight times.
+    /// An over goes out: the station it gives a report to.
+    pub(super) fn note_report_sent(&mut self, m: &Msg, slot: u64) {
+        self.reported
+            .retain(|_, s| slot.saturating_sub(*s) < REPORTED_FORGET_SLOTS);
+        if let Msg::Report { to, .. } | Msg::RReport { to, .. } = m {
+            let call = to.trim_matches(['<', '>']).to_uppercase();
+            self.reported.insert(call, slot);
+        }
+    }
+
+    /// A rogered report from a station we have sent none: there is no contact to end, and answering it
+    /// with RR73 would log one (live run 2026-11-25: JA6VQA's "R-26" on 80 m).
+    fn unasked_roger(&self, message: &str) -> bool {
+        match Msg::parse(message) {
+            Msg::RReport { de, .. } => !self.reported.keys().any(|c| same_call(c, &de)),
+            _ => false,
+        }
+    }
+
     fn moved_on(&self, call: &str) -> bool {
         self.elsewhere.keys().any(|c| same_call(c, call))
     }
@@ -442,6 +473,7 @@ impl Engine {
         p.band_since_unix = now;
         p.last_worthwhile_unix = now;
         p.last_needed_unix = now;
+        p.last_decode_unix = now;
         p.slots_on_band = 0;
         p.last_listen_slot = None;
         p.target = None;
@@ -609,10 +641,22 @@ impl Engine {
         p.band_since_unix = p.band_since_unix.saturating_sub(secs);
         p.last_worthwhile_unix = p.last_worthwhile_unix.saturating_sub(secs);
         p.last_needed_unix = p.last_needed_unix.saturating_sub(secs);
+        p.last_decode_unix = p.last_decode_unix.saturating_sub(secs);
         p.chase_failed_unix = p.chase_failed_unix.saturating_sub(secs);
         if let Some(ch) = p.chase.as_mut() {
             ch.since_unix = ch.since_unix.saturating_sub(secs);
         }
+    }
+
+    /// Test hook: the tier the target was picked in.
+    #[cfg(test)]
+    pub(super) fn automation_set_tier_for_test(&mut self, tier: Tier) {
+        self.automation
+            .pilot
+            .target
+            .as_mut()
+            .expect("a target")
+            .tier = tier;
     }
 
     /// Test hook: the autopilot's own band change.
@@ -734,6 +778,13 @@ impl Engine {
         // (REVIEW N-05: it kept running with its control hidden).
         if self.automation.pilot.on && !self.settings.automation.autopilot_enabled {
             let _ = self.set_autopilot(false);
+        }
+        if !decodes.is_empty() {
+            self.automation.pilot.last_decode_unix = now_unix_secs();
+            if let Some(mode) = mode_name(self.app.tier()) {
+                let key = turn_key(&self.settings.band, mode);
+                self.automation.pilot.silent.remove(&key);
+            }
         }
         self.automation_track_to_me(decodes, slot);
         self.answer_callers_step(decodes, slot);
@@ -969,6 +1020,9 @@ impl Engine {
                 self.automation.callers.retain(|c| !same_call(&c.call, de));
                 continue;
             }
+            if self.automation.unasked_roger(&d.message) {
+                continue;
+            }
             // Just worked: its call to us is the contact we already made, not a new one.
             if self.automation.done.contains_key(&de.to_uppercase()) {
                 continue;
@@ -1046,11 +1100,29 @@ impl Engine {
         // apply either.
         let pilot_on = self.automation.pilot.on;
         let addressed_us = self.automation.to_me.keys().any(|c| same_call(c, &dx));
+        // A country never confirmed has its calls first, and the caller is answered after them
+        // (operator, 2026-11-25: "new or unconfirmed country has priority, band slot not").
+        let country_first = pilot_on
+            && !(addressed_us && moved_on)
+            // The last call's answer comes in the next slot.
+            && (tx_count < s.target_max_calls.max(1) || slot < self.automation.last_over_slot + 2)
+            && self
+                .automation
+                .pilot
+                .target
+                .as_ref()
+                .is_some_and(|t| same_call(&t.call, &dx) && t.tier == Tier::DxccUnconfirmed);
         let at_once =
             pilot_on && (!addressed_us || moved_on) && slot > self.automation.last_over_slot;
         let chain_ok = pilot_on || self.automation.chain < s.answer_chain_limit.max(1);
         let waited = s.answer_takeover_slots > 0 && tx_count >= s.answer_takeover_slots;
-        if !fed_rare && !target_rare && unanswered && (at_once || waited) && chain_ok {
+        if !fed_rare
+            && !target_rare
+            && !country_first
+            && unanswered
+            && (at_once || waited)
+            && chain_ok
+        {
             let from = if waited {
                 0
             } else {
@@ -1058,7 +1130,24 @@ impl Engine {
             };
             if let Some(c) = self.best_caller(from) {
                 self.automation.chain += 1;
-                self.note_failed(&dx);
+                // A needed station that has not had its calls is called again after the caller, and
+                // its chase goes on (live run 2026-11-25: 4U1UN, called once, was given up for
+                // G5ACE/P).
+                let unfinished = pilot_on
+                    && tx_count < s.target_max_calls.max(1)
+                    && self
+                        .automation
+                        .pilot
+                        .target
+                        .as_ref()
+                        .is_some_and(|t| same_call(&t.call, &dx) && is_needed(t.tier));
+                if !unfinished {
+                    self.note_failed(&dx);
+                } else if let Some(ch) = self.automation.pilot.chase.as_mut() {
+                    if same_call(&ch.call, &dx) {
+                        ch.since_unix = now_unix_secs();
+                    }
+                }
                 self.automation_note(&format!(
                     "{dx} did not answer: answering {} instead",
                     c.call
@@ -1448,8 +1537,9 @@ impl Engine {
                     // A needed station is free here and the grid or new call being called has not
                     // answered (live run 2026-11-24: XE2X, needed on 160 m, called CQ while a new
                     // grid was called for two minutes). One picked and not called yet has left
-                    // nothing unanswered (RA9ACA, 2026-11-25).
-                    if calls > 0 {
+                    // nothing unanswered (RA9ACA, 2026-11-25). A needed one that gave way to a better
+                    // one has not had its calls: it is called again after it.
+                    if calls > 0 && !is_needed(t.tier) {
                         self.note_failed(&t.call);
                     }
                     self.automation_note(&format!(
@@ -1752,10 +1842,20 @@ impl Engine {
             return;
         }
 
-        // A chase that has not heard its station in time, or not worked it, is given up.
+        // Nothing at all decoded: the band is not open (live run 2026-11-25: two hours after dark went
+        // into five minutes at a time on silent bands, for the schedule and for US-state spots).
+        let silent = now.saturating_sub(self.automation.pilot.last_decode_unix) >= SILENT_BAND_SECS;
+        if silent {
+            let key = turn_key(&cur_band, cur_mode);
+            self.automation.pilot.silent.insert(key, now);
+        }
+        // A chase that has not heard its station in time, or not worked it, is given up; on a silent
+        // band it waits no longer, except for a country never worked.
         let mut still_chasing = false;
         if let Some(ch) = &chasing {
-            if now.saturating_sub(ch.since_unix) >= CHASE_UNHEARD_SECS {
+            if now.saturating_sub(ch.since_unix) >= CHASE_UNHEARD_SECS
+                || (silent && !self.automation_fed_rare(&ch.call))
+            {
                 let call = ch.call.clone();
                 let called = self
                     .automation
@@ -1790,13 +1890,14 @@ impl Engine {
             }
         }
 
-        // Nothing worth calling: move on once the band has had its time.
+        // Nothing worth calling: move on once the band has had its time, or is not open at all (live
+        // run 2026-11-25: five minutes on 10 m, nothing decoded).
         let p = &self.automation.pilot;
         let on_band = now.saturating_sub(p.band_since_unix);
         let quiet = now.saturating_sub(p.last_worthwhile_unix.max(p.band_since_unix));
         if !still_chasing
-            && on_band >= u64::from(s.min_dwell_secs)
-            && quiet >= u64::from(s.quiet_secs)
+            && (silent
+                || (on_band >= u64::from(s.min_dwell_secs) && quiet >= u64::from(s.quiet_secs)))
         {
             if let Some(next) = self.automation_next_stop(&patrol, &cur_band, cur_mode) {
                 if !next.is(&cur_band, cur_mode) && self.automation_go(&next, cur_mode) {
@@ -1884,7 +1985,9 @@ impl Engine {
     }
 
     /// A needed station free to be called while `t`, only a grid or an ordinary new call, has not
-    /// answered: it is called instead. None while a station that calls us is being answered.
+    /// answered: it is called instead. So is one ranked above `t`, itself needed (live run 2026-11-25:
+    /// 4U1UN, needed on 20 m and heard, waited out four calls to G5ACE/P, an activation). Never from
+    /// a rare target, and none while a station that calls us is being answered.
     fn automation_needed_instead(
         &self,
         t: &Target,
@@ -1894,7 +1997,8 @@ impl Engine {
         s: &automation::AutomationSettings,
         now: u64,
     ) -> Option<(QueuedCaller, Tier)> {
-        if !automation::is_ordinary(t.tier) {
+        let ordinary = automation::is_ordinary(t.tier);
+        if is_rare(t.tier) || t.tier == Tier::CallingMe {
             return None;
         }
         let band = &self.settings.band;
@@ -1903,7 +2007,9 @@ impl Engine {
         automation::pick(&list, s, attempts, now, |c| {
             c.to_me || same_call(&c.call, &t.call) || self.automation_skip(c, band, mode)
         })
-        .filter(|(_, tier)| automation::is_needed(*tier))
+        .filter(|(_, tier)| {
+            automation::is_needed(*tier) && (ordinary || s.rank(*tier) < s.rank(t.tier))
+        })
         .map(|(c, tier)| {
             let q = QueuedCaller {
                 call: c.call.clone(),
@@ -1962,7 +2068,8 @@ impl Engine {
 
     /// The stop of the patrol (a band in a mode) that has waited longest for its turn, never the one
     /// we are on. Stops that have waited alike (none of them visited yet) come in the schedule's
-    /// order, from the one a chase left, when one took us away, else from the current one.
+    /// order, from the one a chase left, when one took us away, else from the current one. A silent one
+    /// comes only when every other is silent too.
     fn automation_next_stop(
         &self,
         patrol: &automation::Patrol,
@@ -1979,12 +2086,22 @@ impl Engine {
             .into_iter()
             .filter(|s| !s.is(cur_band, cur_mode))
             .min_by_key(|s| {
-                p.turns
-                    .get(&turn_key(&s.band, &s.mode))
-                    .copied()
-                    .unwrap_or(0)
+                let turn = p.turns.get(&turn_key(&s.band, &s.mode)).copied();
+                (
+                    self.automation_silent(s, now_unix_secs()),
+                    turn.unwrap_or(0),
+                )
             })
             .cloned()
+    }
+
+    /// Was this stop silent when it was listened to lately?
+    fn automation_silent(&self, stop: &Stop, now: u64) -> bool {
+        self.automation
+            .pilot
+            .silent
+            .get(&turn_key(&stop.band, &stop.mode))
+            .is_some_and(|t| now.saturating_sub(*t) < SILENT_REST_SECS)
     }
 
     /// Go to a stop of the patrol: its band, and its mode when that is not the one running.
@@ -2162,6 +2279,7 @@ impl Engine {
                         ),
                     to_me: row.directed_to_me
                         && self.settings.automation.answer_callers
+                        && !self.automation.unasked_roger(&d.message)
                         && !matches!(
                             Msg::parse(&d.message),
                             Msg::Bye73 { .. } | Msg::Rr73 { .. } | Msg::Rrr { .. }
@@ -2236,6 +2354,10 @@ impl Engine {
             .filter(|(_, _, t)| automation::tier_allowed(*t, &self.settings.automation.tiers))
             .filter(|(e, _, t)| {
                 *t != Tier::UsState || self.settings.automation.wants_state(e.state.as_deref())
+            })
+            // A silent band is worth another look for a country, not for a state or an activation.
+            .filter(|(_, stop, t)| {
+                !matches!(t, Tier::UsState | Tier::Reference) || !self.automation_silent(stop, now)
             })
             .min_by(|(a, sa, ta), (b, sb, tb)| {
                 let s = &self.settings.automation;
@@ -2349,6 +2471,7 @@ impl Engine {
         p.band_since_unix = now;
         p.last_worthwhile_unix = now;
         p.last_needed_unix = now;
+        p.last_decode_unix = now;
         p.slots_on_band = 0;
         p.last_listen_slot = None;
         p.status = "moving";

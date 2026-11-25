@@ -359,6 +359,119 @@ fn a_quiet_band_is_left_once_everything_is_finished() {
     );
 }
 
+/// Live run 2026-11-25 (xlog.33): five minutes on 10 m in the afternoon, nothing decoded at all.
+#[test]
+fn a_band_on_which_nothing_is_decoded_is_left_after_two_minutes() {
+    let mut e = two_band_pilot();
+    e.settings.automation.min_dwell_secs = 300;
+    e.settings.automation.quiet_secs = 300;
+    e.automation_backdate_band(125);
+    e.ingest_decodes_for_test(&[dec_snr("W1AW SP6CIK JO80", -7)], 30);
+    e.ingest_decodes_for_test(&[], 32);
+    assert_eq!(
+        e.settings.band, "20m",
+        "something is decoded: it has its time"
+    );
+    e.automation_backdate_band(125);
+    e.ingest_decodes_for_test(&[], 34);
+    assert_eq!(e.settings.band, "17m", "silent");
+}
+
+/// Live run 2026-11-25 (xlog.33): from 17:12 to 19:09 the patrol went round five silent bands, five
+/// minutes each, and chased US states to them.
+#[test]
+fn a_silent_band_ends_a_chase_and_rests() {
+    let mut e = two_band_pilot();
+    e.settings.automation.tiers.us_state = true;
+    e.settings.automation.min_dwell_secs = 300;
+    e.settings.automation.quiet_secs = 300;
+    e.settings.automation.schedule[0].bands = vec!["20m".into(), "17m".into(), "15m".into()];
+    e.autopilot_feed(vec![state_spot("N7ILO", "17m", 18.101)]);
+    let heard = [dec_snr("W1AW SP6CIK JO80", -7)];
+    e.ingest_decodes_for_test(&heard, 30);
+    e.ingest_decodes_for_test(&heard, 32);
+    assert_eq!(e.settings.band, "17m", "premise: the spot is chased");
+    e.automation_backdate_band(125);
+    e.ingest_decodes_for_test(&[], 34);
+    e.ingest_decodes_for_test(&[], 35);
+    assert_eq!(e.settings.band, "15m", "the chase is over, and so is 17 m");
+    // Another state there does not bring us back, nor does the patrol.
+    e.autopilot_feed(vec![state_spot("K0JWI", "17m", 18.101)]);
+    e.automation_backdate_band(310);
+    e.ingest_decodes_for_test(&heard, 36);
+    e.ingest_decodes_for_test(&heard, 38);
+    assert_eq!(e.settings.band, "20m");
+    e.automation_backdate_band(310);
+    e.ingest_decodes_for_test(&heard, 40);
+    e.ingest_decodes_for_test(&heard, 42);
+    assert_eq!(e.settings.band, "15m", "17 m rests");
+    // A needed slot does.
+    e.autopilot_feed(vec![crate::automation::FeedEntry {
+        new_slot: true,
+        new_state: false,
+        ..state_spot("5U4JSF", "17m", 18.101)
+    }]);
+    e.automation_backdate_band(310);
+    for s in [44, 46, 48] {
+        e.ingest_decodes_for_test(&heard, s);
+    }
+    assert_eq!(e.settings.band, "17m");
+}
+
+/// A country never worked has its five minutes, silent or not.
+#[test]
+fn a_silent_band_does_not_end_the_chase_of_a_new_country() {
+    let mut e = two_band_pilot();
+    e.autopilot_feed(vec![crate::automation::FeedEntry {
+        new_entity: true,
+        new_state: false,
+        ..state_spot("5T5PA", "17m", 18.101)
+    }]);
+    e.ingest_decodes_for_test(&[], 30);
+    e.ingest_decodes_for_test(&[], 32);
+    assert_eq!(e.settings.band, "17m", "premise: chased");
+    e.automation_backdate_band(125);
+    e.ingest_decodes_for_test(&[], 34);
+    e.ingest_decodes_for_test(&[], 35);
+    assert_eq!(e.settings.band, "17m");
+    e.automation_backdate_band(200);
+    e.ingest_decodes_for_test(&[], 36);
+    assert_eq!(e.settings.band, "20m", "then it is over");
+}
+
+/// Live run 2026-11-25 (xlog.33): JA6VQA sent "OM0RX JA6VQA R-26" on 80 m, though we had sent it no
+/// report. It was answered with RR73 and logged.
+#[test]
+fn a_rogered_report_we_never_gave_is_not_answered() {
+    let roger = [dec_snr("OM0RX K1ABC R-26", -10)];
+    let mut e = answering_pilot();
+    e.ingest_decodes_for_test(&[], 30);
+    e.ingest_decodes_for_test(&roger, 32);
+    assert_eq!(e.automation_dx(), None, "idle");
+
+    let mut e = answering_pilot();
+    pick(&mut e, "DO8JB");
+    let s = over(&mut e, 12);
+    e.ingest_decodes_for_test(&roger, s + 1);
+    assert_eq!(e.automation_dx().as_deref(), Some("DO8JB"), "calling");
+
+    // CONTROL: one we gave a report is answered, late as it comes.
+    let mut e = answering_pilot();
+    e.ingest_decodes_for_test(&[], 30);
+    e.ingest_decodes_for_test(&[dec_snr("OM0RX K1ABC FN42", -5)], 32);
+    assert_eq!(e.automation_dx().as_deref(), Some(CALLER), "premise");
+    let mut s = over(&mut e, 33);
+    for _ in 0..3 {
+        e.ingest_decodes_for_test(&[], s + 1);
+        s = over(&mut e, s + 2);
+    }
+    e.ingest_decodes_for_test(&[], s + 1);
+    e.ingest_decodes_for_test(&[], s + 2);
+    assert_eq!(e.automation_dx(), None, "premise: given up");
+    e.ingest_decodes_for_test(&roger, s + 3);
+    assert_eq!(e.automation_dx().as_deref(), Some(CALLER));
+}
+
 /// Field report 2026-11-22 (xlog.23): the autopilot took OM0RX to 60 m at 5.3715 MHz, the US
 /// channel of the raw band table, and decoded nothing there for eight periods. A station whose call
 /// is not a US one works 60 m FT8 at 5.357 (#175), the dial its own 60 m button tunes; 5.3715 +
@@ -1737,6 +1850,134 @@ fn a_grid_that_answered_and_another_grid_change_nothing() {
     let (mut e, s) = calling_a_grid_while_chasing();
     e.ingest_decodes_for_test(&[dec_snr("CQ K1XYZ FN42", 5)], s);
     assert_eq!(e.automation_dx().as_deref(), Some("N0ABC"), "another grid");
+}
+
+/// A two-band pilot chasing 5U4JSF (needed, ranked above an activation) to 17 m, with N0ABC an
+/// activation there.
+fn chasing_beside_an_activation() -> Engine {
+    let mut e = two_band_pilot();
+    e.settings.automation.answer_callers = true;
+    e.settings.automation.tiers.us_state = true;
+    let slot = crate::automation::FeedEntry {
+        call: "5U4JSF".into(),
+        band: "17m".into(),
+        mode: Some("FT8".into()),
+        freq_mhz: Some(18.101),
+        new_slot: true,
+        new_state: true,
+        ..Default::default()
+    };
+    let park = crate::automation::FeedEntry {
+        call: "N0ABC".into(),
+        new_slot: false,
+        new_state: false,
+        new_reference: true,
+        ..slot.clone()
+    };
+    e.autopilot_feed(vec![slot, park]);
+    e.ingest_decodes_for_test(&[], 30);
+    e.ingest_decodes_for_test(&[], 32);
+    assert_eq!(e.settings.band, "17m", "premise: the spot is chased");
+    e
+}
+
+/// Live run 2026-11-25 (xlog.33): on 20 m for 4U1UN, a needed slot, the autopilot called G5ACE/P, an
+/// activation, four times while 4U1UN ended a contact, and 4U1UN waited two minutes.
+#[test]
+fn an_unanswered_activation_gives_way_to_a_needed_entity() {
+    let mut e = chasing_beside_an_activation();
+    let mut s = 34;
+    for _ in 0..3 {
+        e.ingest_decodes_for_test(&[dec_snr("CQ N0ABC EM48", -3)], s);
+        s += 2;
+        if e.automation_dx().is_some() {
+            break;
+        }
+    }
+    assert_eq!(e.automation_dx().as_deref(), Some("N0ABC"), "premise");
+    s = over(&mut e, s) + 1;
+    e.ingest_decodes_for_test(&[dec_snr("W1AW 5U4JSF RR73", -14)], s);
+    assert_eq!(e.automation_dx().as_deref(), Some("5U4JSF"));
+    // The activation takes nothing over in its turn, and has its calls afterwards.
+    for n in 1..=4 {
+        s = over(&mut e, s + 1) + 1;
+        e.ingest_decodes_for_test(&[dec_snr("CQ N0ABC EM48", -3)], s);
+        assert_eq!(e.automation_dx().as_deref(), Some("5U4JSF"), "call {n}");
+    }
+    e.ingest_decodes_for_test(&[dec_snr("CQ N0ABC EM48", -3)], s + 1);
+    e.ingest_decodes_for_test(&[dec_snr("CQ N0ABC EM48", -3)], s + 2);
+    assert_eq!(e.automation_dx().as_deref(), Some("N0ABC"), "its turn");
+}
+
+/// Operator, 2026-11-25: "new or unconfirmed country has priority, band slot not".
+#[test]
+fn an_unconfirmed_country_has_its_calls_before_a_caller() {
+    let mut e = answering_pilot();
+    pick(&mut e, "TT8XX");
+    e.ingest_decodes_for_test(&[], 12);
+    e.automation_set_tier_for_test(crate::automation::Tier::DxccUnconfirmed);
+    let mut s = over(&mut e, 13);
+    for n in 1..=4 {
+        e.ingest_decodes_for_test(&[dec_snr("OM0RX K1ABC FN42", -5)], s + 1);
+        let log = e.automation_dto().log;
+        assert_eq!(
+            e.automation_dx().as_deref(),
+            Some("TT8XX"),
+            "call {n}: {log:?}"
+        );
+        if n < 4 {
+            s = over(&mut e, s + 2);
+        }
+    }
+    e.ingest_decodes_for_test(&[dec_snr("OM0RX K1ABC FN42", -5)], s + 3);
+    assert_eq!(
+        e.automation_dx().as_deref(),
+        Some(CALLER),
+        "then the caller"
+    );
+
+    // A slot in a confirmed country does not wait.
+    let mut e = answering_pilot();
+    pick(&mut e, "TT8XX");
+    e.ingest_decodes_for_test(&[], 12);
+    e.automation_set_tier_for_test(crate::automation::Tier::DxccNewSlot);
+    let s = over(&mut e, 13);
+    e.ingest_decodes_for_test(&[dec_snr("OM0RX K1ABC FN42", -5)], s + 1);
+    assert_eq!(e.automation_dx().as_deref(), Some(CALLER));
+}
+
+/// Same run: called once, 4U1UN was given up for a caller, G5ACE/P, and its chase ended as "did not
+/// answer" while it was still heard.
+#[test]
+fn a_needed_station_left_for_a_caller_is_called_again_after_it() {
+    let mut e = chasing_beside_an_activation();
+    let mut s = 34;
+    for _ in 0..3 {
+        e.ingest_decodes_for_test(&[dec_snr("CQ 5U4JSF JK73", -14)], s);
+        s += 2;
+        if e.automation_dx().is_some() {
+            break;
+        }
+    }
+    assert_eq!(e.automation_dx().as_deref(), Some("5U4JSF"), "premise");
+    s = over(&mut e, s) + 1;
+    e.automation_backdate_band(290);
+    e.ingest_decodes_for_test(&[dec_snr("OM0RX K1ABC FN42", -5)], s);
+    assert_eq!(e.automation_dx().as_deref(), Some(CALLER), "answered");
+    // K1ABC never comes back.
+    for _ in 0..4 {
+        s = over(&mut e, s + 1) + 1;
+        e.automation_backdate_band(30);
+        e.ingest_decodes_for_test(&[dec_snr("W1AW SP6CIK JO80", -7)], s);
+    }
+    e.ingest_decodes_for_test(&[dec_snr("W1AW SP6CIK JO80", -7)], s + 1);
+    e.ingest_decodes_for_test(&[dec_snr("W1AW 5U4JSF RR73", -14)], s + 2);
+    let log = e.automation_dto().log;
+    assert!(
+        !log.iter().any(|l| l.contains("back to the schedule")),
+        "the chase goes on: {log:?}"
+    );
+    assert_eq!(e.automation_dx().as_deref(), Some("5U4JSF"), "called again");
 }
 
 /// Live run 2026-11-24 (xlog.28): on 17 m FT4 for XU7O, up to five stations a period were heard
