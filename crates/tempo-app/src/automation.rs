@@ -971,17 +971,32 @@ pub const DXPED_PLACE_HZ: f32 = 400.0;
 /// The highest audio offset the autopilot calls a DXpedition from: an FT8 signal is 50 Hz wide
 /// and many radios' transmit passband ends near 3 kHz.
 pub const DXPED_SPLIT_TOP_HZ: f32 = 2900.0;
-/// Where to transmit when calling a DXpedition heard at `dx_hz`, from `tx_hz`: the current offset
-/// when it is already at least [`DXPED_SPLIT_HZ`] above (and inside the passband), else exactly
-/// that far above. Always above, never below (operator, 2026-11-22: "a DXpedition is usually
-/// within 500 Hz, so we can only go above; those are the rules"): one heard so high that 1200 Hz
-/// above does not fit is called from the top of the passband, still above it.
-pub fn dxped_split_hz(dx_hz: f32, tx_hz: f32) -> f32 {
-    let up = dx_hz + DXPED_SPLIT_HZ;
-    if tx_hz >= up && tx_hz <= DXPED_SPLIT_TOP_HZ {
-        tx_hz
+/// Does calling a DXpedition heard at `dx_hz` [`DXPED_SPLIT_HZ`] above it fit its receiver?
+pub fn dxped_split_fits(dx_hz: f32) -> bool {
+    dx_hz + DXPED_SPLIT_HZ <= DXPED_SPLIT_TOP_HZ
+}
+/// The audio offsets a DXpedition heard at `dx_hz` is called from, Hz: at least [`DXPED_SPLIT_HZ`]
+/// above it (operator, 2026-11-22: "a DXpedition is usually within 500 Hz, so we can only go above"),
+/// or, heard so high that this is outside its receiver, at least as far below it (operator,
+/// 2026-11-25: "we can't go above the filter bandwidth"; live run that day: 3B8/E70A at 2489 Hz on
+/// the 18.100 channel was called 3.7 kHz above its dial for ten minutes).
+pub fn dxped_range(dx_hz: f32) -> (f32, f32) {
+    if dxped_split_fits(dx_hz) {
+        (dx_hz + DXPED_SPLIT_HZ, DXPED_SPLIT_TOP_HZ)
     } else {
-        up.min(DXPED_SPLIT_TOP_HZ)
+        (CLEAR_LOW_HZ, (dx_hz - DXPED_SPLIT_HZ).max(CLEAR_LOW_HZ))
+    }
+}
+/// Where to transmit when calling a DXpedition heard at `dx_hz`, from `tx_hz`: the current offset
+/// when it is in [`dxped_range`], else the end of the range nearest the DXpedition.
+pub fn dxped_split_hz(dx_hz: f32, tx_hz: f32) -> f32 {
+    let (low, high) = dxped_range(dx_hz);
+    if (low..=high).contains(&tx_hz) {
+        tx_hz
+    } else if dxped_split_fits(dx_hz) {
+        low
+    } else {
+        high
     }
 }
 
@@ -1279,7 +1294,7 @@ mod tests {
     }
 
     #[test]
-    fn a_dxpedition_is_always_called_from_above_never_on_or_below_it() {
+    fn a_dxpedition_is_called_1200_hz_above_or_below_where_above_is_outside_its_receiver() {
         // The usual case: a DXpedition low in the passband, called 1200 Hz above.
         assert_eq!(dxped_split_hz(450.0, 450.0), 1650.0);
         assert_eq!(dxped_split_hz(450.0, 300.0), 1650.0, "never below");
@@ -1287,9 +1302,12 @@ mod tests {
         assert_eq!(dxped_split_hz(450.0, 2200.0), 2200.0);
         // Too close above: moved out to the full spacing.
         assert_eq!(dxped_split_hz(1500.0, 2000.0), 2700.0);
-        // Too high to fit 1200 above: the top of the passband, still above, never below.
-        assert_eq!(dxped_split_hz(2000.0, 2000.0), DXPED_SPLIT_TOP_HZ);
-        assert_eq!(dxped_split_hz(2000.0, 500.0), DXPED_SPLIT_TOP_HZ);
+        assert_eq!(dxped_split_hz(1700.0, 500.0), 2900.0, "the last that fits");
+        // Too high to fit 1200 above: as far below, inside its receiver (3B8/E70A, 2026-11-25).
+        assert_eq!(dxped_split_hz(2489.0, 1375.0), 1289.0);
+        assert_eq!(dxped_split_hz(2489.0, 900.0), 900.0, "already there");
+        assert_eq!(dxped_split_hz(1750.0, 1375.0), 550.0);
+        assert_eq!(dxped_range(2489.0), (400.0, 1289.0));
     }
 
     #[test]

@@ -158,6 +158,8 @@ struct Hunt {
     back_band: String,
     back_dial_mhz: f64,
     back_tier: LinkTier,
+    /// The dial the hunt began on, MHz: a call may move it.
+    dial_mhz: f64,
     /// The operator's special operation before the hunt switched to Hound, to put back.
     hound_from: Option<SpecialOp>,
     /// The DXpedition has been decoded here.
@@ -1054,10 +1056,11 @@ impl Engine {
             Vec::new()
         };
         // A DXpedition sits low, under 500 Hz, and is called from above it (operator,
-        // 2026-11-22). One heard higher is brought there first: the dial moves up so its signal
+        // 2026-11-22). One so high that above is outside its receiver is left there and called from
+        // below. One heard higher is brought there first: the dial moves up so its signal
         // lands at DXPED_PLACE_HZ, through the autopilot's own switch, so it happens only between
         // contacts and transmit is put back as it was. Held, the call goes ahead from where it is.
-        if rare && c.freq_hz > automation::DXPED_LOW_HZ {
+        if rare && c.freq_hz > automation::DXPED_LOW_HZ && automation::dxped_split_fits(c.freq_hz) {
             let shift_hz = ((c.freq_hz - automation::DXPED_PLACE_HZ) / 10.0).round() * 10.0;
             let dial = self.settings.dial_mhz + f64::from(shift_hz) / 1e6;
             let band = self.settings.band.clone();
@@ -1086,11 +1089,11 @@ impl Engine {
         match res {
             Ok(()) => {
                 // A DXpedition (or an ATNO, as rare and as crowded) is never called on its own
-                // frequency: at least 1200 Hz above it (operator, 2026-11-22).
+                // frequency: at least 1200 Hz from it (operator, 2026-11-22), inside its receiver
+                // (operator, 2026-11-25).
                 if rare {
                     let want = automation::dxped_split_hz(c.freq_hz, self.tx_offset_hz);
-                    let low = automation::dxped_split_hz(c.freq_hz, 0.0);
-                    let top = automation::DXPED_SPLIT_TOP_HZ;
+                    let (low, top) = automation::dxped_range(c.freq_hz);
                     let tx = automation::clear_tx_hz(want, &used, self.tx_width_hz(), low, top);
                     let before = self.automation.pilot.tx_before.map_or(held, |(b, _)| b);
                     self.set_tx_offset(tx);
@@ -1333,7 +1336,9 @@ impl Engine {
                 {
                     // A DXpedition is spotted and the station being called has not answered
                     // (operator, 2026-11-25: a DXpedition spot is always prioritised).
-                    self.note_failed(&t.call);
+                    if calls > 0 {
+                        self.note_failed(&t.call);
+                    }
                     self.automation_note(&format!(
                         "{} did not answer: DXpedition {} is spotted on {}",
                         t.call, e.call, e.band
@@ -1346,11 +1351,21 @@ impl Engine {
                 {
                     // A needed station is free here and the grid or new call being called has not
                     // answered (live run 2026-11-24: XE2X, needed on 160 m, called CQ while a new
-                    // grid was called for two minutes).
-                    self.note_failed(&t.call);
+                    // grid was called for two minutes). One picked and not called yet has left
+                    // nothing unanswered (RA9ACA, 2026-11-25).
+                    if calls > 0 {
+                        self.note_failed(&t.call);
+                    }
                     self.automation_note(&format!(
-                        "{} did not answer: calling {} instead ({tier:?}, {} dB)",
-                        t.call, c.call, c.snr
+                        "{} {}: calling {} instead ({tier:?}, {} dB)",
+                        t.call,
+                        if calls > 0 {
+                            "did not answer"
+                        } else {
+                            "not called yet"
+                        },
+                        c.call,
+                        c.snr
                     ));
                     self.automation_abandon_contact();
                     self.automation.pilot.target = None;
@@ -2324,6 +2339,7 @@ impl Engine {
                 .map(|c| c.dial_mhz);
             let dial = e.freq_mhz.map(|f| hunt_dial(f, channel));
             let back = Hunt {
+                dial_mhz: 0.0,
                 spot_mhz: e.freq_mhz.unwrap_or(0.0),
                 back_band: self.settings.band.clone(),
                 back_dial_mhz: self.settings.dial_mhz,
@@ -2362,7 +2378,10 @@ impl Engine {
                 call: call.clone(),
                 band: e.band.clone(),
                 since_unix: now,
-                hunt: Some(back),
+                hunt: Some(Hunt {
+                    dial_mhz: self.settings.dial_mhz,
+                    ..back
+                }),
                 done: false,
             });
             self.automation_note(&format!(
@@ -2389,7 +2408,9 @@ impl Engine {
             // Fox/Hound exists only in FT8 (REVIEW N-11).
             if s.hunt_hound
                 && self.app.tier() == LinkTier::Ft8
-                && d.freq < 1000.0
+                // Where it sits on the dial it was found on, not where our own retune put it
+                // (3B8/E70A, 2026-11-25: taken for a Fox at 399 Hz, which was 2489).
+                && f64::from(d.freq) + (self.settings.dial_mhz - hunt.dial_mhz) * 1e6 < 1000.0
                 && self.settings.special_op == SpecialOp::None
                 && hunt.hound_from.is_none()
             {
@@ -2532,6 +2553,7 @@ impl Engine {
             band: band.clone(),
             since_unix: now,
             hunt: Some(Hunt {
+                dial_mhz: self.settings.dial_mhz,
                 spot_mhz: self.settings.dial_mhz + f64::from(c.freq_hz) / 1e6,
                 back_band: band.clone(),
                 back_dial_mhz: self.settings.dial_mhz,

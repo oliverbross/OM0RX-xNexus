@@ -1945,6 +1945,48 @@ fn spotted(call: &str, band: &str, freq: f64, mode: &str) -> crate::automation::
     }
 }
 
+/// Live run 2026-11-25: 3B8/E70A ran two streams at 2489 Hz on the 18.100 channel. The dial was moved
+/// up 2090 Hz to put it at 399 Hz and it was called at 1599 Hz, 3.7 kHz above its dial and outside its
+/// receiver, for ten minutes; then it was taken for a Fox at 399 Hz.
+#[test]
+fn a_dxpedition_high_in_the_channel_is_called_from_below_it() {
+    let mut e = two_band_pilot();
+    e.hold_tx_freq = true;
+    e.set_tx_offset(1375.0);
+    e.autopilot_feed(vec![spotted("3B8/E70A", "17m", 18.100, "FT8")]);
+    e.ingest_decodes_for_test(&[], 30);
+    assert_eq!(e.settings.band, "17m", "premise: hunting");
+    let dial = e.settings.dial_mhz;
+    e.ingest_decodes_for_test(&[dec_at("CQ 3B8/E70A", -5, 2489.0)], 32);
+    assert!(e.automation_dx().is_some(), "premise: called");
+    assert!(
+        (e.settings.dial_mhz - dial).abs() < 1e-9,
+        "the dial stays: {}",
+        e.settings.dial_mhz
+    );
+    assert!(
+        (400.0..=1289.0).contains(&e.tx_offset_hz),
+        "{}",
+        e.tx_offset_hz
+    );
+}
+
+/// Same run: our own retune is no sign of a Fox.
+#[test]
+fn a_dxpedition_our_retune_put_low_is_no_fox() {
+    let mut e = two_band_pilot();
+    e.autopilot_feed(vec![dxped_spot("3Y0K", "40m", 7.056)]);
+    e.ingest_decodes_for_test(&[], 30);
+    e.ingest_decodes_for_test(&[dec_at("CQ 3Y0K JD15", -5, 1500.0)], 32);
+    assert!(
+        (e.settings.dial_mhz - 7.0571).abs() < 1e-9,
+        "premise: retuned"
+    );
+    e.automation_abandon_for_test();
+    e.ingest_decodes_for_test(&[dec_at("CQ 3Y0K JD15", -5, 400.0)], 34);
+    assert_eq!(e.settings.special_op, crate::settings::SpecialOp::None);
+}
+
 /// Operator, 2026-11-25: VK9XY, spotted on FT8 and FT4 all day, "should be always prioritised". It
 /// was hunted on none of them: Christmas Island was confirmed there, so nothing was needed.
 #[test]
