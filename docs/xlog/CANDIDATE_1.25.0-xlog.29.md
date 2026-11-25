@@ -52,7 +52,7 @@ FT8 + FT4.
 - **Install:** 14:17 UTC, `/S`, exit 0, with no Nexus running; `settings.json` unchanged.
 - **First launch:** 2026-11-24 21:07:55 UTC, with the operator's approval to go on the air.
 
-## Live run (2026-11-24 21:17 to 22:17 UTC; the run goes on)
+## Live run (2026-11-24 21:17 to 22:17 UTC, the first hour)
 
 Night schedule (FT8 160/80/60/40/30 m), FLEX-8400 through SmartSDR CAT, xLog running from 21:33.
 
@@ -78,3 +78,11 @@ Night schedule (FT8 160/80/60/40/30 m), FLEX-8400 through SmartSDR CAT, xLog run
 
 Not seen yet: the FT8 + FT4 patrol, the stalled-contact end (`5ee7f0c26`), a DXpedition, and a run as long
 as the one that crashed xlog.28 (five hours).
+
+### The whole run (to 2026-11-25 00:41 UTC, stopped for the xlog.30 build)
+
+- 3 h 24 min, 24 contacts (40 m 10, 60 m 7, 160 m 3, 30 m 2, 80 m 2), all in xLog and synced. 228 overs
+  keyed and unkeyed, longest 13.7 s. No crash, TX watchdog trip or autopilot switch-off. Shorter than the
+  five hours after which xlog.28 crashed, so the `setlocale` wrap is not proven over that time.
+- **"5T4LS/85PD6" was hunted as an ATNO** (a false decode somebody reported): `5cfc68a1c`.
+- **JT1BZ** answered on 40 m (-21), did not copy our roger twice and went on to others: left.

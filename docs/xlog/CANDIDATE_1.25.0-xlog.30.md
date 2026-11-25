@@ -27,3 +27,19 @@ station on a clear transmit frequency") is on until switched off, and an older v
 | `cargo clippy -p tempo-app` `-D warnings` | pass |
 | UI `tsc -b`; i18n, autopilot, feed and settings suites | pass; 840/840 |
 | Not run | the commits one by one, tempo-audio, src-tauri tests and clippy, the whole UI suite, browser probe, CI (GitHub Actions billing is blocked) |
+
+## Package and installation (2026-11-25)
+
+- **Source:** `dac3c61de`, canonical `main`, clean, equal to `origin/main`.
+- **Guard:** the xlog.29 wrapper and profile (`optimized-no-lto-cgu16-7GiB-physical14-commit12p5-reserve6`)
+  with only the expected version changed. Nexus, SmartSDR, CAT, DAX and xLog were closed normally first.
+  Admission 16.6 GiB physical / 13.1 GiB commit; 00:43-01:42 UTC; peak 5.43 GiB; lowest free 12.0 GiB
+  physical / 7.6 GiB commit; cleanup confirmed. The Home Assistant VM was not saved.
+- **Evidence:** `.build/xnexus-xlog30-package-7g/evidence/20261125T0043581902343Z-552972717ba0488c8259a79265b2044d`.
+- **Receipt:** `target/xnexus-provenance/1.25.0-xlog.30.json` (source `dac3c61de`, upstream base
+  `21f743404` v1.25.0-beta.2, toolchain 1.93.1-x86_64-pc-windows-gnu, unsigned).
+- **Installer:** `OM0RX-xNexus_1.25.0-xlog.30_x64-setup.exe`, 356,596,483 bytes, SHA-256
+  `03D2EB5DFDF78FB6D494B8EF9EF47DD2B5E0E21BBA640BF7194A5A91A4AA9EE0` (matches the receipt).
+- **Built exe:** `9BEC3ED4…F1AC`. **Installed exe:** `3E2ED48D…AEC2`, version 1.25.0-xlog.30.
+- **Install:** 01:43 UTC, `/S`, exit 0, with no Nexus running; `settings.json` unchanged.
+- **Not launched** when this was written: going on the air needs the operator's approval.
