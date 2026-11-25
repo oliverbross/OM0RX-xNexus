@@ -1072,25 +1072,35 @@ impl Engine {
         } else {
             Vec::new()
         };
-        // A DXpedition sits low, under 500 Hz, and is called from above it (operator,
-        // 2026-11-22). One so high that above is outside its receiver is left there and called from
-        // below. One heard higher is brought there first: the dial moves up so its signal
-        // lands at DXPED_PLACE_HZ, through the autopilot's own switch, so it happens only between
-        // contacts and transmit is put back as it was. Held, the call goes ahead from where it is.
-        if rare && c.freq_hz > automation::DXPED_LOW_HZ && automation::dxped_split_fits(c.freq_hz) {
-            let shift_hz = ((c.freq_hz - automation::DXPED_PLACE_HZ) / 10.0).round() * 10.0;
-            let dial = self.settings.dial_mhz + f64::from(shift_hz) / 1e6;
+        // A DXpedition sits under 500 Hz and is called from 1000-2500 (operator, 2026-11-22 and
+        // 2026-11-25). One heard higher is brought there first: the dial moves up so its signal lands
+        // at DXPED_PLACE_HZ, through the autopilot's own switch, so it happens only between contacts
+        // and transmit is put back as it was. Held, the call goes ahead from where it is. Its own dial
+        // is the one the hunt began on.
+        let mut shift_hz = self
+            .automation
+            .pilot
+            .chase
+            .as_ref()
+            .and_then(|ch| ch.hunt.as_ref())
+            .map_or(0.0, |h| {
+                ((self.settings.dial_mhz - h.dial_mhz) * 1e6).max(0.0) as f32
+            });
+        if rare && shift_hz < 1.0 {
+            let up = automation::dxped_shift_hz(c.freq_hz);
+            let dial = self.settings.dial_mhz + f64::from(up) / 1e6;
             let band = self.settings.band.clone();
-            if self.automation_switch(None, &band, Some(dial)) {
+            if up > 0.0 && self.automation_switch(None, &band, Some(dial)) {
                 self.automation_note(&format!(
-                    "{call} heard at {:.0} Hz: dial up {shift_hz:.0} Hz to {dial:.6} MHz, \
+                    "{call} heard at {:.0} Hz: dial up {up:.0} Hz to {dial:.6} MHz, \
                      so it sits at {:.0} Hz",
                     c.freq_hz,
-                    c.freq_hz - shift_hz
+                    c.freq_hz - up
                 ));
-                c.freq_hz -= shift_hz;
+                c.freq_hz -= up;
+                shift_hz = up;
                 for hz in &mut used {
-                    *hz -= shift_hz;
+                    *hz -= up;
                 }
             }
         }
@@ -1106,11 +1116,10 @@ impl Engine {
         match res {
             Ok(()) => {
                 // A DXpedition (or an ATNO, as rare and as crowded) is never called on its own
-                // frequency: at least 1200 Hz from it (operator, 2026-11-22), inside its receiver
-                // (operator, 2026-11-25).
+                // frequency, and always inside its receiver.
                 if rare {
-                    let want = automation::dxped_split_hz(c.freq_hz, self.tx_offset_hz);
-                    let (low, top) = automation::dxped_range(c.freq_hz);
+                    let want = automation::dxped_call_hz(c.freq_hz, shift_hz, self.tx_offset_hz);
+                    let (low, top) = automation::dxped_range(c.freq_hz, shift_hz);
                     let tx = automation::clear_tx_hz(want, &used, self.tx_width_hz(), low, top);
                     let before = self.automation.pilot.tx_before.map_or(held, |(b, _)| b);
                     self.set_tx_offset(tx);

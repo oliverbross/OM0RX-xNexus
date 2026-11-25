@@ -968,35 +968,52 @@ pub const DXPED_LOW_HZ: f32 = 500.0;
 /// Where such a retune puts the DXpedition's signal, Hz: under [`DXPED_LOW_HZ`] with room for its
 /// 50 Hz width and a little drift.
 pub const DXPED_PLACE_HZ: f32 = 400.0;
-/// The highest audio offset the autopilot calls a DXpedition from: an FT8 signal is 50 Hz wide
-/// and many radios' transmit passband ends near 3 kHz.
-pub const DXPED_SPLIT_TOP_HZ: f32 = 2900.0;
-/// Does calling a DXpedition heard at `dx_hz` [`DXPED_SPLIT_HZ`] above it fit its receiver?
-pub fn dxped_split_fits(dx_hz: f32) -> bool {
-    dx_hz + DXPED_SPLIT_HZ <= DXPED_SPLIT_TOP_HZ
+/// Where a DXpedition is called, Hz of our audio (operator, 2026-11-25: "the DX station should be
+/// tuned in 0-500 Hz, and we should be calling in 1000-2500").
+pub const DXPED_CALL_LOW_HZ: f32 = 1000.0;
+pub const DXPED_CALL_TOP_HZ: f32 = 2500.0;
+/// The highest audio offset on the DXpedition's own dial a call is made on: many receivers' filters
+/// end there (operator, 2026-11-25: "we can't go above the filter bandwidth").
+pub const DXPED_RECEIVER_TOP_HZ: f32 = 2700.0;
+
+/// How far up the dial moves to put a DXpedition heard at `dx_hz` at [`DXPED_PLACE_HZ`], Hz; 0 = it is
+/// under [`DXPED_LOW_HZ`] already, or sits so high that a call from [`DXPED_CALL_LOW_HZ`] would be
+/// outside its receiver (live run 2026-11-25: 3B8/E70A at 2489 Hz).
+pub fn dxped_shift_hz(dx_hz: f32) -> f32 {
+    if dx_hz <= DXPED_LOW_HZ {
+        return 0.0;
+    }
+    let shift = ((dx_hz - DXPED_PLACE_HZ) / 10.0).round() * 10.0;
+    if DXPED_RECEIVER_TOP_HZ - shift >= DXPED_CALL_LOW_HZ {
+        shift
+    } else {
+        0.0
+    }
 }
-/// The audio offsets a DXpedition heard at `dx_hz` is called from, Hz: at least [`DXPED_SPLIT_HZ`]
-/// above it (operator, 2026-11-22: "a DXpedition is usually within 500 Hz, so we can only go above"),
-/// or, heard so high that this is outside its receiver, at least as far below it (operator,
-/// 2026-11-25: "we can't go above the filter bandwidth"; live run that day: 3B8/E70A at 2489 Hz on
-/// the 18.100 channel was called 3.7 kHz above its dial for ten minutes).
-pub fn dxped_range(dx_hz: f32) -> (f32, f32) {
-    if dxped_split_fits(dx_hz) {
-        (dx_hz + DXPED_SPLIT_HZ, DXPED_SPLIT_TOP_HZ)
+
+/// The audio offsets a DXpedition now heard at `dx_hz` is called from, with our dial `shift_hz` above
+/// its own: [`DXPED_CALL_LOW_HZ`] to [`DXPED_CALL_TOP_HZ`], at least 500 Hz above it and inside its
+/// receiver; where none of that is left, from at least [`DXPED_SPLIT_HZ`] below it.
+pub fn dxped_range(dx_hz: f32, shift_hz: f32) -> (f32, f32) {
+    let low = DXPED_CALL_LOW_HZ.max(dx_hz + DXPED_LOW_HZ);
+    let top = DXPED_CALL_TOP_HZ.min(DXPED_RECEIVER_TOP_HZ - shift_hz);
+    if low <= top {
+        (low, top)
     } else {
         (CLEAR_LOW_HZ, (dx_hz - DXPED_SPLIT_HZ).max(CLEAR_LOW_HZ))
     }
 }
-/// Where to transmit when calling a DXpedition heard at `dx_hz`, from `tx_hz`: the current offset
-/// when it is in [`dxped_range`], else the end of the range nearest the DXpedition.
-pub fn dxped_split_hz(dx_hz: f32, tx_hz: f32) -> f32 {
-    let (low, high) = dxped_range(dx_hz);
-    if (low..=high).contains(&tx_hz) {
+
+/// Where to transmit when calling it, from `tx_hz`: the current offset when it is in that range and
+/// [`DXPED_SPLIT_HZ`] away, else that far away, as near as the range allows.
+pub fn dxped_call_hz(dx_hz: f32, shift_hz: f32, tx_hz: f32) -> f32 {
+    let (low, top) = dxped_range(dx_hz, shift_hz);
+    if (low..=top).contains(&tx_hz) && (tx_hz - dx_hz).abs() >= DXPED_SPLIT_HZ {
         tx_hz
-    } else if dxped_split_fits(dx_hz) {
-        low
+    } else if low > dx_hz {
+        (dx_hz + DXPED_SPLIT_HZ).clamp(low, top)
     } else {
-        high
+        top
     }
 }
 
@@ -1294,20 +1311,28 @@ mod tests {
     }
 
     #[test]
-    fn a_dxpedition_is_called_1200_hz_above_or_below_where_above_is_outside_its_receiver() {
-        // The usual case: a DXpedition low in the passband, called 1200 Hz above.
-        assert_eq!(dxped_split_hz(450.0, 450.0), 1650.0);
-        assert_eq!(dxped_split_hz(450.0, 300.0), 1650.0, "never below");
-        // Already far enough above, and inside the passband: left where it is.
-        assert_eq!(dxped_split_hz(450.0, 2200.0), 2200.0);
-        // Too close above: moved out to the full spacing.
-        assert_eq!(dxped_split_hz(1500.0, 2000.0), 2700.0);
-        assert_eq!(dxped_split_hz(1700.0, 500.0), 2900.0, "the last that fits");
-        // Too high to fit 1200 above: as far below, inside its receiver (3B8/E70A, 2026-11-25).
-        assert_eq!(dxped_split_hz(2489.0, 1375.0), 1289.0);
-        assert_eq!(dxped_split_hz(2489.0, 900.0), 900.0, "already there");
-        assert_eq!(dxped_split_hz(1750.0, 1375.0), 550.0);
-        assert_eq!(dxped_range(2489.0), (400.0, 1289.0));
+    fn a_dxpedition_sits_under_500_hz_and_is_called_from_1000_to_2500_in_its_receiver() {
+        // Low already: the dial stays, and it is called 1200 Hz above, or where we are.
+        assert_eq!(dxped_shift_hz(450.0), 0.0);
+        assert_eq!(dxped_range(450.0, 0.0), (1000.0, 2500.0));
+        assert_eq!(dxped_call_hz(450.0, 0.0, 450.0), 1650.0);
+        assert_eq!(
+            dxped_call_hz(450.0, 0.0, 2200.0),
+            2200.0,
+            "left where it is"
+        );
+        assert_eq!(dxped_call_hz(450.0, 0.0, 2700.0), 1650.0, "not above 2500");
+        // Brought down, and called inside its own receiver (VK9XY on 10 m FT4, 2026-11-25).
+        assert_eq!(dxped_shift_hz(1500.0), 1100.0);
+        assert_eq!(dxped_call_hz(400.0, 1100.0, 1375.0), 1600.0);
+        assert_eq!(dxped_shift_hz(1837.0), 1440.0);
+        assert_eq!(dxped_range(397.0, 1440.0), (1000.0, 1260.0));
+        assert_eq!(dxped_call_hz(397.0, 1440.0, 1375.0), 1260.0);
+        // So high that no call from 1000 Hz is in its receiver (3B8/E70A): left there, from below.
+        assert_eq!(dxped_shift_hz(2489.0), 0.0);
+        assert_eq!(dxped_range(2489.0, 0.0), (400.0, 1289.0));
+        assert_eq!(dxped_call_hz(2489.0, 0.0, 1375.0), 1289.0);
+        assert_eq!(dxped_call_hz(2489.0, 0.0, 900.0), 900.0, "already there");
     }
 
     #[test]

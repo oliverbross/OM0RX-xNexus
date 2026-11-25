@@ -706,7 +706,7 @@ fn a_dxpedition_is_called_1200_hz_above_its_own_frequency() {
     );
     // At least 1200 Hz above it: the offset already in use stays when it is far enough up.
     assert!(
-        (1650.0..=2900.0).contains(&low.tx_offset_hz),
+        (1650.0..=2500.0).contains(&low.tx_offset_hz),
         "called at least 1200 Hz above it: {}",
         low.tx_offset_hz
     );
@@ -1930,7 +1930,7 @@ fn a_dxpedition_is_called_on_a_clear_frequency_above_it() {
     hear(&mut e, dec_at("CQ 3Y0K JD15", -14, 406.0), 32);
     assert_eq!(e.automation_dx().as_deref(), Some("3Y0K"), "premise");
     assert!(
-        (1665.0..=1671.0).contains(&e.tx_offset_hz),
+        (1000.0..=2500.0).contains(&e.tx_offset_hz) && (e.tx_offset_hz - 1610.0).abs() >= 55.0,
         "{}",
         e.tx_offset_hz
     );
