@@ -377,6 +377,68 @@ fn a_band_on_which_nothing_is_decoded_is_left_after_two_minutes() {
     assert_eq!(e.settings.band, "17m", "silent");
 }
 
+/// Live run 2026-11-25 (xlog.33): from 17:12 to 19:09 the patrol went round five silent bands, five
+/// minutes each, and chased US states to them.
+#[test]
+fn a_silent_band_ends_a_chase_and_rests() {
+    let mut e = two_band_pilot();
+    e.settings.automation.tiers.us_state = true;
+    e.settings.automation.min_dwell_secs = 300;
+    e.settings.automation.quiet_secs = 300;
+    e.settings.automation.schedule[0].bands = vec!["20m".into(), "17m".into(), "15m".into()];
+    e.autopilot_feed(vec![state_spot("N7ILO", "17m", 18.101)]);
+    let heard = [dec_snr("W1AW SP6CIK JO80", -7)];
+    e.ingest_decodes_for_test(&heard, 30);
+    e.ingest_decodes_for_test(&heard, 32);
+    assert_eq!(e.settings.band, "17m", "premise: the spot is chased");
+    e.automation_backdate_band(125);
+    e.ingest_decodes_for_test(&[], 34);
+    e.ingest_decodes_for_test(&[], 35);
+    assert_eq!(e.settings.band, "15m", "the chase is over, and so is 17 m");
+    // Another state there does not bring us back, nor does the patrol.
+    e.autopilot_feed(vec![state_spot("K0JWI", "17m", 18.101)]);
+    e.automation_backdate_band(310);
+    e.ingest_decodes_for_test(&heard, 36);
+    e.ingest_decodes_for_test(&heard, 38);
+    assert_eq!(e.settings.band, "20m");
+    e.automation_backdate_band(310);
+    e.ingest_decodes_for_test(&heard, 40);
+    e.ingest_decodes_for_test(&heard, 42);
+    assert_eq!(e.settings.band, "15m", "17 m rests");
+    // A needed slot does.
+    e.autopilot_feed(vec![crate::automation::FeedEntry {
+        new_slot: true,
+        new_state: false,
+        ..state_spot("5U4JSF", "17m", 18.101)
+    }]);
+    e.automation_backdate_band(310);
+    for s in [44, 46, 48] {
+        e.ingest_decodes_for_test(&heard, s);
+    }
+    assert_eq!(e.settings.band, "17m");
+}
+
+/// A country never worked has its five minutes, silent or not.
+#[test]
+fn a_silent_band_does_not_end_the_chase_of_a_new_country() {
+    let mut e = two_band_pilot();
+    e.autopilot_feed(vec![crate::automation::FeedEntry {
+        new_entity: true,
+        new_state: false,
+        ..state_spot("5T5PA", "17m", 18.101)
+    }]);
+    e.ingest_decodes_for_test(&[], 30);
+    e.ingest_decodes_for_test(&[], 32);
+    assert_eq!(e.settings.band, "17m", "premise: chased");
+    e.automation_backdate_band(125);
+    e.ingest_decodes_for_test(&[], 34);
+    e.ingest_decodes_for_test(&[], 35);
+    assert_eq!(e.settings.band, "17m");
+    e.automation_backdate_band(200);
+    e.ingest_decodes_for_test(&[], 36);
+    assert_eq!(e.settings.band, "20m", "then it is over");
+}
+
 /// Field report 2026-11-22 (xlog.23): the autopilot took OM0RX to 60 m at 5.3715 MHz, the US
 /// channel of the raw band table, and decoded nothing there for eight periods. A station whose call
 /// is not a US one works 60 m FT8 at 5.357 (#175), the dial its own 60 m button tunes; 5.3715 +
@@ -1873,9 +1935,9 @@ fn a_needed_station_left_for_a_caller_is_called_again_after_it() {
     for _ in 0..4 {
         s = over(&mut e, s + 1) + 1;
         e.automation_backdate_band(30);
-        e.ingest_decodes_for_test(&[], s);
+        e.ingest_decodes_for_test(&[dec_snr("W1AW SP6CIK JO80", -7)], s);
     }
-    e.ingest_decodes_for_test(&[], s + 1);
+    e.ingest_decodes_for_test(&[dec_snr("W1AW SP6CIK JO80", -7)], s + 1);
     e.ingest_decodes_for_test(&[dec_snr("W1AW 5U4JSF RR73", -14)], s + 2);
     let log = e.automation_dto().log;
     assert!(

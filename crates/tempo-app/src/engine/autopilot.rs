@@ -50,6 +50,8 @@ use tempo_core::qso::State as QsoState;
 const CALLER_FRESH_SLOTS: u64 = 3;
 /// A band on which nothing at all is decoded for this long is left, seconds.
 const SILENT_BAND_SECS: u64 = 120;
+/// Then its turns, and the state and activation spots on it, wait this long, seconds.
+const SILENT_REST_SECS: u64 = 1800;
 /// How long a spot chase may go without decoding its station before it is given up, seconds.
 const CHASE_UNHEARD_SECS: u64 = 300;
 /// How lately a station must have been heard calling it for the DXpedition to count as on the air,
@@ -186,6 +188,8 @@ struct Pilot {
     last_needed_unix: u64,
     /// When anything was last decoded, or the band was come to, Unix seconds.
     last_decode_unix: u64,
+    /// By band and mode ([`turn_key`]): when nothing at all was decoded there, Unix seconds.
+    silent: HashMap<String, u64>,
     slots_on_band: u32,
     /// The slot the listen counter last counted (it counts slots, not decode folds — REVIEW N-06).
     last_listen_slot: Option<u64>,
@@ -754,6 +758,10 @@ impl Engine {
         }
         if !decodes.is_empty() {
             self.automation.pilot.last_decode_unix = now_unix_secs();
+            if let Some(mode) = mode_name(self.app.tier()) {
+                let key = turn_key(&self.settings.band, mode);
+                self.automation.pilot.silent.remove(&key);
+            }
         }
         self.automation_track_to_me(decodes, slot);
         self.answer_callers_step(decodes, slot);
@@ -1808,10 +1816,20 @@ impl Engine {
             return;
         }
 
-        // A chase that has not heard its station in time, or not worked it, is given up.
+        // Nothing at all decoded: the band is not open (live run 2026-11-25: two hours after dark went
+        // into five minutes at a time on silent bands, for the schedule and for US-state spots).
+        let silent = now.saturating_sub(self.automation.pilot.last_decode_unix) >= SILENT_BAND_SECS;
+        if silent {
+            let key = turn_key(&cur_band, cur_mode);
+            self.automation.pilot.silent.insert(key, now);
+        }
+        // A chase that has not heard its station in time, or not worked it, is given up; on a silent
+        // band it waits no longer, except for a country never worked.
         let mut still_chasing = false;
         if let Some(ch) = &chasing {
-            if now.saturating_sub(ch.since_unix) >= CHASE_UNHEARD_SECS {
+            if now.saturating_sub(ch.since_unix) >= CHASE_UNHEARD_SECS
+                || (silent && !self.automation_fed_rare(&ch.call))
+            {
                 let call = ch.call.clone();
                 let called = self
                     .automation
@@ -1851,7 +1869,6 @@ impl Engine {
         let p = &self.automation.pilot;
         let on_band = now.saturating_sub(p.band_since_unix);
         let quiet = now.saturating_sub(p.last_worthwhile_unix.max(p.band_since_unix));
-        let silent = now.saturating_sub(p.last_decode_unix) >= SILENT_BAND_SECS;
         if !still_chasing
             && (silent
                 || (on_band >= u64::from(s.min_dwell_secs) && quiet >= u64::from(s.quiet_secs)))
@@ -2025,7 +2042,8 @@ impl Engine {
 
     /// The stop of the patrol (a band in a mode) that has waited longest for its turn, never the one
     /// we are on. Stops that have waited alike (none of them visited yet) come in the schedule's
-    /// order, from the one a chase left, when one took us away, else from the current one.
+    /// order, from the one a chase left, when one took us away, else from the current one. A silent one
+    /// comes only when every other is silent too.
     fn automation_next_stop(
         &self,
         patrol: &automation::Patrol,
@@ -2042,12 +2060,22 @@ impl Engine {
             .into_iter()
             .filter(|s| !s.is(cur_band, cur_mode))
             .min_by_key(|s| {
-                p.turns
-                    .get(&turn_key(&s.band, &s.mode))
-                    .copied()
-                    .unwrap_or(0)
+                let turn = p.turns.get(&turn_key(&s.band, &s.mode)).copied();
+                (
+                    self.automation_silent(s, now_unix_secs()),
+                    turn.unwrap_or(0),
+                )
             })
             .cloned()
+    }
+
+    /// Was this stop silent when it was listened to lately?
+    fn automation_silent(&self, stop: &Stop, now: u64) -> bool {
+        self.automation
+            .pilot
+            .silent
+            .get(&turn_key(&stop.band, &stop.mode))
+            .is_some_and(|t| now.saturating_sub(*t) < SILENT_REST_SECS)
     }
 
     /// Go to a stop of the patrol: its band, and its mode when that is not the one running.
@@ -2299,6 +2327,10 @@ impl Engine {
             .filter(|(_, _, t)| automation::tier_allowed(*t, &self.settings.automation.tiers))
             .filter(|(e, _, t)| {
                 *t != Tier::UsState || self.settings.automation.wants_state(e.state.as_deref())
+            })
+            // A silent band is worth another look for a country, not for a state or an activation.
+            .filter(|(_, stop, t)| {
+                !matches!(t, Tier::UsState | Tier::Reference) || !self.automation_silent(stop, now)
             })
             .min_by(|(a, sa, ta), (b, sb, tb)| {
                 let s = &self.settings.automation;
