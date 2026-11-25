@@ -23,8 +23,9 @@ export function autopilotFeedFromNeeds(alerts: readonly NeedAlert[]): AutopilotF
       newState: tags.has('NewState'),
       state: a.state ?? null,
     }
-    // One row per call: keep the one that says the most (a needed entity over a plain spot).
-    const key = `${entry.call}|${entry.band}`
+    // One row per call, band and mode: keep the one that says the most (a needed entity over a
+    // plain spot).
+    const key = `${entry.call}|${entry.band}|${entry.mode ?? ''}`
     const have = out.get(key)
     const weight = (e: AutopilotFeedEntry) =>
       (e.newEntity ? 16 : 0) +

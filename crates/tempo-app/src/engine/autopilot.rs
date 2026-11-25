@@ -50,12 +50,12 @@ use tempo_core::qso::State as QsoState;
 const CALLER_FRESH_SLOTS: u64 = 3;
 /// How long a spot chase may go without decoding its station before it is given up, seconds.
 const CHASE_UNHEARD_SECS: u64 = 300;
-/// How long a DXpedition hunt stays when the DXpedition itself is not decoded but stations calling
-/// it are, seconds (operator: a DXpedition is followed for at least ten minutes).
-const HUNT_ON_AIR_SECS: u64 = 600;
 /// How lately a station must have been heard calling it for the DXpedition to count as on the air,
 /// seconds.
 const HUNT_CALLED_SECS: u64 = 120;
+/// After such a hunt, how long before the same DXpedition is hunted on another band or in another
+/// mode, seconds: the schedule gets its turn between.
+const HUNT_REST_SECS: u64 = 180;
 /// Failures counted against a hunted DXpedition at most: it is tried again each hour, never left
 /// for the session.
 const HUNT_MAX_FAILURES: u32 = 3;
@@ -101,6 +101,11 @@ pub struct QueuedCaller {
 /// was given up, and it was dropped after four R-reports as not answering).
 fn has_answered(station: &tempo_core::qso::Station) -> bool {
     station.advanced_on_air || station.state == QsoState::AwaitRr73
+}
+
+/// The cool-down key of one band and mode of a hunted DXpedition.
+fn hunt_key(call: &str, band: &str, mode: &str) -> String {
+    format!("{call}|{band}|{mode}").to_uppercase()
 }
 
 /// How long a spot of this rule waits after a chase that heard nothing, seconds, so the band
@@ -213,7 +218,8 @@ pub struct Automation {
     pub(super) held_disable: bool,
     /// Our own band change is under way: its context halt is not a stop.
     self_tuning: bool,
-    feed: HashMap<String, (FeedEntry, u64)>,
+    /// By call: every band and mode it is spotted in, and when it was fed, Unix seconds.
+    feed: HashMap<String, Vec<(FeedEntry, u64)>>,
     pilot: Pilot,
     /// Every station heard addressing the operator (anything but a closing `73`), with the slot it
     /// was last heard in. Kept whether or not Answer callers is on: while any is fresh, the band
@@ -482,11 +488,39 @@ impl Engine {
     /// call is no callsign (a false decode someone's software reported) is left out.
     pub fn autopilot_feed(&mut self, entries: Vec<FeedEntry>) {
         let now = now_unix_secs();
-        self.automation.feed = entries
-            .into_iter()
-            .filter(|e| spot_call_ok(&e.call))
-            .map(|e| (e.call.trim().to_uppercase(), (e, now)))
-            .collect();
+        let mut feed: HashMap<String, Vec<(FeedEntry, u64)>> = HashMap::new();
+        for e in entries.into_iter().filter(|e| spot_call_ok(&e.call)) {
+            feed.entry(e.call.trim().to_uppercase())
+                .or_default()
+                .push((e, now));
+        }
+        self.automation.feed = feed;
+    }
+
+    /// Every fresh spot in the feed.
+    fn automation_spots(&self, now: u64) -> impl Iterator<Item = &FeedEntry> {
+        self.automation
+            .feed
+            .values()
+            .flatten()
+            .filter(move |(_, at)| now.saturating_sub(*at) <= FEED_FRESH_SECS)
+            .map(|(e, _)| e)
+    }
+
+    /// A DXpedition or a new entity, by the feed.
+    fn automation_fed_rare(&self, call: &str) -> bool {
+        self.automation
+            .feed
+            .get(&call.to_uppercase())
+            .is_some_and(|l| l.iter().any(|(e, _)| e.dxpedition || e.new_entity))
+    }
+
+    /// Is this station not worked on that band in that mode's class?
+    fn automation_call_new(&self, call: &str, band: &str, mode: &str) -> bool {
+        self.station
+            .hot()
+            .call_status(call, band, mode)
+            .starts_with("New")
     }
 
     /// Test hook: move the last presence confirmation `secs` into the past.
@@ -913,11 +947,7 @@ impl Engine {
             ) && moved_on);
         // Never from a DXpedition, a new entity or a rare autopilot target: those are long calls
         // by nature (live run 2026-11-22: the operator's call to VK9XY was dropped for N5EI).
-        let fed_rare = self
-            .automation
-            .feed
-            .get(&dx.to_uppercase())
-            .is_some_and(|(e, _)| e.dxpedition || e.new_entity);
+        let fed_rare = self.automation_fed_rare(&dx);
         let target_rare = self
             .automation
             .pilot
@@ -1255,7 +1285,7 @@ impl Engine {
                 };
                 let rare = is_rare(t.tier);
                 let budget = if rare {
-                    s.rare_budget_secs
+                    s.dxped_call_secs()
                 } else {
                     s.target_budget_secs
                 };
@@ -1293,6 +1323,23 @@ impl Engine {
                         self.start_auto_contact(&c, Tier::CallingMe);
                         return;
                     }
+                } else if let Some((e, _)) = (!advanced
+                    && !is_rare(t.tier)
+                    && t.tier != Tier::CallingMe
+                    && s.hunt_dxpeditions
+                    && !self.automation_hunting())
+                .then(|| self.automation_hunt_pick(cur_mode, now))
+                .flatten()
+                {
+                    // A DXpedition is spotted and the station being called has not answered
+                    // (operator, 2026-11-25: a DXpedition spot is always prioritised).
+                    self.note_failed(&t.call);
+                    self.automation_note(&format!(
+                        "{} did not answer: DXpedition {} is spotted on {}",
+                        t.call, e.call, e.band
+                    ));
+                    self.automation_abandon_contact();
+                    self.automation.pilot.target = None;
                 } else if let Some((c, tier)) = (!advanced)
                     .then(|| self.automation_needed_instead(&t, decodes, slot, cur_mode, &s, now))
                     .flatten()
@@ -1667,21 +1714,30 @@ impl Engine {
     /// Is this station never called here, whatever its tier?
     fn automation_skip(&self, c: &Candidate, band: &str, mode: &str) -> bool {
         let hound = self.settings.special_op != SpecialOp::None;
-        same_call(&c.call, &self.settings.mycall)
+        self.automation_skip_call(&c.call, band, mode)
+            // A DXpedition running Fox/Hound (FT8) calls below 1000 Hz: Hound is the operator's
+            // per-DXpedition choice, so the ordinary pick leaves a Fox alone.
+            || (c.dxpedition
+                && c.freq_hz < 1000.0
+                && !hound
+                && self.app.tier() == LinkTier::Ft8)
+    }
+
+    /// A call never called here: our own, a blocked one, or one worked already.
+    fn automation_skip_call(&self, call: &str, band: &str, mode: &str) -> bool {
+        same_call(call, &self.settings.mycall)
             || self
                 .settings
                 .blocked_calls
                 .iter()
-                .any(|b| same_call(b, &c.call))
-            || self.automation.pilot.worked.contains(&format!(
-                "{}|{band}|{mode}",
-                c.call.to_uppercase()
-            ))
+                .any(|b| same_call(b, call))
+            || self
+                .automation
+                .pilot
+                .worked
+                .contains(&format!("{}|{band}|{mode}", call.to_uppercase()))
             // A contact just made: its repeats and 73s are not a new call.
-            || self.automation.done.contains_key(&c.call.to_uppercase())
-            // A DXpedition running Fox/Hound calls below 1000 Hz: Hound is the operator's
-            // per-DXpedition choice, so the autopilot leaves a Fox alone.
-            || (c.dxpedition && c.freq_hz < 1000.0 && !hound)
+            || self.automation.done.contains_key(&call.to_uppercase())
     }
 
     /// A needed station free to be called while `t`, only a grid or an ordinary new call, has not
@@ -1833,12 +1889,7 @@ impl Engine {
 
     /// The rule a station falls in, known only by its call.
     fn automation_tier_of_call(&self, call: &str, slot: u64, mode: &str) -> Tier {
-        if self
-            .automation
-            .feed
-            .get(&call.to_uppercase())
-            .is_some_and(|(e, _)| e.dxpedition || e.new_entity)
-        {
+        if self.automation_fed_rare(call) {
             return Tier::Dxpedition;
         }
         let line = modes::Decode {
@@ -1916,20 +1967,27 @@ impl Engine {
                 }
                 let is_cq =
                     matches!(Msg::parse(&d.message), Msg::Cq { ref dir, .. } if answerable_cq(dir));
-                let fed = self
+                let fed: Vec<&FeedEntry> = self
                     .automation
                     .feed
                     .get(&call.to_uppercase())
+                    .into_iter()
+                    .flatten()
                     .filter(|(_, at)| now.saturating_sub(*at) <= FEED_FRESH_SECS)
-                    .map(|(e, _)| e);
-                let on_this_band = |e: &&FeedEntry| {
-                    e.band.eq_ignore_ascii_case(band)
-                        && e.mode
-                            .as_deref()
-                            .is_none_or(|m| m.eq_ignore_ascii_case(mode))
-                };
+                    .map(|(e, _)| e)
+                    .collect();
+                let here: Vec<&FeedEntry> = fed
+                    .iter()
+                    .copied()
+                    .filter(|e| {
+                        e.band.eq_ignore_ascii_case(band)
+                            && e.mode
+                                .as_deref()
+                                .is_none_or(|m| m.eq_ignore_ascii_case(mode))
+                    })
+                    .collect();
                 // A needed state (the board's NewState on this band) the operator wants.
-                let new_state = fed.filter(on_this_band).is_some_and(|e| {
+                let new_state = here.iter().any(|e| {
                     let resolved = self
                         .station
                         .state_resolve
@@ -1965,8 +2023,8 @@ impl Engine {
                             Msg::parse(&d.message),
                             Msg::Bye73 { .. } | Msg::Rr73 { .. } | Msg::Rrr { .. }
                         ),
-                    dxpedition: fed.is_some_and(|e| e.dxpedition),
-                    new_reference: fed.filter(on_this_band).is_some_and(|e| e.new_reference),
+                    dxpedition: fed.iter().any(|e| e.dxpedition),
+                    new_reference: here.iter().any(|e| e.new_reference),
                     new_state,
                     lotw: row.lotw_user,
                     distance_km: row
@@ -1999,11 +2057,7 @@ impl Engine {
         now: u64,
     ) -> Option<(String, Stop, Tier)> {
         let p = &self.automation.pilot;
-        self.automation
-            .feed
-            .values()
-            .filter(|(_, at)| now.saturating_sub(*at) <= FEED_FRESH_SECS)
-            .map(|(e, _)| e)
+        self.automation_spots(now)
             .filter(|e| e.new_entity || self.automation_call_wanted(&e.call))
             .filter_map(|e| {
                 let stop = Stop {
@@ -2028,7 +2082,13 @@ impl Engine {
                 ))
             })
             .filter_map(|(e, stop)| {
-                spot_tier(e).map(|t| (e, stop, self.automation_spot_most_wanted(e, t)))
+                let call_new =
+                    e.dxpedition && self.automation_call_new(&e.call, &e.band, &stop.mode);
+                spot_tier(e, call_new).map(|t| (e, stop, self.automation_spot_most_wanted(e, t)))
+            })
+            // A DXpedition is hunted, not chased.
+            .filter(|(_, _, t)| {
+                *t != Tier::Dxpedition || !self.settings.automation.hunt_dxpeditions
             })
             .filter(|(_, _, t)| automation::tier_allowed(*t, &self.settings.automation.tiers))
             .filter(|(e, _, t)| {
@@ -2170,36 +2230,51 @@ impl Engine {
         let p = &self.automation.pilot;
         let dial = self.settings.dial_mhz;
         let cur_band = &self.settings.band;
-        self.automation
-            .feed
-            .values()
-            .filter(|(_, at)| now.saturating_sub(*at) <= FEED_FRESH_SECS)
-            .map(|(e, _)| e)
-            .filter(|e| is_hunt_spot(e))
-            .filter(|e| e.new_entity || self.automation_call_wanted(&e.call))
-            .filter(|e| e.mode.as_deref().is_none_or(|m| link_tier_of(m).is_some()))
+        let cooled = |key: &str| {
+            p.chased
+                .get(key)
+                .is_none_or(|t| now.saturating_sub(*t) >= CHASE_COOLDOWN_SECS)
+        };
+        let mode_of = |e: &FeedEntry| e.mode.as_deref().unwrap_or(cur_mode).to_uppercase();
+        self.automation_spots(now)
+            .map(|e| {
+                let call_new =
+                    e.dxpedition && self.automation_call_new(&e.call, &e.band, &mode_of(e));
+                (e, call_new)
+            })
+            .filter(|(e, call_new)| is_hunt_spot(e, *call_new))
+            .filter(|(e, _)| e.new_entity || self.automation_call_wanted(&e.call))
+            .filter(|(e, _)| e.mode.as_deref().is_none_or(|m| link_tier_of(m).is_some()))
             // Already audible where we are: the ordinary pick calls it here.
-            .filter(|e| {
+            .filter(|(e, _)| {
                 !(e.band.eq_ignore_ascii_case(cur_band)
+                    && mode_of(e).eq_ignore_ascii_case(cur_mode)
                     && e.freq_mhz.is_none_or(|f| in_passband(f, dial)))
             })
-            .filter(|e| {
-                p.chased
-                    .get(&e.call.to_uppercase())
-                    .is_none_or(|t| now.saturating_sub(*t) >= CHASE_COOLDOWN_SECS)
+            // Each band and mode of a DXpedition cools down by itself; the call itself only rests
+            // after a hunt that decoded nothing.
+            .filter(|(e, _)| {
+                let key = hunt_key(&e.call, &e.band, &mode_of(e));
+                cooled(&key)
+                    && cooled(&e.call.to_uppercase())
+                    && automation::may_retry(p.attempts.get(&key), now)
             })
-            .filter(|e| automation::may_retry(p.attempts.get(&e.call.to_uppercase()), now))
-            .filter(|e| {
-                let mode = e.mode.as_deref().unwrap_or(cur_mode).to_uppercase();
-                !p.worked
-                    .contains(&format!("{}|{}|{}", e.call.to_uppercase(), e.band, mode))
+            .filter(|(e, _)| {
+                !p.worked.contains(&format!(
+                    "{}|{}|{}",
+                    e.call.to_uppercase(),
+                    e.band,
+                    mode_of(e)
+                ))
             })
-            .filter_map(|e| spot_tier(e).map(|t| (e, t)))
+            .filter_map(|(e, call_new)| spot_tier(e, call_new).map(|t| (e, t)))
             .filter(|(_, t)| automation::tier_allowed(*t, &self.settings.automation.tiers))
             .min_by(|(a, ta), (b, tb)| {
                 let pr = &self.settings.automation.priority;
                 automation::rank_in(pr, *ta)
                     .cmp(&automation::rank_in(pr, *tb))
+                    // The newest spot first: the band it is heard on now.
+                    .then(b.heard_unix.cmp(&a.heard_unix))
                     .then(a.call.cmp(&b.call))
             })
             .map(|(e, t)| (e.clone(), t))
@@ -2218,13 +2293,18 @@ impl Engine {
         now: u64,
     ) -> bool {
         let cur_mode = mode_name(self.app.tier()).unwrap_or("FT8").to_string();
-        let Some(ch) = self
+        let hunting = self
             .automation
             .pilot
             .chase
             .clone()
-            .filter(|c| c.hunt.is_some())
-        else {
+            .filter(|c| c.hunt.is_some());
+        let heard_now = if hunting.is_none() && s.hunt_dxpeditions {
+            self.automation_hunt_here(decodes, slot, s, now)
+        } else {
+            None
+        };
+        let Some(ch) = hunting.or(heard_now) else {
             // No hunt yet: is there a DXpedition worth one? A plain chase gives way to it.
             if !s.hunt_dxpeditions || self.automation_band_hold().is_some() {
                 return false;
@@ -2263,7 +2343,8 @@ impl Engine {
                     && crate::bandplan::band_for_dial(d) == band
                     && crate::bandplan::band_for_dial(d + 0.003) == band;
                 if !fits {
-                    self.note_failed(&call);
+                    let mode = mode_name(tier).unwrap_or("FT8");
+                    self.note_failed(&hunt_key(&call, &e.band, mode));
                     self.automation_note(&format!(
                         "DXpedition {call} spotted at {spot_mhz:.3} MHz as {}: not inside that band                          with room for our signal, not hunted",
                         e.band
@@ -2275,7 +2356,8 @@ impl Engine {
             if !self.automation_switch(mode_switch, &e.band, dial) {
                 return false;
             }
-            self.automation.pilot.chased.insert(call.clone(), now);
+            let key = hunt_key(&call, &e.band, mode_name(tier).unwrap_or("FT8"));
+            self.automation.pilot.chased.insert(key, now);
             self.automation.pilot.chase = Some(Chase {
                 call: call.clone(),
                 band: e.band.clone(),
@@ -2293,6 +2375,8 @@ impl Engine {
         let Some(mut hunt) = ch.hunt.clone() else {
             return false;
         };
+
+        let was_on_air = hunt.heard || hunt.called_unix.is_some();
 
         // Heard? And does it run Fox/Hound (transmitting below 1000 Hz)?
         let heard_here = decodes.iter().find(|d| {
@@ -2326,27 +2410,32 @@ impl Engine {
             .called_unix
             .is_some_and(|t| now.saturating_sub(t) <= HUNT_CALLED_SECS);
         let unheard_secs = if on_air {
-            HUNT_ON_AIR_SECS
+            u64::from(s.dxped_call_secs())
         } else {
             CHASE_UNHEARD_SECS
         };
+        let mut ch = ch;
+        // Followed for the operator's time from the moment it, or somebody calling it, is heard.
+        if !was_on_air && (hunt.heard || on_air) {
+            ch.since_unix = now;
+        }
         if let Some(c) = self.automation.pilot.chase.as_mut() {
+            c.since_unix = ch.since_unix;
             c.hunt = Some(hunt.clone());
         }
 
         // Over? Worked, out of time, never heard, or no longer spotted and not heard.
         let elapsed = now.saturating_sub(ch.since_unix);
-        let spotted = self
-            .automation
-            .feed
-            .get(&ch.call)
-            .is_some_and(|(_, at)| now.saturating_sub(*at) <= FEED_FRESH_SECS);
+        let spotted = self.automation.feed.get(&ch.call).is_some_and(|l| {
+            l.iter()
+                .any(|(_, at)| now.saturating_sub(*at) <= FEED_FRESH_SECS)
+        });
         let why = if ch.done {
             Some(format!("worked {}", ch.call))
-        } else if elapsed >= u64::from(s.rare_budget_secs) {
+        } else if elapsed >= u64::from(s.dxped_call_secs()) && (hunt.heard || on_air) {
             Some(format!(
-                "{} not worked in {} s",
-                ch.call, s.rare_budget_secs
+                "{} not worked in {} min",
+                ch.call, s.dxped_call_mins
             ))
         } else if !hunt.heard && elapsed >= unheard_secs {
             Some(format!("{} not heard", ch.call))
@@ -2407,6 +2496,61 @@ impl Engine {
         true
     }
 
+    /// A listed DXpedition decoded where we are, under 1000 Hz in FT8, not worked here: hunted in
+    /// place, as the ordinary pick leaves a possible Fox alone.
+    fn automation_hunt_here(
+        &mut self,
+        decodes: &[modes::Decode],
+        slot: u64,
+        s: &automation::AutomationSettings,
+        now: u64,
+    ) -> Option<Chase> {
+        if self.app.tier() != LinkTier::Ft8
+            || self.settings.special_op != SpecialOp::None
+            || self.automation_band_hold().is_some()
+        {
+            return None;
+        }
+        let band = self.settings.band.clone();
+        let p = &self.automation.pilot;
+        let c = self
+            .automation_candidates(decodes, slot, &band, "FT8")
+            .into_iter()
+            .filter(|c| c.dxpedition && c.freq_hz > 0.0 && c.freq_hz < 1000.0)
+            .filter(|c| automation::best_allowed_tier(c, s).is_some_and(is_rare))
+            .filter(|c| {
+                let key = hunt_key(&c.call, &band, "FT8");
+                p.chased
+                    .get(&key)
+                    .is_none_or(|t| now.saturating_sub(*t) >= CHASE_COOLDOWN_SECS)
+                    && automation::may_retry(p.attempts.get(&key), now)
+            })
+            .find(|c| !self.automation_skip_call(&c.call, &band, "FT8"))?;
+        let call = c.call.to_uppercase();
+        let chase = Chase {
+            call: call.clone(),
+            band: band.clone(),
+            since_unix: now,
+            hunt: Some(Hunt {
+                spot_mhz: self.settings.dial_mhz + f64::from(c.freq_hz) / 1e6,
+                back_band: band.clone(),
+                back_dial_mhz: self.settings.dial_mhz,
+                back_tier: self.app.tier(),
+                hound_from: None,
+                heard: true,
+                called_unix: None,
+            }),
+            done: false,
+        };
+        let p = &mut self.automation.pilot;
+        p.chased.insert(hunt_key(&call, &band, "FT8"), now);
+        p.chase = Some(chase.clone());
+        self.automation_note(&format!(
+            "DXpedition {call} heard on {band}: hunting it here"
+        ));
+        Some(chase)
+    }
+
     /// End a hunt: Hound back as the operator had it, then back to the band, dial and mode the
     /// hunt left — once nothing holds the band. `true` while the way back is still held.
     fn automation_hunt_return(&mut self, ch: &Chase, hunt: &Hunt, why: &str) -> bool {
@@ -2417,31 +2561,37 @@ impl Engine {
             return true;
         }
         // Counted once, when the hunt really ends (not on every held slot).
+        let key = hunt_key(
+            &ch.call,
+            &ch.band,
+            mode_name(self.app.tier()).unwrap_or("FT8"),
+        );
         if !ch.done {
-            self.note_failed(&ch.call);
             // Tried again each hour, never left for the session (operator: a DXpedition keeps being
             // called).
-            if let Some(a) = self
-                .automation
-                .pilot
-                .attempts
-                .get_mut(&ch.call.to_uppercase())
-            {
-                a.failures = a.failures.min(HUNT_MAX_FAILURES);
+            for k in [&key, &ch.call.to_uppercase()] {
+                self.note_failed(k);
+                if let Some(a) = self.automation.pilot.attempts.get_mut(k) {
+                    a.failures = a.failures.min(HUNT_MAX_FAILURES);
+                }
             }
         }
         // Never heard there: the band is most likely closed to it (a 15 m spot at night), so it
         // waits twice the usual cool-down before it is hunted again; the usual one when stations
         // here were heard calling it.
         if !hunt.heard && !ch.done {
-            let mut until = now_unix_secs();
+            let now = now_unix_secs();
+            let mut until = now;
             if hunt.called_unix.is_none() {
                 until += CHASE_COOLDOWN_SECS;
             }
-            self.automation
-                .pilot
-                .chased
-                .insert(ch.call.to_uppercase(), until);
+            let chased = &mut self.automation.pilot.chased;
+            chased.insert(key, until);
+            // Its other bands and modes wait only a moment.
+            chased.insert(
+                ch.call.to_uppercase(),
+                (now + HUNT_REST_SECS).saturating_sub(CHASE_COOLDOWN_SECS),
+            );
         }
         if let Some(prev) = hunt.hound_from {
             self.settings.special_op = prev;

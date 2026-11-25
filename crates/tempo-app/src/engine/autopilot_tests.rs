@@ -991,12 +991,29 @@ fn the_watchdog_still_trips_when_the_autopilot_step_stops_running() {
 }
 
 #[test]
-fn a_dxpedition_is_called_for_at_least_ten_minutes() {
-    let s = crate::automation::AutomationSettings {
-        rare_budget_secs: 300,
-        ..Default::default()
-    };
-    assert_eq!(s.sanitized().rare_budget_secs, 600);
+fn a_dxpedition_is_called_for_the_operators_minutes() {
+    let mut s = crate::automation::AutomationSettings::default();
+    assert_eq!(s.dxped_call_secs(), 600, "ten by default");
+    s.dxped_call_mins = 25;
+    assert_eq!(s.clone().sanitized().dxped_call_secs(), 1500);
+    s.dxped_call_mins = 0;
+    assert_eq!(s.sanitized().dxped_call_mins, 1);
+
+    // A heard DXpedition is called that long, counted from when it was first heard.
+    let mut e = two_band_pilot();
+    e.settings.automation.dxped_call_mins = 25;
+    e.autopilot_feed(vec![dxped_spot("3Y0K", "40m", 7.056)]);
+    e.ingest_decodes_for_test(&[], 30);
+    e.automation_backdate_band(280);
+    e.ingest_decodes_for_test(&[dec_at("CQ 3Y0K JD15", -14, 406.0)], 32);
+    assert_eq!(e.automation_dx().as_deref(), Some("3Y0K"), "premise");
+    e.automation_abandon_for_test();
+    e.automation_backdate_band(1_300);
+    e.ingest_decodes_for_test(&[], 36);
+    assert_eq!(e.settings.band, "40m", "under 25 minutes");
+    e.automation_backdate_band(250);
+    e.ingest_decodes_for_test(&[], 38);
+    assert_eq!(e.settings.band, "20m", "25 minutes");
 }
 
 #[test]
@@ -1720,8 +1737,11 @@ fn a_hunt_stays_ten_minutes_while_stations_are_heard_calling_the_dxpedition() {
     e.autopilot_feed(vec![]);
     e.ingest_decodes_for_test(&[], 34);
     assert_eq!(e.settings.band, "40m", "and past its spot's age");
-    e.automation_backdate_band(300);
+    e.automation_backdate_band(310);
     e.ingest_decodes_for_test(&calling, 36);
+    assert_eq!(e.settings.band, "40m", "ten minutes from when it was heard");
+    e.automation_backdate_band(310);
+    e.ingest_decodes_for_test(&calling, 38);
     assert_eq!(e.settings.band, "20m", "over after ten");
 
     // CONTROL: nobody heard calling it, five minutes.
@@ -1737,7 +1757,7 @@ fn a_hunt_stays_ten_minutes_while_stations_are_heard_calling_the_dxpedition() {
 fn a_dxpedition_is_hunted_again_after_any_number_of_hunts() {
     let mut e = two_band_pilot();
     for _ in 0..5 {
-        e.automation_fail_for_test("3Y0K", 3_700);
+        e.automation_fail_for_test("3Y0K|40M|FT8", 3_700);
     }
     e.autopilot_feed(vec![dxped_spot("3Y0K", "40m", 7.056)]);
     e.ingest_decodes_for_test(&[], 30);
@@ -1914,6 +1934,106 @@ fn a_dxpedition_is_called_on_a_clear_frequency_above_it() {
         "{}",
         e.tx_offset_hz
     );
+}
+
+/// A DXpedition spotted where its entity needs nothing (the board's rows do not list it there).
+fn spotted(call: &str, band: &str, freq: f64, mode: &str) -> crate::automation::FeedEntry {
+    crate::automation::FeedEntry {
+        mode: Some(mode.into()),
+        new_slot: false,
+        ..dxped_spot(call, band, freq)
+    }
+}
+
+/// Operator, 2026-11-25: VK9XY, spotted on FT8 and FT4 all day, "should be always prioritised". It
+/// was hunted on none of them: Christmas Island was confirmed there, so nothing was needed.
+#[test]
+fn a_dxpedition_not_worked_there_is_hunted_whatever_its_entity_has() {
+    let mut e = two_band_pilot();
+    e.autopilot_feed(vec![spotted("VK9XY", "15m", 21.140, "FT4")]);
+    e.ingest_decodes_for_test(&[], 30);
+    assert_eq!(e.settings.band, "15m");
+    assert_eq!(e.app.tier(), Tier::Ft4);
+    // CONTROL: a station that is no DXpedition is not.
+    let mut e = two_band_pilot();
+    e.autopilot_feed(vec![crate::automation::FeedEntry {
+        dxpedition: false,
+        ..spotted("VK9XY", "15m", 21.140, "FT4")
+    }]);
+    e.ingest_decodes_for_test(&[], 30);
+    assert_eq!(e.settings.band, "20m");
+}
+
+/// The feed kept one spot of a call, and one cool-down for all its bands.
+#[test]
+fn every_band_and_mode_a_dxpedition_is_spotted_on_is_tried() {
+    let mut e = two_band_pilot();
+    let spots = || {
+        vec![
+            crate::automation::FeedEntry {
+                heard_unix: 200,
+                ..spotted("VK9XY", "40m", 7.056, "FT8")
+            },
+            crate::automation::FeedEntry {
+                heard_unix: 100,
+                ..spotted("VK9XY", "15m", 21.140, "FT4")
+            },
+        ]
+    };
+    e.autopilot_feed(spots());
+    e.ingest_decodes_for_test(&[], 30);
+    assert_eq!(e.settings.band, "40m", "the newest spot first");
+    // Nothing of it decoded in five minutes: back, and after a rest the other one.
+    e.automation_backdate_band(310);
+    e.autopilot_feed(spots());
+    e.ingest_decodes_for_test(&[], 34);
+    assert_eq!(e.settings.band, "20m", "not heard");
+    e.ingest_decodes_for_test(&[], 36);
+    assert_eq!(e.settings.band, "20m", "the schedule's turn");
+    e.automation_backdate_chased(200);
+    e.autopilot_feed(spots());
+    e.ingest_decodes_for_test(&[], 38);
+    assert_eq!(e.settings.band, "15m", "not 40 m again");
+}
+
+/// A spotted DXpedition does not wait for a station that has not answered; one that has answered is
+/// worked to the end.
+#[test]
+fn a_spotted_dxpedition_ends_an_unanswered_call() {
+    let calling = || {
+        let mut e = two_band_pilot();
+        e.settings.automation.schedule[0].bands = vec!["20m".into()];
+        for s in [30, 32] {
+            e.ingest_decodes_for_test(&[dec_snr("CQ N0ABC EM48", -3)], s);
+        }
+        assert_eq!(e.automation_dx().as_deref(), Some("N0ABC"), "premise");
+        let s = over(&mut e, 33);
+        (e, s)
+    };
+    let (mut e, s) = calling();
+    e.autopilot_feed(vec![spotted("VK9XY", "40m", 7.056, "FT8")]);
+    e.ingest_decodes_for_test(&[], s + 1);
+    e.ingest_decodes_for_test(&[], s + 3);
+    assert_eq!(e.settings.band, "40m");
+
+    let (mut e, s) = calling();
+    e.ingest_decodes_for_test(&[dec_snr("OM0RX N0ABC -09", -3)], s + 1);
+    e.autopilot_feed(vec![spotted("VK9XY", "40m", 7.056, "FT8")]);
+    e.ingest_decodes_for_test(&[], s + 3);
+    assert_eq!(e.settings.band, "20m", "answered: kept");
+}
+
+/// Decoded on the band we are on, low as DXpeditions sit, it is hunted there.
+#[test]
+fn a_dxpedition_heard_low_on_the_band_is_hunted_in_place() {
+    let mut e = two_band_pilot();
+    e.settings.automation.hunt_hound = false;
+    e.autopilot_feed(vec![spotted("VK9XY", "20m", 14.074, "FT8")]);
+    e.ingest_decodes_for_test(&[], 30);
+    e.ingest_decodes_for_test(&[dec_at("CQ VK9XY QH29", -9, 450.0)], 32);
+    assert_eq!(e.automation_dx().as_deref(), Some("VK9XY"));
+    assert!(e.tx_offset_hz >= 1650.0, "{}", e.tx_offset_hz);
+    assert_eq!(e.settings.band, "20m");
 }
 
 /// Live run 2026-11-24 (xlog.28): new grids, one after another, kept the autopilot on 15 m for half
