@@ -47,4 +47,26 @@ Source: `main` at the merge of `xnexus/autopilot-reliability` (`93781ec83`). Sin
   `00C26A227E8FFE35D79326C03C05A32A6557AB2C59A6160C38E60DC0C93BF728` (matches the receipt).
 - **Built exe:** `9B78E844...7397`. **Installed exe:** `9110CC61...CE3C`, version 1.25.0-xlog.33.
 - **Install:** 13:21 UTC, `/S`, exit 0, with no Nexus running; `settings.json` unchanged.
-- **Not launched** when this was written: going on the air needs the operator's approval.
+- **First launch:** 2026-11-25 13:22:52 UTC, with the operator's approval to go on the air.
+
+## Live run (2026-11-25 13:23 to 22:24 UTC, stopped for the xlog.34 build)
+
+FLEX-8400 through SmartSDR CAT, xLog open before Nexus, the rotor connected, RF (about 70 W) and SWR (about 1.1)
+checked on the first over; the operator at the radio for the first hours.
+
+- **Contacts:** 32 logged (20 m 9, 17 m 7, 40 m 6, 160 m 4, 80 m 3, 12 m 2, 30 m 1), all in xLog, among them the
+  DXpeditions VK9DS (20 m FT4, 90 s after the first call), 3B8/E70A (80 m, new band) and VK9XY (30 m), and
+  HP1EUA (needed, 12 m). 429 overs keyed and unkeyed, longest 13.7 s. Nine hours without a crash, a TX watchdog
+  trip or an autopilot switch-off.
+- **One of them is not valid:** JA6VQA (80 m, 21:35) sent "R-26" without a report of ours, was answered with RR73
+  and logged (`aa7c1ab77`). Left for the operator to remove.
+- **The beam turned while listening** (4U1UN, 3 to 296 degrees), VK9DS sat at 395 Hz and was called at 1595 Hz,
+  and the autopilot stayed on after VK9XY's Hound ending.
+- **Clear transmit frequency:** picked 33 times.
+- **4U1UN** (needed, 20 m) waited out four calls to an activation, was called once, and given up for a caller
+  (`a7826088f`).
+- **From 17:12 to 19:09** the daytime schedule went round dead bands, five minutes each (`bc2879a0b`, `5e1c1c439`);
+  from 19:09 to 21:11 hunts of VK9XY (40 m, 80 m) and 3B8/E70A (160 m) followed one another without a contact.
+- **No tuner or amplifier fault** came up, so the guard and its recovery are still untried on the station.
+
+Not seen yet: the FT8 + FT4 patrol and the stalled-contact end (`5ee7f0c26`).
