@@ -7504,6 +7504,10 @@ export interface AutomationSettings {
   minDwellSecs: number
   quietSecs: number
   targetBudgetSecs: number
+  /** Pause on a tuner or amplifier fault the OM0RX Station Agent reports. */
+  stationGuard: boolean
+  /** Then clear it, tune and align through the Agent, and go on. The tune transmits. */
+  stationRecover: boolean
   /** How long a DXpedition, ATNO or top-50 station is called, minutes (1–180). */
   dxpedCallMins: number
   maxQsoPerHour: number
@@ -7554,6 +7558,7 @@ export type AutopilotStatus =
   | 'holding'
   | 'finishing'
   | 'hunting'
+  | 'stationFault'
 
 export interface AutomationState {
   answerCallers: boolean

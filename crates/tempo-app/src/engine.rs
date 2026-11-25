@@ -24389,6 +24389,7 @@ Pick the one you operate from on the Contesting tab in Settings.",
     /// [`Self::set_tx_enabled`] and hold nothing.
     #[track_caller]
     pub fn set_tx_enabled_by_operator(&mut self, on: bool) {
+        self.station_fault_operator();
         self.set_tx_enabled(on);
         if !on {
             self.tx_stop_hold = true;

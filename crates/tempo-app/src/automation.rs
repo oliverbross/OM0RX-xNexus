@@ -273,6 +273,12 @@ pub struct AutomationSettings {
     /// While hunting, switch to Hound when the DXpedition is heard running Fox/Hound (transmitting
     /// below 1000 Hz), and back when the hunt ends.
     pub hunt_hound: bool,
+    /// Pause the autopilot and stop transmit when the OM0RX Station Agent on this PC reports a tuner
+    /// (KAT500) or amplifier (KPA500) fault ([`crate::station_guard`]).
+    pub station_guard: bool,
+    /// Then clear the fault, tune and align through the Agent, and only then transmit again. The tune
+    /// transmits by itself, so this is off until the operator switches it on.
+    pub station_recover: bool,
     /// The rules, strongest first: the operator's own order ([`DEFAULT_PRIORITY`] until changed).
     /// Each rule is switched on or off in [`Self::tiers`]. A name this build does not know (a
     /// newer build's rule) is skipped rather than failing the whole settings file.
@@ -335,6 +341,8 @@ impl Default for AutomationSettings {
             wanted_states: Vec::new(),
             hunt_dxpeditions: true,
             hunt_hound: true,
+            station_guard: true,
+            station_recover: false,
             priority: DEFAULT_PRIORITY.to_vec(),
             prefer_outside_eu: true,
             target_max_calls: 4,

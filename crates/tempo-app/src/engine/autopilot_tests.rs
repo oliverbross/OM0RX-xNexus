@@ -2155,6 +2155,57 @@ fn no_call_is_started_while_a_spotted_dxpedition_waits() {
     assert_eq!(e.automation_dx().as_deref(), Some("N0ABC"), "kept");
 }
 
+/// Operator, 2026-11-25: on a tuner or amplifier fault the autopilot pauses and transmit stops first; only
+/// when the station is ready again is transmit on, and the operator's own hand always comes first.
+#[test]
+fn a_station_fault_pauses_the_autopilot_until_the_station_is_ready() {
+    let held = || {
+        let mut e = two_band_pilot();
+        for s in [30, 32] {
+            e.ingest_decodes_for_test(&[dec_snr("CQ N0ABC EM48", -3)], s);
+        }
+        assert_eq!(
+            e.automation_dx().as_deref(),
+            Some("N0ABC"),
+            "premise: calling"
+        );
+        let _ = over(&mut e, 33);
+        let _ = e.take_slot_tx_abort();
+        assert!(e.station_fault_hold("KAT500 fault 2"));
+        e
+    };
+    let mut e = held();
+    assert!(!e.tx_enabled && e.take_slot_tx_abort(), "cut at once");
+    for s in [36, 38, 40] {
+        e.ingest_decodes_for_test(&[dec_snr("CQ N0ABC EM48", -3)], s);
+        assert!(e.poll_tx(s).is_empty(), "nothing sent at {s}");
+    }
+    let dto = e.automation_dto();
+    assert!(
+        dto.autopilot_on && dto.status == "stationFault",
+        "{}",
+        dto.status
+    );
+    assert!(e.station_fault_held());
+    assert!(e.station_fault_resume());
+    assert!(e.tx_enabled && e.automation_dto().autopilot_on);
+
+    // Stop TX: the autopilot is off, and nothing arms transmit again.
+    let mut e = held();
+    e.halt_tx();
+    assert!(!e.station_fault_held() && !e.station_fault_resume());
+    assert!(!e.tx_enabled && !e.automation_dto().autopilot_on);
+    // TX Off, then On, by the operator: the station is theirs.
+    let mut e = held();
+    e.set_tx_enabled_by_operator(true);
+    assert!(!e.station_fault_held() && !e.station_fault_resume());
+    assert!(e.tx_enabled, "as the operator set it");
+    // With the autopilot off the guard does nothing.
+    let mut e = engine();
+    e.set_tx_enabled(true);
+    assert!(!e.station_fault_hold("KAT500 fault 2") && e.tx_enabled);
+}
+
 /// Operator, 2026-11-25: the logger turns the antenna to the DX call, so the DX call is reported while
 /// the autopilot listens for a spotted station, not only once it is called.
 #[test]

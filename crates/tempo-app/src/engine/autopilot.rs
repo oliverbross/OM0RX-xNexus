@@ -222,6 +222,8 @@ pub struct Automation {
     pub(super) held_disable: bool,
     /// Our own band change is under way: its context halt is not a stop.
     self_tuning: bool,
+    /// Transmit stopped for a tuner or amplifier fault, and why ([`crate::station_guard`]).
+    station_hold: Option<String>,
     /// By call: every band and mode it is spotted in, and when it was fed, Unix seconds.
     feed: HashMap<String, Vec<(FeedEntry, u64)>>,
     pilot: Pilot,
@@ -326,6 +328,7 @@ impl Automation {
             return None;
         }
         let restore = self.hunt_hound_from();
+        self.station_hold = None;
         self.callers.clear();
         self.chain = 0;
         self.keeps_tx_after_73 = false;
@@ -512,6 +515,60 @@ impl Engine {
             .map(|(e, _)| e)
     }
 
+    // ---------------------------------------------------------------- the station guard
+
+    /// Is the station to be watched for faults: the autopilot runs, or waits for one?
+    pub fn station_guard_wanted(&self) -> bool {
+        self.settings.automation.station_guard && self.automation.pilot.on
+    }
+
+    /// The tuner or the amplifier has faulted: transmit off now, an over in flight cut, and the
+    /// autopilot waits. `false` = it does not run, so the station is the operator's.
+    pub fn station_fault_hold(&mut self, why: &str) -> bool {
+        if !self.automation.pilot.on {
+            return false;
+        }
+        self.automation.station_hold = Some(why.to_string());
+        self.automation_abandon_contact();
+        self.automation.pilot.target = None;
+        self.slot_tx_abort = true;
+        self.set_tx_enabled(false);
+        self.station_fault_note(&format!("{why}: transmit off, autopilot paused"));
+        true
+    }
+
+    /// Still held, with nothing done by the operator since?
+    pub fn station_fault_held(&self) -> bool {
+        self.automation.station_hold.is_some() && self.automation.pilot.on && !self.tx_enabled
+    }
+
+    /// What the guard does now, for the panel and the log.
+    pub fn station_fault_note(&mut self, text: &str) {
+        if self.automation.station_hold.is_some() {
+            self.automation.pilot.status = "stationFault";
+            self.automation.pilot.reason = text.to_string();
+        }
+        self.automation_note(text);
+    }
+
+    /// The station is ready again: transmit on as it was, and the autopilot goes on. Only when the
+    /// operator has done nothing since the hold.
+    pub fn station_fault_resume(&mut self) -> bool {
+        let held = self.station_fault_held();
+        self.automation.station_hold = None;
+        if held {
+            self.set_tx_enabled(true);
+            self.automation_watchdog_restart();
+            self.automation_note("the station is ready: transmit on, autopilot goes on");
+        }
+        held
+    }
+
+    /// The operator's own TX On or Off ends the hold: the station is theirs.
+    pub(super) fn station_fault_operator(&mut self) {
+        self.automation.station_hold = None;
+    }
+
     /// The station the autopilot has moved here for and is listening for, until it is worked.
     pub(super) fn automation_listening_for(&self) -> Option<String> {
         let p = &self.automation.pilot;
@@ -657,8 +714,9 @@ impl Engine {
 
     /// After every decode fold: Answer callers, then the autopilot.
     pub(super) fn automation_after_decodes(&mut self, decodes: &[modes::Decode], slot: u64) {
-        // A watchdog trip, or the operator's TX Off, ends the autopilot: it never re-arms.
-        if self.automation.pilot.on && !self.tx_enabled {
+        // A watchdog trip, or the operator's TX Off, ends the autopilot: it never re-arms. Held for a
+        // station fault it waits (any stop drops the hold).
+        if self.automation.pilot.on && !self.tx_enabled && self.automation.station_hold.is_none() {
             self.automation_restore_hound();
             let p = &mut self.automation.pilot;
             p.on = false;
@@ -1285,6 +1343,12 @@ impl Engine {
                 self.automation.pilot.target = None;
                 self.set_tx_enabled(false);
             }
+            return;
+        }
+
+        // Held for a tuner or amplifier fault: nothing is called and no band changed meanwhile.
+        if self.automation.station_hold.is_some() {
+            self.automation.pilot.status = "stationFault";
             return;
         }
 

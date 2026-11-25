@@ -29,6 +29,7 @@ export function autopilotStatusText(status: string): string {
     case 'holding': return t('autopilot.status.holding')
     case 'finishing': return t('autopilot.status.finishing')
     case 'hunting': return t('autopilot.status.hunting')
+    case 'stationFault': return t('autopilot.status.stationFault')
     default: return status
   }
 }
