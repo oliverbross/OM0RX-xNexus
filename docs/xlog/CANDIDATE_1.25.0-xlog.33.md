@@ -32,3 +32,19 @@ Source: `main` at the merge of `xnexus/autopilot-reliability` (`93781ec83`). Sin
 | src-tauri `station_agent` test | 1/1 |
 | `tsc -b`, vitest (i18n, autopilot, Settings) | pass, 841/841 |
 | Not run | the recovery against the real tuner and amplifier, the whole tempo-app suite (8 known failures), tempo-audio (unchanged), browser probe, CI (GitHub Actions billing is blocked) |
+
+## Package and installation (2026-11-25)
+
+- **Source:** `cdc113b5d`, canonical `main`, clean, equal to `origin/main`.
+- **Guard:** the xlog.32 wrapper and profile (`optimized-no-lto-cgu16-7GiB-physical14-commit12p5-reserve6`)
+  with only the expected version changed; Nexus, SmartSDR, CAT, DAX, xLog and Chrome closed.
+  Admission 17.0 GiB physical / 12.9 GiB commit; 12:23-13:20 UTC; peak 5.44 GiB; lowest free 12.6 GiB
+  physical / 7.5 GiB commit; cleanup confirmed. The Home Assistant VM was not saved.
+- **Evidence:** `.build/xnexus-xlog33-package-7g/evidence/20261125T1223106152054Z-f7f7c9f1813442d88ea6216c18e9261d`.
+- **Receipt:** `target/xnexus-provenance/1.25.0-xlog.33.json` (source `cdc113b5d`, upstream base
+  `21f743404` v1.25.0-beta.2, toolchain 1.93.1-x86_64-pc-windows-gnu, unsigned).
+- **Installer:** `OM0RX-xNexus_1.25.0-xlog.33_x64-setup.exe`, 356,600,998 bytes, SHA-256
+  `00C26A227E8FFE35D79326C03C05A32A6557AB2C59A6160C38E60DC0C93BF728` (matches the receipt).
+- **Built exe:** `9B78E844...7397`. **Installed exe:** `9110CC61...CE3C`, version 1.25.0-xlog.33.
+- **Install:** 13:21 UTC, `/S`, exit 0, with no Nexus running; `settings.json` unchanged.
+- **Not launched** when this was written: going on the air needs the operator's approval.
