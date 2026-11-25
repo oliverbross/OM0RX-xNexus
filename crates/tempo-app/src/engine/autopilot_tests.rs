@@ -1785,6 +1785,15 @@ fn an_unanswered_activation_gives_way_to_a_needed_entity() {
     s = over(&mut e, s) + 1;
     e.ingest_decodes_for_test(&[dec_snr("W1AW 5U4JSF RR73", -14)], s);
     assert_eq!(e.automation_dx().as_deref(), Some("5U4JSF"));
+    // The activation takes nothing over in its turn, and has its calls afterwards.
+    for n in 1..=4 {
+        s = over(&mut e, s + 1) + 1;
+        e.ingest_decodes_for_test(&[dec_snr("CQ N0ABC EM48", -3)], s);
+        assert_eq!(e.automation_dx().as_deref(), Some("5U4JSF"), "call {n}");
+    }
+    e.ingest_decodes_for_test(&[dec_snr("CQ N0ABC EM48", -3)], s + 1);
+    e.ingest_decodes_for_test(&[dec_snr("CQ N0ABC EM48", -3)], s + 2);
+    assert_eq!(e.automation_dx().as_deref(), Some("N0ABC"), "its turn");
 }
 
 /// Operator, 2026-11-25: "new or unconfirmed country has priority, band slot not".
@@ -1850,7 +1859,11 @@ fn a_needed_station_left_for_a_caller_is_called_again_after_it() {
     }
     e.ingest_decodes_for_test(&[], s + 1);
     e.ingest_decodes_for_test(&[dec_snr("W1AW 5U4JSF RR73", -14)], s + 2);
-    assert_eq!(e.settings.band, "17m", "the chase goes on");
+    let log = e.automation_dto().log;
+    assert!(
+        !log.iter().any(|l| l.contains("back to the schedule")),
+        "the chase goes on: {log:?}"
+    );
     assert_eq!(e.automation_dx().as_deref(), Some("5U4JSF"), "called again");
 }
 
