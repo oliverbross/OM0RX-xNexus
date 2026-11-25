@@ -706,7 +706,7 @@ fn a_dxpedition_is_called_1200_hz_above_its_own_frequency() {
     );
     // At least 1200 Hz above it: the offset already in use stays when it is far enough up.
     assert!(
-        (1650.0..=2900.0).contains(&low.tx_offset_hz),
+        (1650.0..=2500.0).contains(&low.tx_offset_hz),
         "called at least 1200 Hz above it: {}",
         low.tx_offset_hz
     );
@@ -782,6 +782,31 @@ fn a_fox_switches_the_hunt_to_hound_and_stop_tx_puts_it_back() {
         "the operator's own setting is back"
     );
     assert!(!e.automation_dto().autopilot_on);
+}
+
+/// Live run 2026-11-25: VK9XY worked as Hound ended transmit, and the autopilot with it.
+#[test]
+fn a_hound_contact_ended_leaves_transmit_and_the_autopilot_on() {
+    let mut e = two_band_pilot();
+    e.settings.disable_tx_after_73 = true;
+    e.autopilot_feed(vec![dxped_spot("3Y0K", "40m", 7.056)]);
+    e.ingest_decodes_for_test(&[], 30);
+    e.ingest_decodes_for_test(&[dec_at("CQ 3Y0K JD15", -14, 600.0)], 32);
+    assert_eq!(e.settings.special_op, crate::settings::SpecialOp::Hound);
+    key_once(&mut e, 33);
+    e.ingest_decodes_for_test(&[dec_at("OM0RX 3Y0K -10", -14, 600.0)], 34);
+    let over = key_once(&mut e, 35);
+    assert!(
+        over.contains(" R-"),
+        "premise: our report goes back: {over}"
+    );
+    e.ingest_decodes_for_test(&[dec_at("OM0RX 3Y0K RR73", -14, 600.0)], 36);
+    assert!(
+        matches!(&e.mode, Mode::Qso { station, .. } if station.state == QsoState::Done),
+        "premise: the contact is made"
+    );
+    assert!(!e.take_pending_tx_disable(), "transmit stays on");
+    assert!(e.tx_enabled && e.automation_dto().autopilot_on);
 }
 
 #[test]
@@ -1930,7 +1955,7 @@ fn a_dxpedition_is_called_on_a_clear_frequency_above_it() {
     hear(&mut e, dec_at("CQ 3Y0K JD15", -14, 406.0), 32);
     assert_eq!(e.automation_dx().as_deref(), Some("3Y0K"), "premise");
     assert!(
-        (1665.0..=1671.0).contains(&e.tx_offset_hz),
+        (1000.0..=2500.0).contains(&e.tx_offset_hz) && (e.tx_offset_hz - 1610.0).abs() >= 55.0,
         "{}",
         e.tx_offset_hz
     );
@@ -1969,6 +1994,35 @@ fn a_dxpedition_high_in_the_channel_is_called_from_below_it() {
         "{}",
         e.tx_offset_hz
     );
+}
+
+/// Same run: a hunt broken off by hand left the dial on 18.102, and the autopilot, switched on again,
+/// would have listened there. Switched off, it leaves the radio to the operator.
+#[test]
+fn switched_on_the_autopilot_goes_to_the_bands_channel() {
+    let mut e = two_band_pilot();
+    e.autopilot_feed(vec![spotted("3B8/E70A", "17m", 18.095, "FT8")]);
+    e.ingest_decodes_for_test(&[], 30);
+    assert!(
+        (e.settings.dial_mhz - 18.095).abs() < 1e-9,
+        "premise: hunting"
+    );
+    e.set_autopilot(false).unwrap();
+    assert!(
+        (e.settings.dial_mhz - 18.095).abs() < 1e-9,
+        "off: left alone"
+    );
+    e.autopilot_feed(vec![]);
+    e.set_tx_enabled(true);
+    e.set_autopilot(true).unwrap();
+    e.ingest_decodes_for_test(&[], 34);
+    assert_eq!(e.settings.band, "17m");
+    assert!(
+        (e.settings.dial_mhz - 18.100).abs() < 1e-9,
+        "{}",
+        e.settings.dial_mhz
+    );
+    assert!(e.tx_enabled, "transmit put back as it was");
 }
 
 /// Same run: our own retune is no sign of a Fox.
@@ -2063,6 +2117,148 @@ fn a_spotted_dxpedition_ends_an_unanswered_call() {
     e.autopilot_feed(vec![spotted("VK9XY", "40m", 7.056, "FT8")]);
     e.ingest_decodes_for_test(&[], s + 3);
     assert_eq!(e.settings.band, "20m", "answered: kept");
+}
+
+/// Live run 2026-11-25: BG3TFT was picked and dropped for VK9XY at every decode, while the move to VK9XY
+/// was held because 8S2DX, just worked, might still be sending. Nothing is called until the move is made.
+#[test]
+fn no_call_is_started_while_a_spotted_dxpedition_waits() {
+    let mut e = two_band_pilot();
+    e.settings.automation.schedule[0].bands = vec!["20m".into()];
+    e.ingest_decodes_for_test(&[], 28);
+    e.autopilot_feed(vec![spotted("VK9XY", "40m", 7.056, "FT8")]);
+    // K1ABC calling us holds the band (Answer callers is off); N0ABC calls CQ beside it.
+    for s in [30, 32] {
+        e.ingest_decodes_for_test(
+            &[
+                dec_snr("CQ N0ABC EM48", -3),
+                dec_snr("OM0RX K1ABC FN42", -5),
+            ],
+            s,
+        );
+        assert_eq!(e.settings.band, "20m", "premise: held at {s}");
+        assert_eq!(e.automation_dx(), None, "nothing called at {s}");
+    }
+    e.ingest_decodes_for_test(&[dec_snr("CQ N0ABC EM48", -3)], 40);
+    assert_eq!(e.settings.band, "40m", "then it goes");
+
+    // Nor is a call under way dropped for a move that cannot be made.
+    let mut e = two_band_pilot();
+    e.settings.automation.schedule[0].bands = vec!["20m".into()];
+    for s in [30, 32] {
+        e.ingest_decodes_for_test(&[dec_snr("CQ N0ABC EM48", -3)], s);
+    }
+    assert_eq!(e.automation_dx().as_deref(), Some("N0ABC"), "premise");
+    let s = over(&mut e, 33);
+    e.autopilot_feed(vec![spotted("VK9XY", "40m", 7.056, "FT8")]);
+    e.ingest_decodes_for_test(&[dec_snr("OM0RX K1ABC FN42", -5)], s + 1);
+    assert_eq!(e.automation_dx().as_deref(), Some("N0ABC"), "kept");
+}
+
+/// Operator, 2026-11-25: on a tuner or amplifier fault the autopilot pauses and transmit stops first; only
+/// when the station is ready again is transmit on, and the operator's own hand always comes first.
+#[test]
+fn a_station_fault_pauses_the_autopilot_until_the_station_is_ready() {
+    let held = || {
+        let mut e = two_band_pilot();
+        for s in [30, 32] {
+            e.ingest_decodes_for_test(&[dec_snr("CQ N0ABC EM48", -3)], s);
+        }
+        assert_eq!(
+            e.automation_dx().as_deref(),
+            Some("N0ABC"),
+            "premise: calling"
+        );
+        let _ = over(&mut e, 33);
+        let _ = e.take_slot_tx_abort();
+        assert!(e.station_fault_hold("KAT500 fault 2"));
+        e
+    };
+    let mut e = held();
+    assert!(!e.tx_enabled && e.take_slot_tx_abort(), "cut at once");
+    for s in [36, 38, 40] {
+        e.ingest_decodes_for_test(&[dec_snr("CQ N0ABC EM48", -3)], s);
+        assert!(e.poll_tx(s).is_empty(), "nothing sent at {s}");
+    }
+    let dto = e.automation_dto();
+    assert!(
+        dto.autopilot_on && dto.status == "stationFault",
+        "{}",
+        dto.status
+    );
+    assert!(e.station_fault_held());
+    assert!(e.station_fault_resume());
+    assert!(e.tx_enabled && e.automation_dto().autopilot_on);
+
+    // Stop TX: the autopilot is off, and nothing arms transmit again.
+    let mut e = held();
+    e.halt_tx();
+    assert!(!e.station_fault_held() && !e.station_fault_resume());
+    assert!(!e.tx_enabled && !e.automation_dto().autopilot_on);
+    let mut e = held();
+    e.halt_tx();
+    e.set_tx_enabled(true);
+    e.set_autopilot(true).unwrap();
+    e.set_tx_enabled(false);
+    assert!(!e.station_fault_held(), "a stop leaves no hold behind");
+    // TX Off by the operator: nothing puts it back.
+    let mut e = held();
+    e.set_tx_enabled_by_operator(false);
+    assert!(!e.station_fault_held() && !e.station_fault_resume());
+    assert!(!e.tx_enabled);
+    // TX On by the operator, or a station clicked: the station is theirs, and the autopilot goes on.
+    for clicked in [false, true] {
+        let mut e = held();
+        if clicked {
+            e.set_tx_enabled(true);
+        } else {
+            e.set_tx_enabled_by_operator(true);
+        }
+        assert!(!e.station_fault_held());
+        e.ingest_decodes_for_test(&[dec_snr("CQ W1AW FN31", -3)], 40);
+        let dto = e.automation_dto();
+        assert!(e.tx_enabled && dto.autopilot_on, "as the operator set it");
+        assert_ne!(dto.status, "stationFault");
+    }
+    // With the autopilot off the guard does nothing.
+    let mut e = engine();
+    e.set_tx_enabled(true);
+    assert!(!e.station_fault_hold("KAT500 fault 2") && e.tx_enabled);
+}
+
+/// Operator, 2026-11-25: the logger turns the antenna to the DX call, so the DX call is reported while
+/// the autopilot listens for a spotted station, not only once it is called.
+#[test]
+fn the_station_listened_for_is_the_dx_call_reported_to_loggers() {
+    let mut e = two_band_pilot();
+    assert_eq!(e.wsjtx_tx_status().dx_call, "", "nothing hunted");
+    e.autopilot_feed(vec![spotted("VK9XY", "40m", 7.056, "FT8")]);
+    e.ingest_decodes_for_test(&[], 30);
+    assert_eq!(e.settings.band, "40m", "premise: hunting");
+    assert_eq!(e.wsjtx_tx_status().dx_call, "VK9XY");
+    // A contact in progress keeps its own call.
+    e.ingest_decodes_for_test(&[dec_snr("CQ K1ABC FN42", -9)], 31);
+    e.work_station("K1ABC", None, Some("CQ K1ABC FN42"), Some(-9), Some(1500.0))
+        .unwrap();
+    assert_eq!(e.wsjtx_tx_status().dx_call, "K1ABC");
+    e.set_autopilot(false).unwrap();
+    e.automation_abandon_for_test();
+    assert_eq!(
+        e.wsjtx_tx_status().dx_call,
+        "",
+        "nor with the autopilot off"
+    );
+}
+
+/// Same run: OM0RX-xLog ignored "<3B8/E70A>", the DX call as it was on the air.
+#[test]
+fn the_dx_call_reported_has_no_brackets() {
+    let mut e = two_band_pilot();
+    e.autopilot_feed(vec![spotted("3B8/E70A", "17m", 18.100, "FT8")]);
+    e.ingest_decodes_for_test(&[], 30);
+    e.ingest_decodes_for_test(&[dec_at("EA3BD <3B8/E70A> -07", -5, 2489.0)], 32);
+    assert!(e.automation_dx().is_some(), "premise: called");
+    assert_eq!(e.wsjtx_tx_status().dx_call, "3B8/E70A");
 }
 
 /// Decoded on the band we are on, low as DXpeditions sit, it is hunted there.

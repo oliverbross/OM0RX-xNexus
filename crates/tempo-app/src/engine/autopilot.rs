@@ -192,6 +192,8 @@ struct Pilot {
     chase_failed_unix: u64,
     /// When the contact on the sequencer was first seen stalled by its call cap, Unix seconds.
     stalled_unix: Option<u64>,
+    /// Just switched on: the dial goes to the band's channel first.
+    to_channel: bool,
     /// The transmit offset before a DXpedition's call moved it, and the offset it was moved to, Hz.
     tx_before: Option<(f32, f32)>,
     /// The scheduled band a chase left, so the rotation goes on from there and not from wherever
@@ -220,6 +222,8 @@ pub struct Automation {
     pub(super) held_disable: bool,
     /// Our own band change is under way: its context halt is not a stop.
     self_tuning: bool,
+    /// Transmit stopped for a tuner or amplifier fault, and why ([`crate::station_guard`]).
+    station_hold: Option<String>,
     /// By call: every band and mode it is spotted in, and when it was fed, Unix seconds.
     feed: HashMap<String, Vec<(FeedEntry, u64)>>,
     pilot: Pilot,
@@ -324,6 +328,7 @@ impl Automation {
             return None;
         }
         let restore = self.hunt_hound_from();
+        self.station_hold = None;
         self.callers.clear();
         self.chain = 0;
         self.keeps_tx_after_73 = false;
@@ -431,6 +436,7 @@ impl Engine {
         }
         let p = &mut self.automation.pilot;
         p.on = true;
+        p.to_channel = true;
         p.presence.ack(now);
         p.band = (!self.settings.band.is_empty()).then(|| self.settings.band.clone());
         p.band_since_unix = now;
@@ -507,6 +513,69 @@ impl Engine {
             .flatten()
             .filter(move |(_, at)| now.saturating_sub(*at) <= FEED_FRESH_SECS)
             .map(|(e, _)| e)
+    }
+
+    // ---------------------------------------------------------------- the station guard
+
+    /// Is the station to be watched for faults: the autopilot runs, or waits for one?
+    pub fn station_guard_wanted(&self) -> bool {
+        self.settings.automation.station_guard && self.automation.pilot.on
+    }
+
+    /// The tuner or the amplifier has faulted: transmit off now, an over in flight cut, and the
+    /// autopilot waits. `false` = it does not run, so the station is the operator's.
+    pub fn station_fault_hold(&mut self, why: &str) -> bool {
+        if !self.automation.pilot.on {
+            return false;
+        }
+        self.automation.station_hold = Some(why.to_string());
+        self.automation_abandon_contact();
+        self.automation.pilot.target = None;
+        self.slot_tx_abort = true;
+        self.set_tx_enabled(false);
+        self.station_fault_note(&format!("{why}: transmit off, autopilot paused"));
+        true
+    }
+
+    /// Still held, with nothing done by the operator since?
+    pub fn station_fault_held(&self) -> bool {
+        self.automation.station_hold.is_some() && self.automation.pilot.on && !self.tx_enabled
+    }
+
+    /// What the guard does now, for the panel and the log.
+    pub fn station_fault_note(&mut self, text: &str) {
+        if self.automation.station_hold.is_some() {
+            self.automation.pilot.status = "stationFault";
+            self.automation.pilot.reason = text.to_string();
+        }
+        self.automation_note(text);
+    }
+
+    /// The station is ready again: transmit on as it was, and the autopilot goes on. Only when the
+    /// operator has done nothing since the hold.
+    pub fn station_fault_resume(&mut self) -> bool {
+        let held = self.station_fault_held();
+        self.automation.station_hold = None;
+        if held {
+            self.set_tx_enabled(true);
+            self.automation_watchdog_restart();
+            self.automation_note("the station is ready: transmit on, autopilot goes on");
+        }
+        held
+    }
+
+    /// The operator's own TX On or Off ends the hold: the station is theirs.
+    pub(super) fn station_fault_operator(&mut self) {
+        self.automation.station_hold = None;
+    }
+
+    /// The station the autopilot has moved here for and is listening for, until it is worked.
+    pub(super) fn automation_listening_for(&self) -> Option<String> {
+        let p = &self.automation.pilot;
+        p.chase
+            .as_ref()
+            .filter(|ch| p.on && !ch.done)
+            .map(|ch| ch.call.clone())
     }
 
     /// A DXpedition or a new entity, by the feed.
@@ -645,8 +714,13 @@ impl Engine {
 
     /// After every decode fold: Answer callers, then the autopilot.
     pub(super) fn automation_after_decodes(&mut self, decodes: &[modes::Decode], slot: u64) {
-        // A watchdog trip, or the operator's TX Off, ends the autopilot: it never re-arms.
-        if self.automation.pilot.on && !self.tx_enabled {
+        // Transmit armed during a hold was armed by the operator (a station clicked): theirs again.
+        if self.tx_enabled {
+            self.automation.station_hold = None;
+        }
+        // A watchdog trip, or the operator's TX Off, ends the autopilot: it never re-arms. Held for a
+        // station fault it waits (any stop drops the hold).
+        if self.automation.pilot.on && !self.tx_enabled && self.automation.station_hold.is_none() {
             self.automation_restore_hound();
             let p = &mut self.automation.pilot;
             p.on = false;
@@ -772,8 +846,6 @@ impl Engine {
     /// - any station addressed us within [`BAND_HOLD_SLOTS`] (a caller, or a partner repeating);
     /// - Answer callers has a caller queued.
     fn automation_band_hold(&self) -> Option<String> {
-        let a = &self.automation;
-        let slot = a.last_slot;
         if self.automation_contact_in_progress() {
             let dx = match &self.mode {
                 Mode::Qso { station, .. } => station.dxcall.clone(),
@@ -784,6 +856,13 @@ impl Engine {
                 dx.unwrap_or_else(|| "a station".into())
             ));
         }
+        self.automation_hold_without_contact()
+    }
+
+    /// What holds the band beside the contact on the sequencer ([`Self::automation_band_hold`]).
+    fn automation_hold_without_contact(&self) -> Option<String> {
+        let a = &self.automation;
+        let slot = a.last_slot;
         if self.cq_running {
             return Some("CQ run in progress".into());
         }
@@ -1055,25 +1134,35 @@ impl Engine {
         } else {
             Vec::new()
         };
-        // A DXpedition sits low, under 500 Hz, and is called from above it (operator,
-        // 2026-11-22). One so high that above is outside its receiver is left there and called from
-        // below. One heard higher is brought there first: the dial moves up so its signal
-        // lands at DXPED_PLACE_HZ, through the autopilot's own switch, so it happens only between
-        // contacts and transmit is put back as it was. Held, the call goes ahead from where it is.
-        if rare && c.freq_hz > automation::DXPED_LOW_HZ && automation::dxped_split_fits(c.freq_hz) {
-            let shift_hz = ((c.freq_hz - automation::DXPED_PLACE_HZ) / 10.0).round() * 10.0;
-            let dial = self.settings.dial_mhz + f64::from(shift_hz) / 1e6;
+        // A DXpedition sits under 500 Hz and is called from 1000-2500 (operator, 2026-11-22 and
+        // 2026-11-25). One heard higher is brought there first: the dial moves up so its signal lands
+        // at DXPED_PLACE_HZ, through the autopilot's own switch, so it happens only between contacts
+        // and transmit is put back as it was. Held, the call goes ahead from where it is. Its own dial
+        // is the one the hunt began on.
+        let mut shift_hz = self
+            .automation
+            .pilot
+            .chase
+            .as_ref()
+            .and_then(|ch| ch.hunt.as_ref())
+            .map_or(0.0, |h| {
+                ((self.settings.dial_mhz - h.dial_mhz) * 1e6).max(0.0) as f32
+            });
+        if rare && shift_hz < 1.0 {
+            let up = automation::dxped_shift_hz(c.freq_hz);
+            let dial = self.settings.dial_mhz + f64::from(up) / 1e6;
             let band = self.settings.band.clone();
-            if self.automation_switch(None, &band, Some(dial)) {
+            if up > 0.0 && self.automation_switch(None, &band, Some(dial)) {
                 self.automation_note(&format!(
-                    "{call} heard at {:.0} Hz: dial up {shift_hz:.0} Hz to {dial:.6} MHz, \
+                    "{call} heard at {:.0} Hz: dial up {up:.0} Hz to {dial:.6} MHz, \
                      so it sits at {:.0} Hz",
                     c.freq_hz,
-                    c.freq_hz - shift_hz
+                    c.freq_hz - up
                 ));
-                c.freq_hz -= shift_hz;
+                c.freq_hz -= up;
+                shift_hz = up;
                 for hz in &mut used {
-                    *hz -= shift_hz;
+                    *hz -= up;
                 }
             }
         }
@@ -1089,11 +1178,10 @@ impl Engine {
         match res {
             Ok(()) => {
                 // A DXpedition (or an ATNO, as rare and as crowded) is never called on its own
-                // frequency: at least 1200 Hz from it (operator, 2026-11-22), inside its receiver
-                // (operator, 2026-11-25).
+                // frequency, and always inside its receiver.
                 if rare {
-                    let want = automation::dxped_split_hz(c.freq_hz, self.tx_offset_hz);
-                    let (low, top) = automation::dxped_range(c.freq_hz);
+                    let want = automation::dxped_call_hz(c.freq_hz, shift_hz, self.tx_offset_hz);
+                    let (low, top) = automation::dxped_range(c.freq_hz, shift_hz);
                     let tx = automation::clear_tx_hz(want, &used, self.tx_width_hz(), low, top);
                     let before = self.automation.pilot.tx_before.map_or(held, |(b, _)| b);
                     self.set_tx_offset(tx);
@@ -1262,6 +1350,12 @@ impl Engine {
             return;
         }
 
+        // Held for a tuner or amplifier fault: nothing is called and no band changed meanwhile.
+        if self.automation.station_hold.is_some() {
+            self.automation.pilot.status = "stationFault";
+            return;
+        }
+
         let Some(cur_mode) = mode_name(self.app.tier()) else {
             self.automation.pilot.status = "wrongMode";
             return;
@@ -1330,7 +1424,9 @@ impl Engine {
                     && !is_rare(t.tier)
                     && t.tier != Tier::CallingMe
                     && s.hunt_dxpeditions
-                    && !self.automation_hunting())
+                    && !self.automation_hunting()
+                    // The move can be made now, or the same call would be picked again.
+                    && self.automation_hold_without_contact().is_none())
                 .then(|| self.automation_hunt_pick(cur_mode, now))
                 .flatten()
                 {
@@ -1494,6 +1590,25 @@ impl Engine {
             }
         }
 
+        // Switched on away from the band's channel, as a hunt broken off by hand leaves the dial (live
+        // run 2026-11-25: 18.102 after 3B8/E70A): the channel first. Switching off leaves the radio
+        // alone, for the operator to go on by hand.
+        if chasing.is_none() && std::mem::take(&mut self.automation.pilot.to_channel) {
+            let plan = self.band_plan_for_tier(self.app.tier());
+            let channel = plan
+                .iter()
+                .find(|c| c.band.eq_ignore_ascii_case(&cur_band))
+                .map(|c| c.dial_mhz)
+                .filter(|d| (d - self.settings.dial_mhz).abs() > 1e-6);
+            if let Some(dial) = channel {
+                if self.automation_switch(None, &cur_band, Some(dial)) {
+                    self.automation_note(&format!("to the {cur_band} channel: {dial:.3} MHz"));
+                    return;
+                }
+                self.automation.pilot.to_channel = true;
+            }
+        }
+
         // Rank what was heard this slot.
         let candidates = self.automation_candidates(decodes, slot, &cur_band, cur_mode);
         let skip = |c: &Candidate| self.automation_skip(c, &cur_band, cur_mode);
@@ -1602,6 +1717,19 @@ impl Engine {
                     return;
                 }
             }
+        }
+
+        // A spotted DXpedition is waiting for the band to be free (a partner that may still be sending):
+        // no new call that would be dropped for it (live run 2026-11-25: BG3TFT, picked and dropped for
+        // VK9XY at every decode while 8S2DX was settling).
+        if s.hunt_dxpeditions
+            && picked
+                .as_ref()
+                .is_some_and(|(_, t)| !is_rare(*t) && *t != Tier::CallingMe)
+            && self.automation_hunt_pick(cur_mode, now).is_some()
+        {
+            self.automation.pilot.status = "holding";
+            return;
         }
 
         if let Some((c, t)) = picked {

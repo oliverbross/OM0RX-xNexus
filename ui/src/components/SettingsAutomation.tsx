@@ -45,6 +45,8 @@ export const DEFAULT_AUTOMATION: AutomationSettings = {
   ordinaryDwellSecs: 600,
   targetBudgetSecs: 120,
   dxpedCallMins: 10,
+  stationGuard: true,
+  stationRecover: false,
   maxQsoPerHour: 60,
   tiers: {
     atno: true,
@@ -436,6 +438,20 @@ export function SettingsAutomation({
           on={a.preferOutsideEu}
           onChange={(preferOutsideEu) => set({ preferOutsideEu })}
           testId="automation-outside-eu"
+        />
+        <Switch
+          label={t('settings.automation.pilot.guard')}
+          hint={t('settings.automation.pilot.guard.hint')}
+          on={a.stationGuard}
+          onChange={(stationGuard) => set({ stationGuard })}
+          testId="automation-station-guard"
+        />
+        <Switch
+          label={t('settings.automation.pilot.recover')}
+          hint={t('settings.automation.pilot.recover.hint')}
+          on={a.stationRecover}
+          onChange={(stationRecover) => set({ stationRecover })}
+          testId="automation-station-recover"
         />
         <Switch
           label={t('settings.automation.pilot.clearTx')}

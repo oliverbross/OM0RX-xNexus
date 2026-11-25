@@ -12841,6 +12841,7 @@ export const EN = {
   'autopilot.status.holding': 'Holding the band (contact not finished)',
   'autopilot.status.finishing': 'Letting the contact finish',
   'autopilot.status.hunting': 'Hunting a DXpedition',
+  'autopilot.status.stationFault': 'Station fault',
   'autopilot.tier.callingMe': 'calling you',
   'autopilot.tier.atno': 'ATNO',
   'autopilot.tier.dxpedition': 'DXpedition',
@@ -12870,6 +12871,12 @@ export const EN = {
   'settings.autopilot.legend': 'Autopilot and Answer callers',
   'settings.automation.intro':
     'Answer callers and the supervised autopilot. Both are off until you switch them on. They never turn transmit on by themselves, and every stop switches them off.',
+  'settings.automation.pilot.guard': 'Pause on a tuner or amplifier fault',
+  'settings.automation.pilot.guard.hint':
+    'The KAT500 and KPA500, as the OM0RX Station Agent on this PC reports them. Transmit stops at once.',
+  'settings.automation.pilot.recover': 'Then clear the fault, tune and align, and go on',
+  'settings.automation.pilot.recover.hint':
+    'Through the Station Agent, each step after the one before: transmit off, clear, tune, align, and only then transmit on. The tune transmits. Once per fault; if it does not work, it stays paused.',
   'settings.automation.pilot.clearTx': 'Call each station on a clear transmit frequency',
   'settings.automation.pilot.clearTx.hint':
     'The clear one nearest to your own, by the signals heard lately in your period; yours comes back afterwards. A DXpedition is still called from at least 1200 Hz above.',

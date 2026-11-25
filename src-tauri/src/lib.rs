@@ -33588,6 +33588,176 @@ fn autopilot_feed(
     Ok(())
 }
 
+/// OM0RX-xNexus: the OM0RX Station Agent on this PC, for the station guard ([`tempo_app::station_guard`]).
+/// Its token is read from its own settings file each time, sent to 127.0.0.1 only, and kept nowhere
+/// (operator, 2026-11-25).
+mod station_agent {
+    use serde_json::{json, Value};
+    use std::time::Duration;
+
+    /// The Agent's settings file, as the Agent finds it.
+    fn config_path() -> Option<std::path::PathBuf> {
+        if let Some(p) = std::env::var_os("OM0RX_REMOTE_AGENT_CONFIG").filter(|p| !p.is_empty()) {
+            return Some(p.into());
+        }
+        let base = std::env::var_os("APPDATA").filter(|p| !p.is_empty())?;
+        Some(
+            std::path::PathBuf::from(base)
+                .join("OM0RX Remote Station")
+                .join("agent.json"),
+        )
+    }
+
+    /// The Agent's port and token. `None` = no Agent on this PC.
+    pub(super) fn access(text: &str) -> Option<(u16, String)> {
+        let v: Value = serde_json::from_str(text).ok()?;
+        let server = v.get("server")?;
+        let port = u16::try_from(server.get("bind_port")?.as_u64()?).ok()?;
+        let token = server.get("control_token")?.as_str()?.trim().to_string();
+        (!token.is_empty()).then_some((port, token))
+    }
+
+    fn client(secs: u64) -> Option<reqwest::blocking::Client> {
+        reqwest::blocking::Client::builder()
+            .no_proxy()
+            .redirect(reqwest::redirect::Policy::none())
+            .timeout(Duration::from_secs(secs))
+            .build()
+            .ok()
+    }
+
+    fn here() -> Option<(u16, String)> {
+        access(&std::fs::read_to_string(config_path()?).ok()?)
+    }
+
+    /// The Agent's state, or `None` when it does not answer.
+    pub(super) fn state() -> Option<Value> {
+        let (port, token) = here()?;
+        client(3)?
+            .get(format!("http://127.0.0.1:{port}/api/v1/state"))
+            .bearer_auth(token)
+            .send()
+            .ok()?
+            .error_for_status()
+            .ok()?
+            .json()
+            .ok()
+    }
+
+    /// Send a command. `Ok` = the transaction it started; `Err` = what the Agent said.
+    pub(super) fn command(name: &str, request_id: &str) -> Result<String, String> {
+        let (port, token) = here().ok_or("no Station Agent on this PC")?;
+        let answer = client(25)
+            .ok_or("no HTTP client")?
+            .post(format!("http://127.0.0.1:{port}/api/v1/commands"))
+            .bearer_auth(token)
+            .json(&json!({"request_id": request_id, "command": name, "arguments": {}}))
+            .send()
+            .map_err(|e| {
+                if e.is_timeout() {
+                    "no answer in time".to_string()
+                } else {
+                    "the Station Agent does not answer".to_string()
+                }
+            })?;
+        let body: Value = answer.json().map_err(|_| "unreadable answer".to_string())?;
+        if body.get("success").and_then(Value::as_bool) == Some(true) {
+            let id = body.pointer("/result/station/transaction/id");
+            Ok(id.and_then(Value::as_str).unwrap_or("").to_string())
+        } else {
+            let said = body.pointer("/error/message").and_then(Value::as_str);
+            Err(said.unwrap_or("refused").to_string())
+        }
+    }
+
+    #[cfg(test)]
+    #[test]
+    fn the_agents_port_and_token_come_from_its_settings() {
+        let full = r#"{"server": {"bind_port": 8840, "control_token": " test "}, "radio": {}}"#;
+        assert_eq!(access(full), Some((8840, "test".to_string())));
+        for text in [
+            "",
+            "{}",
+            r#"{"server": {"bind_port": 8840}}"#,
+            r#"{"server": {"bind_port": 8840, "control_token": " "}}"#,
+            r#"{"server": {"bind_port": 99999, "control_token": "test"}}"#,
+        ] {
+            assert_eq!(access(text), None, "{text}");
+        }
+    }
+}
+
+/// OM0RX-xNexus: watch the tuner and the amplifier while the autopilot runs, about once a second.
+fn spawn_station_guard(engine: SharedEngine) {
+    use tempo_app::station_guard::{Act, Guard, StationView};
+    std::thread::spawn(move || {
+        let mut guard = Guard::default();
+        let mut n: u64 = 0;
+        loop {
+            std::thread::sleep(std::time::Duration::from_secs(1));
+            let (wanted, held, recover) = {
+                let eng = engine_lock(&engine);
+                (
+                    eng.station_guard_wanted(),
+                    eng.station_fault_held(),
+                    eng.settings().automation.station_recover,
+                )
+            };
+            // Off, or the operator has taken the station in hand.
+            if !wanted {
+                guard.reset();
+                continue;
+            }
+            if guard.busy() && !held {
+                guard.operator();
+            }
+            let view = station_agent::state()
+                .as_ref()
+                .and_then(StationView::from_state);
+            let mut act = guard.poll(view.as_ref(), recover, now_unix() as u64);
+            loop {
+                match std::mem::replace(&mut act, Act::Nothing) {
+                    Act::Nothing => break,
+                    Act::Hold(why) => {
+                        if !engine_lock(&engine).station_fault_hold(&why) {
+                            guard.reset();
+                        }
+                    }
+                    Act::Send(command) => {
+                        // Never over the operator's own hand.
+                        let held = {
+                            let mut eng = engine_lock(&engine);
+                            let held = eng.station_fault_held();
+                            if held {
+                                eng.station_fault_note(match command {
+                                    "station_clear_faults" => "clearing the faults",
+                                    "station_tune" => "tuning",
+                                    _ => "aligning the station",
+                                });
+                            }
+                            held
+                        };
+                        if !held {
+                            guard.operator();
+                            break;
+                        }
+                        n += 1;
+                        let id = format!("xnexus-guard-{}-{n}", now_unix());
+                        let answer = station_agent::command(command, &id);
+                        act = guard.reply(answer, now_unix() as u64);
+                    }
+                    Act::Resume => {
+                        engine_lock(&engine).station_fault_resume();
+                    }
+                    Act::GiveUp(why) => engine_lock(&engine).station_fault_note(&format!(
+                        "{why}: paused, transmit stays off until you turn it on"
+                    )),
+                }
+            }
+        }
+    });
+}
+
 /// OM0RX-xNexus: the FT8, FT4 and FT2 spots of active DXpeditions, for the autopilot. The need board
 /// lists a station only where its entity is needed, and a DXpedition is worth a contact on every
 /// band, so its spots are fed beside the board's rows (operator, 2026-11-25). The same gates as the
@@ -53036,6 +53206,7 @@ pub fn run() {
     // not ask ClubLog again before its schedule says so. Shared by every profile, like cty.dat.
     // Disk only, and before the warm-up below asks anything.
     propagation::live::dxped::set_cache_dir(&shared_data_dir());
+    spawn_station_guard(engine.clone());
     // Warm the DXpedition plan cache in the background so the Needed board's
     // expedition tagging works from launch — without it the cache stays cold until
     // the operator first opens Connect/DXpeditions.
