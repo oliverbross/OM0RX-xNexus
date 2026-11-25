@@ -2130,6 +2130,41 @@ fn no_call_is_started_while_a_spotted_dxpedition_waits() {
     assert_eq!(e.automation_dx().as_deref(), Some("N0ABC"), "kept");
 }
 
+/// Operator, 2026-11-25: the logger turns the antenna to the DX call, so the DX call is reported while
+/// the autopilot listens for a spotted station, not only once it is called.
+#[test]
+fn the_station_listened_for_is_the_dx_call_reported_to_loggers() {
+    let mut e = two_band_pilot();
+    assert_eq!(e.wsjtx_tx_status().dx_call, "", "nothing hunted");
+    e.autopilot_feed(vec![spotted("VK9XY", "40m", 7.056, "FT8")]);
+    e.ingest_decodes_for_test(&[], 30);
+    assert_eq!(e.settings.band, "40m", "premise: hunting");
+    assert_eq!(e.wsjtx_tx_status().dx_call, "VK9XY");
+    // A contact in progress keeps its own call.
+    e.ingest_decodes_for_test(&[dec_snr("CQ K1ABC FN42", -9)], 31);
+    e.work_station("K1ABC", None, Some("CQ K1ABC FN42"), Some(-9), Some(1500.0))
+        .unwrap();
+    assert_eq!(e.wsjtx_tx_status().dx_call, "K1ABC");
+    e.set_autopilot(false).unwrap();
+    e.automation_abandon_for_test();
+    assert_eq!(
+        e.wsjtx_tx_status().dx_call,
+        "",
+        "nor with the autopilot off"
+    );
+}
+
+/// Same run: OM0RX-xLog ignored "<3B8/E70A>", the DX call as it was on the air.
+#[test]
+fn the_dx_call_reported_has_no_brackets() {
+    let mut e = two_band_pilot();
+    e.autopilot_feed(vec![spotted("3B8/E70A", "17m", 18.100, "FT8")]);
+    e.ingest_decodes_for_test(&[], 30);
+    e.ingest_decodes_for_test(&[dec_at("EA3BD <3B8/E70A> -07", -5, 2489.0)], 32);
+    assert!(e.automation_dx().is_some(), "premise: called");
+    assert_eq!(e.wsjtx_tx_status().dx_call, "3B8/E70A");
+}
+
 /// Decoded on the band we are on, low as DXpeditions sit, it is hunted there.
 #[test]
 fn a_dxpedition_heard_low_on_the_band_is_hunted_in_place() {

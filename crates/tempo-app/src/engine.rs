@@ -24467,6 +24467,15 @@ Pick the one you operate from on the Contesting tab in Settings.",
             ),
             _ => (String::new(), String::new(), None),
         };
+        // OM0RX-xNexus: the autopilot listens for a spotted station, and a logger that turns the antenna
+        // to the DX call (OM0RX-xLog) turns it before the station can be heard (operator, 2026-11-25:
+        // VK9XY on 10 m was silent, its callers loud, until the beam was turned to it).
+        let (dx_call, dx_grid) = match self.automation_listening_for() {
+            Some(call) if dx_call.is_empty() => (call, String::new()),
+            _ => (dx_call, dx_grid),
+        };
+        // The DX Call box holds the call itself, never a hash's brackets: a logger drops "<3B8/E70A>".
+        let dx_call = tempo_core::message::unhash_call(&dx_call).to_string();
         WsjtxTxStatus {
             dx_call,
             report: report.map(|r| r.to_string()).unwrap_or_default(),

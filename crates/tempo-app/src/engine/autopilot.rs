@@ -512,6 +512,15 @@ impl Engine {
             .map(|(e, _)| e)
     }
 
+    /// The station the autopilot has moved here for and is listening for, until it is worked.
+    pub(super) fn automation_listening_for(&self) -> Option<String> {
+        let p = &self.automation.pilot;
+        p.chase
+            .as_ref()
+            .filter(|ch| p.on && !ch.done)
+            .map(|ch| ch.call.clone())
+    }
+
     /// A DXpedition or a new entity, by the feed.
     fn automation_fed_rare(&self, call: &str) -> bool {
         self.automation
