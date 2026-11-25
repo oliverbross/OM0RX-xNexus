@@ -48,6 +48,8 @@ use tempo_core::qso::State as QsoState;
 
 /// How many slots a caller to the operator stays answerable after it was last heard.
 const CALLER_FRESH_SLOTS: u64 = 3;
+/// A band on which nothing at all is decoded for this long is left, seconds.
+const SILENT_BAND_SECS: u64 = 120;
 /// How long a spot chase may go without decoding its station before it is given up, seconds.
 const CHASE_UNHEARD_SECS: u64 = 300;
 /// How lately a station must have been heard calling it for the DXpedition to count as on the air,
@@ -182,6 +184,8 @@ struct Pilot {
     last_worthwhile_unix: u64,
     /// The last moment something better than an ordinary new call was called here.
     last_needed_unix: u64,
+    /// When anything was last decoded, or the band was come to, Unix seconds.
+    last_decode_unix: u64,
     slots_on_band: u32,
     /// The slot the listen counter last counted (it counts slots, not decode folds — REVIEW N-06).
     last_listen_slot: Option<u64>,
@@ -442,6 +446,7 @@ impl Engine {
         p.band_since_unix = now;
         p.last_worthwhile_unix = now;
         p.last_needed_unix = now;
+        p.last_decode_unix = now;
         p.slots_on_band = 0;
         p.last_listen_slot = None;
         p.target = None;
@@ -609,6 +614,7 @@ impl Engine {
         p.band_since_unix = p.band_since_unix.saturating_sub(secs);
         p.last_worthwhile_unix = p.last_worthwhile_unix.saturating_sub(secs);
         p.last_needed_unix = p.last_needed_unix.saturating_sub(secs);
+        p.last_decode_unix = p.last_decode_unix.saturating_sub(secs);
         p.chase_failed_unix = p.chase_failed_unix.saturating_sub(secs);
         if let Some(ch) = p.chase.as_mut() {
             ch.since_unix = ch.since_unix.saturating_sub(secs);
@@ -745,6 +751,9 @@ impl Engine {
         // (REVIEW N-05: it kept running with its control hidden).
         if self.automation.pilot.on && !self.settings.automation.autopilot_enabled {
             let _ = self.set_autopilot(false);
+        }
+        if !decodes.is_empty() {
+            self.automation.pilot.last_decode_unix = now_unix_secs();
         }
         self.automation_track_to_me(decodes, slot);
         self.answer_callers_step(decodes, slot);
@@ -1837,13 +1846,15 @@ impl Engine {
             }
         }
 
-        // Nothing worth calling: move on once the band has had its time.
+        // Nothing worth calling: move on once the band has had its time, or is not open at all (live
+        // run 2026-11-25: five minutes on 10 m, nothing decoded).
         let p = &self.automation.pilot;
         let on_band = now.saturating_sub(p.band_since_unix);
         let quiet = now.saturating_sub(p.last_worthwhile_unix.max(p.band_since_unix));
+        let silent = now.saturating_sub(p.last_decode_unix) >= SILENT_BAND_SECS;
         if !still_chasing
-            && on_band >= u64::from(s.min_dwell_secs)
-            && quiet >= u64::from(s.quiet_secs)
+            && (silent
+                || (on_band >= u64::from(s.min_dwell_secs) && quiet >= u64::from(s.quiet_secs)))
         {
             if let Some(next) = self.automation_next_stop(&patrol, &cur_band, cur_mode) {
                 if !next.is(&cur_band, cur_mode) && self.automation_go(&next, cur_mode) {
@@ -2401,6 +2412,7 @@ impl Engine {
         p.band_since_unix = now;
         p.last_worthwhile_unix = now;
         p.last_needed_unix = now;
+        p.last_decode_unix = now;
         p.slots_on_band = 0;
         p.last_listen_slot = None;
         p.status = "moving";

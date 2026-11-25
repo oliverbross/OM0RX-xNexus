@@ -359,6 +359,24 @@ fn a_quiet_band_is_left_once_everything_is_finished() {
     );
 }
 
+/// Live run 2026-11-25 (xlog.33): five minutes on 10 m in the afternoon, nothing decoded at all.
+#[test]
+fn a_band_on_which_nothing_is_decoded_is_left_after_two_minutes() {
+    let mut e = two_band_pilot();
+    e.settings.automation.min_dwell_secs = 300;
+    e.settings.automation.quiet_secs = 300;
+    e.automation_backdate_band(125);
+    e.ingest_decodes_for_test(&[dec_snr("W1AW SP6CIK JO80", -7)], 30);
+    e.ingest_decodes_for_test(&[], 32);
+    assert_eq!(
+        e.settings.band, "20m",
+        "something is decoded: it has its time"
+    );
+    e.automation_backdate_band(125);
+    e.ingest_decodes_for_test(&[], 34);
+    assert_eq!(e.settings.band, "17m", "silent");
+}
+
 /// Field report 2026-11-22 (xlog.23): the autopilot took OM0RX to 60 m at 5.3715 MHz, the US
 /// channel of the raw band table, and decoded nothing there for eight periods. A station whose call
 /// is not a US one works 60 m FT8 at 5.357 (#175), the dial its own 60 m button tunes; 5.3715 +
