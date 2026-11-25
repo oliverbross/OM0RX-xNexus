@@ -34210,6 +34210,7 @@ contact yourself."
                             self.qso_start_unix =
                                 Some(wsjtx_qso_on(now_unix_secs(), n, qso_period_s));
                         }
+                        self.automation.note_report_sent(&m, slot);
                         station.after_tx();
                         self.automation.last_over_slot = slot;
                         // Stock "Disable Tx after sending 73": the over leaving

@@ -48,6 +48,8 @@ use tempo_core::qso::State as QsoState;
 
 /// How many slots a caller to the operator stays answerable after it was last heard.
 const CALLER_FRESH_SLOTS: u64 = 3;
+/// How long a report we sent may still be answered, slots.
+const REPORTED_FORGET_SLOTS: u64 = 120;
 /// A band on which nothing at all is decoded for this long is left, seconds.
 const SILENT_BAND_SECS: u64 = 120;
 /// Then its turns, and the state and activation spots on it, wait this long, seconds.
@@ -250,6 +252,8 @@ pub struct Automation {
     last_slot: u64,
     /// The slot our last over of a contact went out in.
     pub(super) last_over_slot: u64,
+    /// The stations a report was sent to, and the slot of the last one.
+    reported: HashMap<String, u64>,
     /// The last "holding the band" reason written to the log, so a hold is noted once.
     last_hold: Option<String>,
     /// Stations whose contact is made, with the slot it was last seen made: their calls to us are
@@ -290,6 +294,25 @@ impl std::fmt::Debug for EntityInfoResolver {
 impl Automation {
     /// Was `call` last heard calling CQ or somebody else, not us? Live run 2026-11-23: SQ2MMX
     /// answered us once, then worked three others, and was sent our R-report eight times.
+    /// An over goes out: the station it gives a report to.
+    pub(super) fn note_report_sent(&mut self, m: &Msg, slot: u64) {
+        self.reported
+            .retain(|_, s| slot.saturating_sub(*s) < REPORTED_FORGET_SLOTS);
+        if let Msg::Report { to, .. } | Msg::RReport { to, .. } = m {
+            let call = to.trim_matches(['<', '>']).to_uppercase();
+            self.reported.insert(call, slot);
+        }
+    }
+
+    /// A rogered report from a station we have sent none: there is no contact to end, and answering it
+    /// with RR73 would log one (live run 2026-11-25: JA6VQA's "R-26" on 80 m).
+    fn unasked_roger(&self, message: &str) -> bool {
+        match Msg::parse(message) {
+            Msg::RReport { de, .. } => !self.reported.keys().any(|c| same_call(c, &de)),
+            _ => false,
+        }
+    }
+
     fn moved_on(&self, call: &str) -> bool {
         self.elsewhere.keys().any(|c| same_call(c, call))
     }
@@ -995,6 +1018,9 @@ impl Engine {
             // withdrawn with it.
             if matches!(m, Msg::Bye73 { .. } | Msg::Rr73 { .. } | Msg::Rrr { .. }) {
                 self.automation.callers.retain(|c| !same_call(&c.call, de));
+                continue;
+            }
+            if self.automation.unasked_roger(&d.message) {
                 continue;
             }
             // Just worked: its call to us is the contact we already made, not a new one.
@@ -2253,6 +2279,7 @@ impl Engine {
                         ),
                     to_me: row.directed_to_me
                         && self.settings.automation.answer_callers
+                        && !self.automation.unasked_roger(&d.message)
                         && !matches!(
                             Msg::parse(&d.message),
                             Msg::Bye73 { .. } | Msg::Rr73 { .. } | Msg::Rrr { .. }

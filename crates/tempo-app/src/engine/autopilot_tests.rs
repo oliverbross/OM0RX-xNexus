@@ -439,6 +439,39 @@ fn a_silent_band_does_not_end_the_chase_of_a_new_country() {
     assert_eq!(e.settings.band, "20m", "then it is over");
 }
 
+/// Live run 2026-11-25 (xlog.33): JA6VQA sent "OM0RX JA6VQA R-26" on 80 m, though we had sent it no
+/// report. It was answered with RR73 and logged.
+#[test]
+fn a_rogered_report_we_never_gave_is_not_answered() {
+    let roger = [dec_snr("OM0RX K1ABC R-26", -10)];
+    let mut e = answering_pilot();
+    e.ingest_decodes_for_test(&[], 30);
+    e.ingest_decodes_for_test(&roger, 32);
+    assert_eq!(e.automation_dx(), None, "idle");
+
+    let mut e = answering_pilot();
+    pick(&mut e, "DO8JB");
+    let s = over(&mut e, 12);
+    e.ingest_decodes_for_test(&roger, s + 1);
+    assert_eq!(e.automation_dx().as_deref(), Some("DO8JB"), "calling");
+
+    // CONTROL: one we gave a report is answered, late as it comes.
+    let mut e = answering_pilot();
+    e.ingest_decodes_for_test(&[], 30);
+    e.ingest_decodes_for_test(&[dec_snr("OM0RX K1ABC FN42", -5)], 32);
+    assert_eq!(e.automation_dx().as_deref(), Some(CALLER), "premise");
+    let mut s = over(&mut e, 33);
+    for _ in 0..3 {
+        e.ingest_decodes_for_test(&[], s + 1);
+        s = over(&mut e, s + 2);
+    }
+    e.ingest_decodes_for_test(&[], s + 1);
+    e.ingest_decodes_for_test(&[], s + 2);
+    assert_eq!(e.automation_dx(), None, "premise: given up");
+    e.ingest_decodes_for_test(&roger, s + 3);
+    assert_eq!(e.automation_dx().as_deref(), Some(CALLER));
+}
+
 /// Field report 2026-11-22 (xlog.23): the autopilot took OM0RX to 60 m at 5.3715 MHz, the US
 /// channel of the raw band table, and decoded nothing there for eight periods. A station whose call
 /// is not a US one works 60 m FT8 at 5.357 (#175), the dial its own 60 m button tunes; 5.3715 +
