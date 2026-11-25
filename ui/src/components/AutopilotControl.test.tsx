@@ -166,6 +166,8 @@ describe('SettingsAutomation', () => {
     expect(change).toHaveBeenLastCalledWith(expect.objectContaining({ skipContinents: ['AF'] }))
     fireEvent.change(screen.getByTestId('automation-max-calls'), { target: { value: '6' } })
     expect(change).toHaveBeenLastCalledWith(expect.objectContaining({ targetMaxCalls: 6 }))
+    fireEvent.change(screen.getByTestId('automation-dxped-mins'), { target: { value: '25' } })
+    expect(change).toHaveBeenLastCalledWith(expect.objectContaining({ dxpedCallMins: 25 }))
   })
 
   it('shows a saved order as saved', () => {

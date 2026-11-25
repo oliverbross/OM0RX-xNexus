@@ -7504,7 +7504,8 @@ export interface AutomationSettings {
   minDwellSecs: number
   quietSecs: number
   targetBudgetSecs: number
-  rareBudgetSecs: number
+  /** How long a DXpedition, ATNO or top-50 station is called, minutes (1–180). */
+  dxpedCallMins: number
   maxQsoPerHour: number
   tiers: AutopilotTiers
   chaseSpots: boolean

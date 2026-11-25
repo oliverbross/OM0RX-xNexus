@@ -44,7 +44,7 @@ export const DEFAULT_AUTOMATION: AutomationSettings = {
   quietSecs: 300,
   ordinaryDwellSecs: 600,
   targetBudgetSecs: 120,
-  rareBudgetSecs: 900,
+  dxpedCallMins: 10,
   maxQsoPerHour: 60,
   tiers: {
     atno: true,
@@ -421,6 +421,15 @@ export function SettingsAutomation({
           onChange={(huntHound) => set({ huntHound })}
           testId="automation-hunt-hound"
         />
+        <NumberField
+          label={t('settings.automation.pilot.dxpedMins')}
+          hint={t('settings.automation.pilot.dxpedMins.hint')}
+          value={a.dxpedCallMins}
+          lo={1}
+          hi={180}
+          onChange={(dxpedCallMins) => set({ dxpedCallMins })}
+          testId="automation-dxped-mins"
+        />
         <Switch
           label={t('settings.automation.pilot.outsideEu')}
           hint={t('settings.automation.pilot.outsideEu.hint')}
@@ -577,13 +586,6 @@ export function SettingsAutomation({
             lo={30}
             hi={1800}
             onChange={(targetBudgetSecs) => set({ targetBudgetSecs })}
-          />
-          <NumberField
-            label={t('settings.automation.pilot.rareBudget')}
-            value={a.rareBudgetSecs}
-            lo={600}
-            hi={10800}
-            onChange={(rareBudgetSecs) => set({ rareBudgetSecs })}
           />
           <NumberField
             label={t('settings.automation.pilot.maxHour')}

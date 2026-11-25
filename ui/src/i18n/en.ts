@@ -12906,7 +12906,9 @@ export const EN = {
   'settings.automation.pilot.dwell': 'Least time on a band (seconds)',
   'settings.automation.pilot.quiet': 'Move on after this long with nothing to call (seconds)',
   'settings.automation.pilot.budget': 'Time budget per station (seconds)',
-  'settings.automation.pilot.rareBudget': 'Time budget for an ATNO or DXpedition (seconds)',
+  'settings.automation.pilot.dxpedMins': 'Call a DXpedition for (minutes)',
+  'settings.automation.pilot.dxpedMins.hint':
+    'Counted from when it is first heard. Also for an ATNO and a Club Log top-50 station. A hunted DXpedition that is not decoded at all is left after five minutes.',
   'settings.automation.pilot.maxHour': 'Most contacts started per hour',
   'settings.automation.pilot.maxCalls':
     'Calls without an answer before moving on (not for an ATNO, DXpedition or top 50)',

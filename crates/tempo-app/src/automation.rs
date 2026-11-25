@@ -252,8 +252,10 @@ pub struct AutomationSettings {
     /// "just 4 calls, no answer move on … need it, call again later"). An ATNO, DXpedition or
     /// top-50 station has no such limit, only its own time budget.
     pub target_max_calls: u32,
-    /// Time budget for an ATNO or DXpedition, seconds.
-    pub rare_budget_secs: u32,
+    /// How long a DXpedition, ATNO or top-50 station is called, and a hunted DXpedition followed from
+    /// the moment it or its callers are heard, minutes (operator, 2026-11-25: ten by default, "but
+    /// user can change this").
+    pub dxped_call_mins: u32,
     /// Most contacts the autopilot starts in an hour.
     pub max_qso_per_hour: u32,
     /// Which tiers may be called.
@@ -326,7 +328,7 @@ impl Default for AutomationSettings {
             quiet_secs: 300,
             ordinary_dwell_secs: 600,
             target_budget_secs: 120,
-            rare_budget_secs: 900,
+            dxped_call_mins: 10,
             max_qso_per_hour: 60,
             tiers: AutopilotTiers::default(),
             chase_spots: true,
@@ -343,6 +345,11 @@ impl Default for AutomationSettings {
 }
 
 impl AutomationSettings {
+    /// [`Self::dxped_call_mins`] in seconds.
+    pub fn dxped_call_secs(&self) -> u32 {
+        self.dxped_call_mins.saturating_mul(60)
+    }
+
     /// The presence-check interval the operator set, held to 2–999 minutes.
     pub fn presence_minutes(&self) -> u32 {
         self.presence_check_min
@@ -370,9 +377,7 @@ impl AutomationSettings {
             })
             .map(|k| (*k).to_string())
             .collect();
-        // A DXpedition or ATNO is called for at least ten minutes (operator, 2026-11-22: a
-        // pileup is rarely broken in five to eight calls).
-        self.rare_budget_secs = self.rare_budget_secs.clamp(600, 10800);
+        self.dxped_call_mins = self.dxped_call_mins.clamp(1, 180);
         self.max_qso_per_hour = self.max_qso_per_hour.clamp(1, 300);
         self.schedule
             .retain(|w| parse_hhmm(&w.start).is_some() && w.modes().any(is_auto_mode));
@@ -865,6 +870,8 @@ pub struct FeedEntry {
     pub new_state: bool,
     /// The US state (ADIF `STATE`) the board placed the station in, when it placed it.
     pub state: Option<String>,
+    /// When the spot came in, Unix seconds; 0 = not known.
+    pub heard_unix: u64,
 }
 
 /// Could a station hold this call? Spots carry false decodes ("E34XQXUYE9H", "89EARO/J8Z5": both
@@ -893,12 +900,46 @@ pub fn spot_call_ok(call: &str) -> bool {
     call.len() <= 14 && call.split('/').all(part) && call.split('/').any(full)
 }
 
+/// The FT mode a cluster spot names: the skimmer's own mode, else the spotter's comment
+/// ("WKED FT8 STRONG INTO CO"), else the standard FT8 or FT4 frequency it is on. `None` = another
+/// mode, or no telling.
+pub fn spot_ft_mode(freq_mhz: f64, comment: &str, skimmer: Option<&str>) -> Option<&'static str> {
+    const FT: [&str; 3] = ["FT8", "FT4", "FT2"];
+    const FT4_DIALS: [f64; 8] = [
+        3.575, 7.0475, 10.140, 14.080, 18.104, 21.140, 24.919, 28.180,
+    ];
+    const FT8_DIALS: [f64; 10] = [
+        1.840, 3.573, 5.357, 7.074, 10.136, 14.074, 18.100, 21.074, 24.915, 28.074,
+    ];
+    if let Some(m) = skimmer {
+        return FT.into_iter().find(|f| m.eq_ignore_ascii_case(f));
+    }
+    let named = comment
+        .split(|c: char| !c.is_ascii_alphanumeric())
+        .find_map(|w| FT.into_iter().find(|f| w.eq_ignore_ascii_case(f)));
+    if named.is_some() {
+        return named;
+    }
+    // A spot names the dial, or the signal up to 3 kHz above it. FT4's 3.575 MHz is inside FT8's
+    // window there, so its exact dial comes first.
+    if FT4_DIALS.iter().any(|d| (freq_mhz - d).abs() < 0.0003) {
+        return Some("FT4");
+    }
+    let above = |d: &f64| (-0.0003..0.003).contains(&(freq_mhz - d));
+    if FT8_DIALS.iter().any(above) {
+        return Some("FT8");
+    }
+    FT4_DIALS.iter().any(above).then_some("FT4")
+}
+
 /// The tier a spot would put its station in, for chasing it to another band; `None` = not worth
-/// leaving the band for (only ATNO, DXpeditions and DXCC slots move the radio).
-pub fn spot_tier(f: &FeedEntry) -> Option<Tier> {
+/// leaving the band for (only ATNO, DXpeditions and DXCC slots move the radio). `call_new` = the
+/// station itself is not worked on that band in that mode class: a DXpedition is worth that,
+/// whatever its entity has.
+pub fn spot_tier(f: &FeedEntry, call_new: bool) -> Option<Tier> {
     if f.new_entity {
         Some(Tier::Atno)
-    } else if f.dxpedition && f.new_slot {
+    } else if f.dxpedition && (f.new_slot || call_new) {
         Some(Tier::Dxpedition)
     } else if f.new_slot {
         Some(Tier::DxccNewSlot)
@@ -909,10 +950,12 @@ pub fn spot_tier(f: &FeedEntry) -> Option<Tier> {
     }
 }
 
-/// Is this spot a DXpedition worth leaving the band for: a listed DXpedition, needed (a new
-/// entity, or new on that band or mode)?
-pub fn is_hunt_spot(f: &FeedEntry) -> bool {
-    f.dxpedition && (f.new_entity || f.new_slot)
+/// Is this spot a DXpedition worth leaving the band for: a listed DXpedition whose entity is needed
+/// there (a new entity, or new on that band or mode), or that is itself not worked on that band in
+/// that mode class (`call_new`; operator, 2026-11-25: VK9XY spotted on FT8 and FT4 "should be always
+/// prioritised", Christmas Island confirmed there or not).
+pub fn is_hunt_spot(f: &FeedEntry, call_new: bool) -> bool {
+    f.dxpedition && (f.new_entity || f.new_slot || call_new)
 }
 
 /// The least spacing between a DXpedition's audio frequency and ours when the autopilot calls it,
@@ -1269,6 +1312,26 @@ mod tests {
             .filter(|hz| *hz != 1780.0)
             .collect();
         assert_eq!(clear_tx_hz(1375.0, &full, 55.0, 400.0, 2600.0), 1780.0);
+    }
+
+    #[test]
+    fn a_spots_ft_mode_comes_from_the_skimmer_the_comment_or_the_frequency() {
+        // Spots of 24 November 2026.
+        assert_eq!(
+            spot_ft_mode(7.056, "WKED FT8 STRONG INTO CO", None),
+            Some("FT8")
+        );
+        assert_eq!(
+            spot_ft_mode(21.140, "FT4 +02dB from OH29 2115Hz", None),
+            Some("FT4")
+        );
+        assert_eq!(spot_ft_mode(14.080, "", Some("FT4")), Some("FT4"));
+        assert_eq!(spot_ft_mode(14.0252, "", Some("CW")), None);
+        assert_eq!(spot_ft_mode(10.1362, "tnx", None), Some("FT8"));
+        assert_eq!(spot_ft_mode(3.575, "", None), Some("FT4"));
+        assert_eq!(spot_ft_mode(3.5742, "", None), Some("FT8"));
+        assert_eq!(spot_ft_mode(21.1412, "", None), Some("FT4"));
+        assert_eq!(spot_ft_mode(14.240, "59 in OM", None), None);
     }
 
     #[test]
@@ -1629,7 +1692,7 @@ mod tests {
             new_state: true,
             ..FeedEntry::default()
         };
-        assert_eq!(spot_tier(&f), Some(Tier::UsState));
+        assert_eq!(spot_tier(&f, true), Some(Tier::UsState));
     }
 
     #[test]
@@ -1659,9 +1722,11 @@ mod tests {
             dxpedition: true,
             ..FeedEntry::default()
         };
-        assert!(!is_hunt_spot(&f), "worked everywhere: not hunted");
+        assert!(!is_hunt_spot(&f, false), "worked everywhere: not hunted");
+        assert!(is_hunt_spot(&f, true), "itself not worked there");
+        assert_eq!(spot_tier(&f, true), Some(Tier::Dxpedition));
         f.new_slot = true;
-        assert!(is_hunt_spot(&f));
+        assert!(is_hunt_spot(&f, false));
     }
 
     #[test]

@@ -33561,11 +33561,76 @@ fn autopilot_confirm_presence(state: State<'_, SharedEngine>) -> Result<AppSnaps
 #[tauri::command(async)]
 fn autopilot_feed(
     state: State<'_, SharedEngine>,
+    spots: State<'_, SharedSpots>,
     entries: Vec<tempo_app::automation::FeedEntry>,
 ) -> Result<(), String> {
+    let recent = spots
+        .lock()
+        .ok()
+        .filter(|_| !unassisted())
+        .map(|buf| {
+            buf.recent_within(
+                std::time::Instant::now(),
+                std::time::Duration::from_secs(900),
+            )
+        })
+        .unwrap_or_default();
+    let active = propagation::live::dxped::cached_active_calls(now_unix());
     let mut eng = engine_lock_result(&state).map_err(|e| e.to_string())?;
+    let mut entries = entries;
+    entries.extend(dxped_spots(
+        &recent,
+        &active,
+        &eng.settings().mycall,
+        eng.settings().license_class,
+    ));
     eng.autopilot_feed(entries);
     Ok(())
+}
+
+/// OM0RX-xNexus: the FT8, FT4 and FT2 spots of active DXpeditions, for the autopilot. The need board
+/// lists a station only where its entity is needed, and a DXpedition is worth a contact on every
+/// band, so its spots are fed beside the board's rows (operator, 2026-11-25). The same gates as the
+/// board's: heard on the operator's own continent, where the licence may transmit, HF only.
+fn dxped_spots(
+    recent: &[tempo_net::cluster::ClusterSpot],
+    active: &[String],
+    my_call: &str,
+    license_class: tempo_app::settings::LicenseClass,
+) -> Vec<tempo_app::automation::FeedEntry> {
+    recent
+        .iter()
+        .filter(|cs| {
+            active
+                .iter()
+                .any(|a| propagation::live::dxped::call_matches(a, &cs.dx_call))
+        })
+        .filter_map(|cs| {
+            let freq = cs.freq_mhz();
+            let band = propagation::Band::from_mhz(freq).filter(|b| !b.is_vhf())?;
+            let voices: Vec<&str> = std::iter::once(cs.spotter.as_str())
+                .chain(cs.corroborators.iter().map(|c| c.as_str()))
+                .collect();
+            propagation::hf_admit_spotters(&voices, my_call)?;
+            if !tempo_app::privileges::tx_allowed(
+                license_class,
+                freq,
+                tempo_app::settings::OperatingMode::Digital,
+            ) {
+                return None;
+            }
+            let mode = tempo_app::automation::spot_ft_mode(freq, &cs.comment, cs.skimmer_mode())?;
+            Some(tempo_app::automation::FeedEntry {
+                call: cs.dx_call.to_ascii_uppercase(),
+                band: band.label().to_string(),
+                mode: Some(mode.to_string()),
+                freq_mhz: Some(freq),
+                dxpedition: true,
+                heard_unix: cs.received_unix,
+                ..Default::default()
+            })
+        })
+        .collect()
 }
 
 /// Switch the top-level operating area: "dx" (FT8/FT4 structured) or "msg"
@@ -63045,6 +63110,58 @@ mod tests {
             .is_empty(),
             "a JA station only EU and AS heard must not reach the board"
         );
+    }
+
+    /// OM0RX-xNexus: what the autopilot gets of the cluster (spots of 24 November 2026): an active
+    /// DXpedition's FT spots heard on the operator's continent, whatever its entity needs.
+    #[test]
+    fn the_autopilot_gets_an_active_dxpeditions_ft_spots() {
+        let spot =
+            |by: &str, call: &str, khz: f64, comment: &str| tempo_net::cluster::ClusterSpot {
+                spotter: by.into(),
+                dx_call: call.into(),
+                freq_khz: khz,
+                comment: comment.into(),
+                time_utc: None,
+                received_unix: 1_795_000_000,
+                corroborators: Vec::new(),
+                rbn: false,
+            };
+        let spots = [
+            spot("G0LZX", "VK9XY", 21140.0, "FT4 +02dB from OH29 2115Hz"),
+            spot("DL1ABC", "VK9XY", 7056.0, "FT8 1400Hz"),
+            spot("W5AP", "VK9XY", 10131.0, "WKED FT8 STRONG INTO CO"),
+            spot("DL1ABC", "VK9XY", 14240.0, "59 in JO31"),
+            spot("DL1ABC", "VK9LI", 14074.0, "FT8"),
+        ];
+        let feed = super::dxped_spots(
+            &spots,
+            &["VK9XY".to_string()],
+            "OM0RX",
+            tempo_app::settings::LicenseClass::Open,
+        );
+        let rows: Vec<_> = feed
+            .iter()
+            .map(|e| {
+                (
+                    e.call.as_str(),
+                    e.band.as_str(),
+                    e.mode.as_deref(),
+                    e.freq_mhz,
+                )
+            })
+            .collect();
+        assert_eq!(
+            rows,
+            [
+                ("VK9XY", "15m", Some("FT4"), Some(21.14)),
+                ("VK9XY", "40m", Some("FT8"), Some(7.056)),
+            ],
+            "not heard here, not an FT mode, not a DXpedition: left out"
+        );
+        assert!(feed
+            .iter()
+            .all(|e| e.dxpedition && !e.new_slot && e.heard_unix > 0));
     }
 
     /// ★ What a no-popup FT contact may take from the spots: the contact's own call, its band, and
