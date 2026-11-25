@@ -1971,6 +1971,35 @@ fn a_dxpedition_high_in_the_channel_is_called_from_below_it() {
     );
 }
 
+/// Same run: a hunt broken off by hand left the dial on 18.102, and the autopilot, switched on again,
+/// would have listened there. Switched off, it leaves the radio to the operator.
+#[test]
+fn switched_on_the_autopilot_goes_to_the_bands_channel() {
+    let mut e = two_band_pilot();
+    e.autopilot_feed(vec![spotted("3B8/E70A", "17m", 18.095, "FT8")]);
+    e.ingest_decodes_for_test(&[], 30);
+    assert!(
+        (e.settings.dial_mhz - 18.095).abs() < 1e-9,
+        "premise: hunting"
+    );
+    e.set_autopilot(false).unwrap();
+    assert!(
+        (e.settings.dial_mhz - 18.095).abs() < 1e-9,
+        "off: left alone"
+    );
+    e.autopilot_feed(vec![]);
+    e.set_tx_enabled(true);
+    e.set_autopilot(true).unwrap();
+    e.ingest_decodes_for_test(&[], 34);
+    assert_eq!(e.settings.band, "17m");
+    assert!(
+        (e.settings.dial_mhz - 18.100).abs() < 1e-9,
+        "{}",
+        e.settings.dial_mhz
+    );
+    assert!(e.tx_enabled, "transmit put back as it was");
+}
+
 /// Same run: our own retune is no sign of a Fox.
 #[test]
 fn a_dxpedition_our_retune_put_low_is_no_fox() {

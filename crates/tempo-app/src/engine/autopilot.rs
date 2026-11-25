@@ -192,6 +192,8 @@ struct Pilot {
     chase_failed_unix: u64,
     /// When the contact on the sequencer was first seen stalled by its call cap, Unix seconds.
     stalled_unix: Option<u64>,
+    /// Just switched on: the dial goes to the band's channel first.
+    to_channel: bool,
     /// The transmit offset before a DXpedition's call moved it, and the offset it was moved to, Hz.
     tx_before: Option<(f32, f32)>,
     /// The scheduled band a chase left, so the rotation goes on from there and not from wherever
@@ -431,6 +433,7 @@ impl Engine {
         }
         let p = &mut self.automation.pilot;
         p.on = true;
+        p.to_channel = true;
         p.presence.ack(now);
         p.band = (!self.settings.band.is_empty()).then(|| self.settings.band.clone());
         p.band_since_unix = now;
@@ -1491,6 +1494,25 @@ impl Engine {
             if self.automation_go(&stop, cur_mode) {
                 self.automation_note(&format!("schedule: moving to {}", stop.band));
                 return;
+            }
+        }
+
+        // Switched on away from the band's channel, as a hunt broken off by hand leaves the dial (live
+        // run 2026-11-25: 18.102 after 3B8/E70A): the channel first. Switching off leaves the radio
+        // alone, for the operator to go on by hand.
+        if chasing.is_none() && std::mem::take(&mut self.automation.pilot.to_channel) {
+            let plan = self.band_plan_for_tier(self.app.tier());
+            let channel = plan
+                .iter()
+                .find(|c| c.band.eq_ignore_ascii_case(&cur_band))
+                .map(|c| c.dial_mhz)
+                .filter(|d| (d - self.settings.dial_mhz).abs() > 1e-6);
+            if let Some(dial) = channel {
+                if self.automation_switch(None, &cur_band, Some(dial)) {
+                    self.automation_note(&format!("to the {cur_band} channel: {dial:.3} MHz"));
+                    return;
+                }
+                self.automation.pilot.to_channel = true;
             }
         }
 
