@@ -775,8 +775,6 @@ impl Engine {
     /// - any station addressed us within [`BAND_HOLD_SLOTS`] (a caller, or a partner repeating);
     /// - Answer callers has a caller queued.
     fn automation_band_hold(&self) -> Option<String> {
-        let a = &self.automation;
-        let slot = a.last_slot;
         if self.automation_contact_in_progress() {
             let dx = match &self.mode {
                 Mode::Qso { station, .. } => station.dxcall.clone(),
@@ -787,6 +785,13 @@ impl Engine {
                 dx.unwrap_or_else(|| "a station".into())
             ));
         }
+        self.automation_hold_without_contact()
+    }
+
+    /// What holds the band beside the contact on the sequencer ([`Self::automation_band_hold`]).
+    fn automation_hold_without_contact(&self) -> Option<String> {
+        let a = &self.automation;
+        let slot = a.last_slot;
         if self.cq_running {
             return Some("CQ run in progress".into());
         }
@@ -1333,7 +1338,9 @@ impl Engine {
                     && !is_rare(t.tier)
                     && t.tier != Tier::CallingMe
                     && s.hunt_dxpeditions
-                    && !self.automation_hunting())
+                    && !self.automation_hunting()
+                    // The move can be made now, or the same call would be picked again.
+                    && self.automation_hold_without_contact().is_none())
                 .then(|| self.automation_hunt_pick(cur_mode, now))
                 .flatten()
                 {
@@ -1624,6 +1631,19 @@ impl Engine {
                     return;
                 }
             }
+        }
+
+        // A spotted DXpedition is waiting for the band to be free (a partner that may still be sending):
+        // no new call that would be dropped for it (live run 2026-11-25: BG3TFT, picked and dropped for
+        // VK9XY at every decode while 8S2DX was settling).
+        if s.hunt_dxpeditions
+            && picked
+                .as_ref()
+                .is_some_and(|(_, t)| !is_rare(*t) && *t != Tier::CallingMe)
+            && self.automation_hunt_pick(cur_mode, now).is_some()
+        {
+            self.automation.pilot.status = "holding";
+            return;
         }
 
         if let Some((c, t)) = picked {

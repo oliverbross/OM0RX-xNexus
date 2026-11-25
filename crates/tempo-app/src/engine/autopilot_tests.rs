@@ -2094,6 +2094,42 @@ fn a_spotted_dxpedition_ends_an_unanswered_call() {
     assert_eq!(e.settings.band, "20m", "answered: kept");
 }
 
+/// Live run 2026-11-25: BG3TFT was picked and dropped for VK9XY at every decode, while the move to VK9XY
+/// was held because 8S2DX, just worked, might still be sending. Nothing is called until the move is made.
+#[test]
+fn no_call_is_started_while_a_spotted_dxpedition_waits() {
+    let mut e = two_band_pilot();
+    e.settings.automation.schedule[0].bands = vec!["20m".into()];
+    e.ingest_decodes_for_test(&[], 28);
+    e.autopilot_feed(vec![spotted("VK9XY", "40m", 7.056, "FT8")]);
+    // K1ABC calling us holds the band (Answer callers is off); N0ABC calls CQ beside it.
+    for s in [30, 32] {
+        e.ingest_decodes_for_test(
+            &[
+                dec_snr("CQ N0ABC EM48", -3),
+                dec_snr("OM0RX K1ABC FN42", -5),
+            ],
+            s,
+        );
+        assert_eq!(e.settings.band, "20m", "premise: held at {s}");
+        assert_eq!(e.automation_dx(), None, "nothing called at {s}");
+    }
+    e.ingest_decodes_for_test(&[dec_snr("CQ N0ABC EM48", -3)], 40);
+    assert_eq!(e.settings.band, "40m", "then it goes");
+
+    // Nor is a call under way dropped for a move that cannot be made.
+    let mut e = two_band_pilot();
+    e.settings.automation.schedule[0].bands = vec!["20m".into()];
+    for s in [30, 32] {
+        e.ingest_decodes_for_test(&[dec_snr("CQ N0ABC EM48", -3)], s);
+    }
+    assert_eq!(e.automation_dx().as_deref(), Some("N0ABC"), "premise");
+    let s = over(&mut e, 33);
+    e.autopilot_feed(vec![spotted("VK9XY", "40m", 7.056, "FT8")]);
+    e.ingest_decodes_for_test(&[dec_snr("OM0RX K1ABC FN42", -5)], s + 1);
+    assert_eq!(e.automation_dx().as_deref(), Some("N0ABC"), "kept");
+}
+
 /// Decoded on the band we are on, low as DXpeditions sit, it is hunted there.
 #[test]
 fn a_dxpedition_heard_low_on_the_band_is_hunted_in_place() {
