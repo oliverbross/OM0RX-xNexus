@@ -156,6 +156,24 @@ struct Chase {
     done: bool,
 }
 
+/// A band change the autopilot made: from where, to where, and until when (Unix seconds) the radio's
+/// reports of either band are taken as that change still settling.
+#[derive(Debug, Clone, PartialEq)]
+struct OwnSwitch {
+    from_band: String,
+    to_band: String,
+    to_dial: f64,
+    tier: Option<LinkTier>,
+    until_unix: u64,
+    /// The radio still reported the band left: send the change again (at most twice).
+    resend: bool,
+    resent: u8,
+}
+
+/// How long the radio may take to show the autopilot's band change (live run 2026-11-26: SmartSDR
+/// CAT ignored 3.573 MHz for a minute after the switch from 160 m), seconds.
+const OWN_SWITCH_SETTLE_SECS: u64 = 90;
+
 /// Where a DXpedition hunt went, and where it came from.
 #[derive(Debug, Clone, PartialEq)]
 struct Hunt {
@@ -232,6 +250,9 @@ pub struct Automation {
     pub(super) held_disable: bool,
     /// Our own band change is under way: its context halt is not a stop.
     self_tuning: bool,
+    /// The autopilot's last band change, until the radio has had time to take it: a report of the
+    /// band it left, or of the new one arriving late, is that change and not the operator's knob.
+    own_switch: Option<OwnSwitch>,
     /// Transmit stopped for a tuner or amplifier fault, and why ([`crate::station_guard`]).
     station_hold: Option<String>,
     /// By call: every band and mode it is spotted in, and when it was fed, Unix seconds.
@@ -645,6 +666,14 @@ impl Engine {
         p.chase_failed_unix = p.chase_failed_unix.saturating_sub(secs);
         if let Some(ch) = p.chase.as_mut() {
             ch.since_unix = ch.since_unix.saturating_sub(secs);
+        }
+    }
+
+    /// Test hook: the autopilot's last band change settled `secs` earlier than it did.
+    #[cfg(test)]
+    pub(super) fn automation_backdate_own_switch(&mut self, secs: u64) {
+        if let Some(s) = self.automation.own_switch.as_mut() {
+            s.until_unix = s.until_unix.saturating_sub(secs);
         }
     }
 
@@ -1442,6 +1471,11 @@ impl Engine {
         // Held for a tuner or amplifier fault: nothing is called and no band changed meanwhile.
         if self.automation.station_hold.is_some() {
             self.automation.pilot.status = "stationFault";
+            return;
+        }
+
+        // The radio did not take the last band change: it is sent again first.
+        if !busy && self.automation_resend_switch() {
             return;
         }
 
@@ -2421,6 +2455,7 @@ impl Engine {
             }
         }
         let was_tx = self.tx_enabled;
+        let from_band = self.settings.band.clone();
         let watchdog = self.tx_watchdog_start;
         let radio_before = self.settings.active_radio;
         let cleared_dx = self.cleared_dx_calls.clone();
@@ -2466,6 +2501,17 @@ impl Engine {
         }
         self.automation.self_tuning = false;
         let now = now_unix_secs();
+        let resent = self.automation.own_switch.as_ref().map_or(0, |s| s.resent);
+        self.automation.own_switch =
+            (!from_band.eq_ignore_ascii_case(&self.settings.band)).then(|| OwnSwitch {
+                from_band,
+                to_band: self.settings.band.clone(),
+                to_dial: self.settings.dial_mhz,
+                tier,
+                until_unix: now + OWN_SWITCH_SETTLE_SECS,
+                resend: false,
+                resent,
+            });
         let p = &mut self.automation.pilot;
         p.band = Some(self.settings.band.clone());
         p.band_since_unix = now;
@@ -2476,6 +2522,68 @@ impl Engine {
         p.last_listen_slot = None;
         p.status = "moving";
         true
+    }
+
+    /// The radio reports `band`, a band change: is it the autopilot's own change still settling (the
+    /// band it left, or the new one arriving late)? Then the context halt is the autopilot's too,
+    /// transmit stays as the change left it, and a radio still on the old band is sent the change
+    /// again.
+    pub(super) fn automation_rig_band_change(&mut self, band: &str, why: &str) -> bool {
+        let now = now_unix_secs();
+        let Some(s) = self.automation.own_switch.as_mut() else {
+            return false;
+        };
+        let back = band.eq_ignore_ascii_case(&s.from_band);
+        let late = band.eq_ignore_ascii_case(&s.to_band);
+        if !self.automation.pilot.on || now >= s.until_unix || !(back || late) {
+            self.automation.own_switch = None;
+            return false;
+        }
+        s.resend = back;
+        let note = if back {
+            format!(
+                "the radio has not taken {} yet (it reports {band}): sending it again",
+                s.to_band
+            )
+        } else {
+            format!("the radio is on {band} now")
+        };
+        let (was_tx, watchdog) = (self.tx_enabled, self.tx_watchdog_start);
+        let (cleared_dx, remote_tx) = (self.cleared_dx_calls.clone(), self.remote_transmit.clone());
+        self.automation.self_tuning = true;
+        self.halt_tx_for_context_change(why);
+        if was_tx && !self.tx_enabled {
+            self.set_tx_enabled(true);
+            self.tx_watchdog_start = watchdog;
+            self.broker_context_hold = true;
+            self.cleared_dx_calls = cleared_dx;
+            self.remote_transmit = remote_tx;
+        }
+        self.automation.self_tuning = false;
+        if late {
+            self.automation.own_switch = None;
+        }
+        self.automation_note(&note);
+        true
+    }
+
+    /// A band change the radio has not taken yet is sent again, twice at most; then the radio is left
+    /// where it is.
+    fn automation_resend_switch(&mut self) -> bool {
+        let Some(s) = self.automation.own_switch.clone().filter(|s| s.resend) else {
+            return false;
+        };
+        if s.resent >= 2 || !self.settings.band.eq_ignore_ascii_case(&s.from_band) {
+            if let Some(o) = self.automation.own_switch.as_mut() {
+                o.resend = false;
+            }
+            return false;
+        }
+        if let Some(o) = self.automation.own_switch.as_mut() {
+            o.resent += 1;
+            o.resend = false;
+        }
+        self.automation_switch(s.tier, &s.to_band, Some(s.to_dial))
     }
 
     // ---------------------------------------------------------------- DXpedition hunt

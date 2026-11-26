@@ -472,6 +472,53 @@ fn a_rogered_report_we_never_gave_is_not_answered() {
     assert_eq!(e.automation_dx().as_deref(), Some(CALLER));
 }
 
+/// Live run 2026-11-26 (xlog.34): the autopilot moved from 160 to 80 m, SmartSDR CAT ignored 3.573 MHz
+/// for a minute, the next read said 1.840, and Nexus took it for the operator's knob: transmit went
+/// off and the autopilot with it. The radio's late 80 m was a second "band change at the rig".
+#[test]
+fn the_radio_settling_after_the_autopilots_band_change_is_no_knob() {
+    let mut e = two_band_pilot();
+    e.seed_rig_dial(14_074_000);
+    e.automation_go_for_test("17m");
+    assert_eq!(e.settings.band, "17m", "premise");
+    // The radio still on 20 m: the change is the autopilot's, and is sent again.
+    e.observe_rig_freq(14_074_000);
+    assert!(e.tx_enabled && e.automation_dto().autopilot_on, "still on");
+    e.ingest_decodes_for_test(&[dec_snr("CQ N0ABC EM48", -3)], 30);
+    assert_eq!(e.settings.band, "17m", "sent again");
+    assert!(e.tx_enabled && e.automation_dto().autopilot_on);
+    // It arrives late.
+    e.observe_rig_freq(14_074_000);
+    e.observe_rig_freq(18_100_000);
+    assert!(
+        e.tx_enabled && e.automation_dto().autopilot_on,
+        "late arrival"
+    );
+    let log = e.automation_dto().log;
+    assert!(
+        log.iter()
+            .any(|l| l.contains("the radio has not taken 17m yet")),
+        "{log:?}"
+    );
+
+    // CONTROL: the operator's knob, once the change has settled, is the operator's.
+    let mut e = two_band_pilot();
+    e.seed_rig_dial(14_074_000);
+    e.automation_go_for_test("17m");
+    e.automation_backdate_own_switch(91);
+    e.observe_rig_freq(14_074_000);
+    assert!(!e.tx_enabled, "a knob band change stops transmit");
+    e.ingest_decodes_for_test(&[], 30);
+    assert!(!e.automation_dto().autopilot_on, "and the autopilot");
+
+    // CONTROL: a third band is the operator's at once.
+    let mut e = two_band_pilot();
+    e.seed_rig_dial(14_074_000);
+    e.automation_go_for_test("17m");
+    e.observe_rig_freq(7_074_000);
+    assert!(!e.tx_enabled, "the operator's 40 m");
+}
+
 /// Field report 2026-11-22 (xlog.23): the autopilot took OM0RX to 60 m at 5.3715 MHz, the US
 /// channel of the raw band table, and decoded nothing there for eight periods. A station whose call
 /// is not a US one works 60 m FT8 at 5.357 (#175), the dial its own 60 m button tunes; 5.3715 +
