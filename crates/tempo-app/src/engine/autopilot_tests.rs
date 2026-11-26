@@ -1672,6 +1672,53 @@ fn a_needed_station_still_calling_cq_is_called_again_when_nobody_else_is_wanted(
     assert_eq!(e.automation_dx().as_deref(), Some("5U4JSF"));
 }
 
+/// Live run 2026-11-26: 3B8/E70A on 30 m called CQ three times at -7 dB and was then called twenty times
+/// in nine minutes without being decoded once. A rare station not decoded for three minutes is no
+/// longer called; heard again, it is called again at once.
+#[test]
+fn a_dxpedition_gone_quiet_is_not_called_until_it_is_heard_again() {
+    let mut e = two_band_pilot();
+    e.autopilot_feed(vec![spotted("3Y0K", "40m", 7.056, "FT8")]);
+    e.ingest_decodes_for_test(&[], 30);
+    e.ingest_decodes_for_test(&[dec_at("CQ 3Y0K JD15", -7, 1200.0)], 32);
+    assert_eq!(e.automation_dx().as_deref(), Some("3Y0K"), "premise");
+    let mut s = over(&mut e, 33);
+    e.ingest_decodes_for_test(&[], s + 1);
+    s = over(&mut e, s + 2);
+    e.automation_backdate_target_heard(170);
+    e.ingest_decodes_for_test(&[], s + 1);
+    assert_eq!(
+        e.automation_dx().as_deref(),
+        Some("3Y0K"),
+        "under three minutes"
+    );
+    s = over(&mut e, s + 2);
+    e.automation_backdate_target_heard(20);
+    e.ingest_decodes_for_test(&[], s + 1);
+    e.ingest_decodes_for_test(&[], s + 2);
+    assert_eq!(e.automation_dx(), None, "gone quiet");
+    assert_eq!(e.settings.band, "40m", "the hunt goes on");
+    e.ingest_decodes_for_test(&[dec_at("CQ 3Y0K JD15", -9, 1200.0)], s + 4);
+    assert_eq!(
+        e.automation_dx().as_deref(),
+        Some("3Y0K"),
+        "heard again: called at once"
+    );
+
+    // CONTROL: decoded meanwhile (working others), it is still called.
+    let mut e = two_band_pilot();
+    e.autopilot_feed(vec![spotted("3Y0K", "40m", 7.056, "FT8")]);
+    e.ingest_decodes_for_test(&[], 30);
+    e.ingest_decodes_for_test(&[dec_at("CQ 3Y0K JD15", -7, 1200.0)], 32);
+    let mut s = over(&mut e, 33);
+    for _ in 0..3 {
+        e.automation_backdate_target_heard(100);
+        e.ingest_decodes_for_test(&[dec_at("K1ABC 3Y0K -10", -8, 1200.0)], s + 1);
+        s = over(&mut e, s + 2);
+    }
+    assert_eq!(e.automation_dx().as_deref(), Some("3Y0K"));
+}
+
 /// Live run 2026-11-26: VP2MAA, -18 dB on 160 m, had five rounds of four calls in a quarter of an hour.
 /// Each unanswered round doubles the wait for the next.
 #[test]

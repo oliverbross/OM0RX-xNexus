@@ -140,7 +140,14 @@ struct Target {
     /// Called again because nobody else was wanted: until it answers, it neither keeps the band
     /// from being quiet nor counts as another failure.
     again: bool,
+    /// When it was last decoded, Unix seconds (at first, when the call started).
+    heard_unix: u64,
 }
+
+/// A rare station not decoded for this long while it is called has gone quiet: the calls stop and
+/// the autopilot listens again (live run 2026-11-26: 3B8/E70A on 30 m called CQ three times at -7 dB
+/// and was then called twenty times in nine minutes without being decoded once), seconds.
+const RARE_UNHEARD_SECS: u64 = 180;
 
 /// A needed station spotted on another band, being chased there.
 #[derive(Debug, Clone, PartialEq)]
@@ -665,6 +672,14 @@ impl Engine {
         p.chase_failed_unix = p.chase_failed_unix.saturating_sub(secs);
         if let Some(ch) = p.chase.as_mut() {
             ch.since_unix = ch.since_unix.saturating_sub(secs);
+        }
+    }
+
+    /// Test hook: the station being called was last decoded `secs` earlier than it was.
+    #[cfg(test)]
+    pub(super) fn automation_backdate_target_heard(&mut self, secs: u64) {
+        if let Some(t) = self.automation.pilot.target.as_mut() {
+            t.heard_unix = t.heard_unix.saturating_sub(secs);
         }
     }
 
@@ -1347,6 +1362,7 @@ impl Engine {
                         calls: 0,
                         out_of_time: false,
                         again: false,
+                        heard_unix: now,
                     });
                     p.hourly.note(now);
                     p.status = "calling";
@@ -1494,6 +1510,18 @@ impl Engine {
 
         self.automation_end_stalled(now);
 
+        // The station being called is decoded: when it was last heard.
+        if let Some(t) = self.automation.pilot.target.as_mut() {
+            let heard = decodes.iter().any(|d| {
+                Msg::parse(&d.message)
+                    .sender()
+                    .is_some_and(|de| same_call(de.trim_matches(['<', '>']), &t.call))
+            });
+            if heard {
+                t.heard_unix = now;
+            }
+        }
+
         // The contact the autopilot keeps: finished, still running, or out of calls or time.
         if let Some(t) = self.automation.pilot.target.clone() {
             if busy {
@@ -1516,11 +1544,28 @@ impl Engine {
                 // slot after it, so an answer in either fold is taken (a budget that ran out in
                 // the middle of an over used to drop the station before it could answer).
                 let answer_heard_out = slot >= self.automation.last_over_slot + 2;
+                let gone_quiet = rare
+                    && !advanced
+                    && answer_heard_out
+                    && now.saturating_sub(t.heard_unix) >= RARE_UNHEARD_SECS;
                 let give_up = if rare || calls == 0 {
                     late
                 } else {
                     spent && answer_heard_out
                 };
+                if gone_quiet && !give_up {
+                    // Not a failure: when it is heard again it is called again at once.
+                    self.automation_note(&format!(
+                        "{} not decoded for {RARE_UNHEARD_SECS} s: calls stopped, listening",
+                        t.call
+                    ));
+                    self.automation_abandon_contact();
+                    self.automation.pilot.target = None;
+                    if let Some(c) = self.best_caller(0) {
+                        self.start_auto_contact(&c, Tier::CallingMe);
+                    }
+                    return;
+                }
                 if give_up {
                     if t.again {
                         self.note_failed_again(&t.call);
@@ -2184,6 +2229,7 @@ impl Engine {
             calls,
             out_of_time: false,
             again: false,
+            heard_unix: now,
         });
     }
 
