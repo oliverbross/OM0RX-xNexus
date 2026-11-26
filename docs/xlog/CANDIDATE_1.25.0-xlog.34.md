@@ -40,4 +40,24 @@ installed xlog.33 keeps its logbook and settings.
   `702671D58F7EEDC44878931D50D8795F92F988D381F0805C3475732060F38BA7` (matches the receipt).
 - **Built exe:** `D56EACD5...217A`. **Installed exe:** `7D7F0388...1CEB`, version 1.25.0-xlog.34.
 - **Install:** 23:26 UTC, `/S`, exit 0, with no Nexus running; `settings.json` unchanged.
-- **Not launched** when this was written: going on the air needs the operator's approval.
+- **First launch:** 2026-11-26 02:43:02 UTC, with the operator's approval to go on the air.
+
+## Live run (2026-11-26 02:48 to 07:24 UTC, ended by the operator going to CW)
+
+FLEX-8400 through SmartSDR CAT, xLog open before Nexus, the rotor connected; CAT came up red on the first
+start and Nexus was restarted (the first rigctld probe is not retried; not fixed yet).
+
+- **Contacts:** 19 logged (160 m 5, 80 m 4, 40 m 4, 60 m 3, 30 m 3), all in xLog, among them XE2X on 80 and
+  60 m, TI4LAS (60 m), W9XT, KE8QCO and GS2MP (a needed 30 m slot). 313 overs keyed and unkeyed, longest
+  13.7 s. No crash and no TX watchdog trip.
+- **The autopilot switched itself off once** (02:49): after its 160 to 80 m move SmartSDR CAT ignored the new
+  frequency for a minute, and the radio's late arrival was taken for the operator's knob (`3964d8cdb`). Re-armed
+  by hand.
+- **VP2MAA** (160 m, -18 dB) had five rounds of four calls in a quarter of an hour without an answer
+  (`1e63fa61e`).
+- **3B8/E70A** was hunted on 30 m and twice on 15 m (+1 to +9 dB, working Europeans and Japanese) without a
+  contact; on 30 m it was called twenty times in nine minutes without being decoded (`53564a3d7`).
+- **Clear transmit frequency:** picked 34 times.
+- **07:21** the operator tuned to 14.033 MHz for CW: transmit and the autopilot stopped, UX7QV (17 m, a grid)
+  was left before its RR73 and not logged. Nexus was quit cleanly at 07:24.
+- **No tuner or amplifier fault** came up.
