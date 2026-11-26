@@ -1714,9 +1714,35 @@ fn a_dxpedition_gone_quiet_is_not_called_until_it_is_heard_again() {
     for _ in 0..3 {
         e.automation_backdate_target_heard(100);
         e.ingest_decodes_for_test(&[dec_at("K1ABC 3Y0K -10", -8, 1200.0)], s + 1);
-        s = over(&mut e, s + 2);
+        e.automation_backdate_target_heard(100);
+        e.ingest_decodes_for_test(&[dec_at("K1ABC 3Y0K RR73", -8, 1200.0)], s + 2);
+        assert_eq!(
+            e.automation_dx().as_deref(),
+            Some("3Y0K"),
+            "decoded: still called"
+        );
+        s = over(&mut e, s + 3);
     }
-    assert_eq!(e.automation_dx().as_deref(), Some("3Y0K"));
+}
+
+/// A rare station gone quiet outside a hunt is no failure either: heard again, it is called at once.
+#[test]
+fn a_rare_station_gone_quiet_is_called_at_once_when_heard_again() {
+    let mut e = answering_pilot();
+    pick(&mut e, "DO8JB");
+    e.ingest_decodes_for_test(&[], 12);
+    e.automation_set_tier_for_test(crate::automation::Tier::Atno);
+    let s = over(&mut e, 13);
+    e.automation_backdate_target_heard(200);
+    e.ingest_decodes_for_test(&[], s + 1);
+    e.ingest_decodes_for_test(&[], s + 2);
+    assert_eq!(e.automation_dx(), None, "premise: gone quiet");
+    e.ingest_decodes_for_test(&[dec_snr("CQ DO8JB JN88", -12)], s + 4);
+    assert_eq!(
+        e.automation_dx().as_deref(),
+        Some("DO8JB"),
+        "called at once"
+    );
 }
 
 /// Live run 2026-11-26: VP2MAA, -18 dB on 160 m, had five rounds of four calls in a quarter of an hour.
