@@ -77,7 +77,6 @@ const CHASE_COOLDOWN_SECS: u64 = 900;
 const CHASE_REST_SECS: u64 = 600;
 /// How soon a needed station that left our calls unanswered, and still calls CQ, is called again
 /// when there is nobody else to call on the band, seconds.
-const CALL_AGAIN_SECS: u64 = 60;
 /// How long a fed entry stays usable, seconds.
 const FEED_FRESH_SECS: u64 = 600;
 /// Decisions kept for the panel's log.
@@ -1432,12 +1431,15 @@ impl Engine {
         a.last_unix = now;
     }
 
-    /// A station called again ([`CALL_AGAIN_SECS`]) did not answer either: its wait starts again,
+    /// A station called again ([`automation::call_again_after_secs`]) did not answer either: its wait starts again,
     /// and it is not one more failure towards being left for the session.
     fn note_failed_again(&mut self, call: &str) {
         let now = now_unix_secs();
         match self.automation.pilot.attempts.get_mut(&call.to_uppercase()) {
-            Some(a) => a.last_unix = now,
+            Some(a) => {
+                a.last_unix = now;
+                a.again += 1;
+            }
             None => self.note_failed(call),
         }
     }
@@ -1955,7 +1957,11 @@ impl Engine {
                 .pilot
                 .attempts
                 .get(&c.call.to_uppercase())
-                .is_some_and(|a| now >= a.last_unix.saturating_add(CALL_AGAIN_SECS));
+                .is_some_and(|a| {
+                    now >= a
+                        .last_unix
+                        .saturating_add(automation::call_again_after_secs(a.again))
+                });
             let needed = automation::best_allowed_tier(c, &s).is_some_and(automation::is_needed);
             self.automation_skip(c, &cur_band, cur_mode) || !rested || !needed
         })

@@ -1672,6 +1672,44 @@ fn a_needed_station_still_calling_cq_is_called_again_when_nobody_else_is_wanted(
     assert_eq!(e.automation_dx().as_deref(), Some("5U4JSF"));
 }
 
+/// Live run 2026-11-26: VP2MAA, -18 dB on 160 m, had five rounds of four calls in a quarter of an hour.
+/// Each unanswered round doubles the wait for the next.
+#[test]
+fn each_unanswered_round_doubles_the_wait_to_call_again() {
+    assert_eq!(
+        (0..7)
+            .map(crate::automation::call_again_after_secs)
+            .collect::<Vec<_>>(),
+        [60, 120, 240, 480, 960, 1800, 1800]
+    );
+    let (mut e, mut s) = an_unanswered_needed_station();
+    let cq = [dec_snr("CQ 5U4JSF JK73", -15)];
+    e.automation_backdate_attempts(90);
+    e.ingest_decodes_for_test(&cq, s);
+    assert_eq!(
+        e.automation_dx().as_deref(),
+        Some("5U4JSF"),
+        "premise: round 2"
+    );
+    s += 1;
+    for _ in 0..4 {
+        s = over(&mut e, s) + 1;
+        e.ingest_decodes_for_test(&cq, s);
+    }
+    e.ingest_decodes_for_test(&cq, s + 1);
+    assert_eq!(e.automation_dx(), None, "premise: given up");
+    e.automation_backdate_attempts(90);
+    e.ingest_decodes_for_test(&cq, s + 2);
+    assert_eq!(e.automation_dx(), None, "not after a minute and a half");
+    e.automation_backdate_attempts(60);
+    e.ingest_decodes_for_test(&cq, s + 3);
+    assert_eq!(
+        e.automation_dx().as_deref(),
+        Some("5U4JSF"),
+        "after two minutes"
+    );
+}
+
 /// Anybody else wanted is called first: four calls, then the next station.
 #[test]
 fn another_wanted_station_comes_before_calling_one_again() {
