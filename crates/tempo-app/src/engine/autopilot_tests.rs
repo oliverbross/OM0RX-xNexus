@@ -472,6 +472,53 @@ fn a_rogered_report_we_never_gave_is_not_answered() {
     assert_eq!(e.automation_dx().as_deref(), Some(CALLER));
 }
 
+/// Live run 2026-11-26 (xlog.34): the autopilot moved from 160 to 80 m, SmartSDR CAT ignored 3.573 MHz
+/// for a minute, the next read said 1.840, and Nexus took it for the operator's knob: transmit went
+/// off and the autopilot with it. The radio's late 80 m was a second "band change at the rig".
+#[test]
+fn the_radio_settling_after_the_autopilots_band_change_is_no_knob() {
+    let mut e = two_band_pilot();
+    e.seed_rig_dial(14_074_000);
+    e.automation_go_for_test("17m");
+    assert_eq!(e.settings.band, "17m", "premise");
+    // The radio still on 20 m: the change is the autopilot's, and is sent again.
+    e.observe_rig_freq(14_074_000);
+    assert!(e.tx_enabled && e.automation_dto().autopilot_on, "still on");
+    e.ingest_decodes_for_test(&[dec_snr("CQ N0ABC EM48", -3)], 30);
+    assert_eq!(e.settings.band, "17m", "sent again");
+    assert!(e.tx_enabled && e.automation_dto().autopilot_on);
+    // It arrives late.
+    e.observe_rig_freq(14_074_000);
+    e.observe_rig_freq(18_100_000);
+    assert!(
+        e.tx_enabled && e.automation_dto().autopilot_on,
+        "late arrival"
+    );
+    let log = e.automation_dto().log;
+    assert!(
+        log.iter()
+            .any(|l| l.contains("the radio has not taken 17m yet")),
+        "{log:?}"
+    );
+
+    // CONTROL: the operator's knob, once the change has settled, is the operator's.
+    let mut e = two_band_pilot();
+    e.seed_rig_dial(14_074_000);
+    e.automation_go_for_test("17m");
+    e.automation_backdate_own_switch(91);
+    e.observe_rig_freq(14_074_000);
+    assert!(!e.tx_enabled, "a knob band change stops transmit");
+    e.ingest_decodes_for_test(&[], 30);
+    assert!(!e.automation_dto().autopilot_on, "and the autopilot");
+
+    // CONTROL: a third band is the operator's at once.
+    let mut e = two_band_pilot();
+    e.seed_rig_dial(14_074_000);
+    e.automation_go_for_test("17m");
+    e.observe_rig_freq(7_074_000);
+    assert!(!e.tx_enabled, "the operator's 40 m");
+}
+
 /// Field report 2026-11-22 (xlog.23): the autopilot took OM0RX to 60 m at 5.3715 MHz, the US
 /// channel of the raw band table, and decoded nothing there for eight periods. A station whose call
 /// is not a US one works 60 m FT8 at 5.357 (#175), the dial its own 60 m button tunes; 5.3715 +
@@ -1623,6 +1670,117 @@ fn a_needed_station_still_calling_cq_is_called_again_when_nobody_else_is_wanted(
     e.automation_backdate_attempts(90);
     e.ingest_decodes_for_test(&cq, s + 2);
     assert_eq!(e.automation_dx().as_deref(), Some("5U4JSF"));
+}
+
+/// Live run 2026-11-26: 3B8/E70A on 30 m called CQ three times at -7 dB and was then called twenty times
+/// in nine minutes without being decoded once. A rare station not decoded for three minutes is no
+/// longer called; heard again, it is called again at once.
+#[test]
+fn a_dxpedition_gone_quiet_is_not_called_until_it_is_heard_again() {
+    let mut e = two_band_pilot();
+    e.autopilot_feed(vec![spotted("3Y0K", "40m", 7.056, "FT8")]);
+    e.ingest_decodes_for_test(&[], 30);
+    e.ingest_decodes_for_test(&[dec_at("CQ 3Y0K JD15", -7, 1200.0)], 32);
+    assert_eq!(e.automation_dx().as_deref(), Some("3Y0K"), "premise");
+    let mut s = over(&mut e, 33);
+    e.ingest_decodes_for_test(&[], s + 1);
+    s = over(&mut e, s + 2);
+    e.automation_backdate_target_heard(170);
+    e.ingest_decodes_for_test(&[], s + 1);
+    assert_eq!(
+        e.automation_dx().as_deref(),
+        Some("3Y0K"),
+        "under three minutes"
+    );
+    s = over(&mut e, s + 2);
+    e.automation_backdate_target_heard(20);
+    e.ingest_decodes_for_test(&[], s + 1);
+    e.ingest_decodes_for_test(&[], s + 2);
+    assert_eq!(e.automation_dx(), None, "gone quiet");
+    assert_eq!(e.settings.band, "40m", "the hunt goes on");
+    e.ingest_decodes_for_test(&[dec_at("CQ 3Y0K JD15", -9, 1200.0)], s + 4);
+    assert_eq!(
+        e.automation_dx().as_deref(),
+        Some("3Y0K"),
+        "heard again: called at once"
+    );
+
+    // CONTROL: decoded meanwhile (working others), it is still called.
+    let mut e = two_band_pilot();
+    e.autopilot_feed(vec![spotted("3Y0K", "40m", 7.056, "FT8")]);
+    e.ingest_decodes_for_test(&[], 30);
+    e.ingest_decodes_for_test(&[dec_at("CQ 3Y0K JD15", -7, 1200.0)], 32);
+    let mut s = over(&mut e, 33);
+    for _ in 0..3 {
+        e.automation_backdate_target_heard(100);
+        e.ingest_decodes_for_test(&[dec_at("K1ABC 3Y0K -10", -8, 1200.0)], s + 1);
+        e.automation_backdate_target_heard(100);
+        e.ingest_decodes_for_test(&[dec_at("K1ABC 3Y0K RR73", -8, 1200.0)], s + 2);
+        assert_eq!(
+            e.automation_dx().as_deref(),
+            Some("3Y0K"),
+            "decoded: still called"
+        );
+        s = over(&mut e, s + 3);
+    }
+}
+
+/// A rare station gone quiet outside a hunt is no failure either: heard again, it is called at once.
+#[test]
+fn a_rare_station_gone_quiet_is_called_at_once_when_heard_again() {
+    let mut e = answering_pilot();
+    pick(&mut e, "DO8JB");
+    e.ingest_decodes_for_test(&[], 12);
+    e.automation_set_tier_for_test(crate::automation::Tier::Atno);
+    let s = over(&mut e, 13);
+    e.automation_backdate_target_heard(200);
+    e.ingest_decodes_for_test(&[], s + 1);
+    e.ingest_decodes_for_test(&[], s + 2);
+    assert_eq!(e.automation_dx(), None, "premise: gone quiet");
+    e.ingest_decodes_for_test(&[dec_snr("CQ DO8JB JN88", -12)], s + 4);
+    assert_eq!(
+        e.automation_dx().as_deref(),
+        Some("DO8JB"),
+        "called at once"
+    );
+}
+
+/// Live run 2026-11-26: VP2MAA, -18 dB on 160 m, had five rounds of four calls in a quarter of an hour.
+/// Each unanswered round doubles the wait for the next.
+#[test]
+fn each_unanswered_round_doubles_the_wait_to_call_again() {
+    assert_eq!(
+        (0..7)
+            .map(crate::automation::call_again_after_secs)
+            .collect::<Vec<_>>(),
+        [60, 120, 240, 480, 960, 1800, 1800]
+    );
+    let (mut e, mut s) = an_unanswered_needed_station();
+    let cq = [dec_snr("CQ 5U4JSF JK73", -15)];
+    e.automation_backdate_attempts(90);
+    e.ingest_decodes_for_test(&cq, s);
+    assert_eq!(
+        e.automation_dx().as_deref(),
+        Some("5U4JSF"),
+        "premise: round 2"
+    );
+    s += 1;
+    for _ in 0..4 {
+        s = over(&mut e, s) + 1;
+        e.ingest_decodes_for_test(&cq, s);
+    }
+    e.ingest_decodes_for_test(&cq, s + 1);
+    assert_eq!(e.automation_dx(), None, "premise: given up");
+    e.automation_backdate_attempts(90);
+    e.ingest_decodes_for_test(&cq, s + 2);
+    assert_eq!(e.automation_dx(), None, "not after a minute and a half");
+    e.automation_backdate_attempts(60);
+    e.ingest_decodes_for_test(&cq, s + 3);
+    assert_eq!(
+        e.automation_dx().as_deref(),
+        Some("5U4JSF"),
+        "after two minutes"
+    );
 }
 
 /// Anybody else wanted is called first: four calls, then the next station.

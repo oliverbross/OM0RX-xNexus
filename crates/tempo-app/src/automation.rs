@@ -743,8 +743,17 @@ pub fn answerable_cq(dir: &str) -> bool {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Attempts {
     pub failures: u32,
+    /// Rounds of calling it again that went unanswered since ([`call_again_after_secs`]).
+    pub again: u32,
     /// When the last attempt ended, Unix seconds.
     pub last_unix: u64,
+}
+
+/// After `again` unanswered rounds of calling a needed station again, how long until the next: one
+/// minute, doubled each time, half an hour at most (live run 2026-11-26: VP2MAA, -18 dB on 160 m,
+/// had five rounds of four calls in a quarter of an hour), seconds.
+pub fn call_again_after_secs(again: u32) -> u64 {
+    (60u64 << again.min(5)).min(1800)
 }
 
 /// After `failures` failed attempts, how long before the call may be tried again (10, 30, then
@@ -1644,6 +1653,7 @@ mod tests {
             Attempts {
                 failures: 1,
                 last_unix: 1000,
+                ..Default::default()
             },
         );
         let list = vec![cand("RARE", Some("New Call"), Some("ATNO"), 0)];
@@ -1668,6 +1678,7 @@ mod tests {
             Attempts {
                 failures: 4,
                 last_unix: 0,
+                ..Default::default()
             },
         );
         assert!(pick(

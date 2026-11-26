@@ -10746,7 +10746,10 @@ impl Engine {
                 self.a7_hide.set(Instant::now(), self.active_slot_secs());
                 // Context halt, exactly like the app-commanded band change above: spinning
                 // the rig's own VFO across a band edge must not take the operator's mic away.
-                self.halt_tx_for_context_change("band change at the rig");
+                // OM0RX-xNexus: unless it is the autopilot's own band change, still settling.
+                if !self.automation_rig_band_change(band, "band change at the rig") {
+                    self.halt_tx_for_context_change("band change at the rig");
+                }
                 self.on_band_change(made_on);
                 self.clear_cw_decode(); // stale CW copy across a cross-band knob QSY
                                         // A knob QSY across bands drops the transient mode override too, exactly like an
